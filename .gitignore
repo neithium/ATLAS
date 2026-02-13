@@ -38,3 +38,4 @@ analytics-py/**/__pycache__/
 
 # Docker
 .dockerignore
+_codeql_detected_source_root
