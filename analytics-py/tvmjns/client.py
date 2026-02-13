@@ -35,7 +35,7 @@ class Message:
     PROTOCOL_MAGIC = 0x544D564A  # "TVMJ"
     PROTOCOL_VERSION = 1
     HEADER_SIZE = 12
-    HEADER_FORMAT = '<IHHi'  # Little-endian: uint32, uint16, uint16, int32
+    HEADER_FORMAT = '<IHHI'  # Little-endian: uint32, uint16, uint16, uint32
 
     def __init__(self, msg_type: MessageType, payload: bytes = b''):
         self.msg_type = msg_type
