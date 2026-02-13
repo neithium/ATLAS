@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  broker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: tvmjns-broker:latest
+    container_name: tvmjns-broker
+    ports:
+      - "9090:9090"
+    environment:
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - tvmjns-network
+    healthcheck:
+      test: ["CMD", "timeout", "2", "bash", "-c", "echo > /dev/tcp/localhost/9090"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Example Java producer (optional - for testing)
+  # producer:
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/Dockerfile.producer
+  #   container_name: tvmjns-producer
+  #   depends_on:
+  #     - broker
+  #   environment:
+  #     - BROKER_HOST=broker
+  #     - BROKER_PORT=9090
+  #   networks:
+  #     - tvmjns-network
+
+  # Example Python consumer (optional - for testing)
+  # consumer:
+  #   build:
+  #     context: ..
+  #     dockerfile: deploy/Dockerfile.consumer
+  #   container_name: tvmjns-consumer
+  #   depends_on:
+  #     - broker
+  #   environment:
+  #     - BROKER_HOST=broker
+  #     - BROKER_PORT=9090
+  #   networks:
+  #     - tvmjns-network
+
+networks:
+  tvmjns-network:
+    driver: bridge

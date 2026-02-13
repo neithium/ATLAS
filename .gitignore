@@ -1,0 +1,40 @@
+# Build directories
+broker/build/
+broker/cmake-build-*/
+
+# Java/Maven
+sdk-java/target/
+sdk-java/.classpath
+sdk-java/.project
+sdk-java/.settings/
+*.class
+*.jar
+!sdk-java/.mvn/wrapper/maven-wrapper.jar
+
+# Python
+analytics-py/build/
+analytics-py/dist/
+analytics-py/*.egg-info/
+analytics-py/__pycache__/
+analytics-py/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.log
+*.tmp
+/tmp/
+
+# Docker
+.dockerignore
