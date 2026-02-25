@@ -1,0 +1,22 @@
+# ==============================================================================
+#  TVMJNS — Local Python Dependencies (Windows host)
+#
+#  Install with:   pip install -r requirements.txt
+#
+#  These are the drivers your local Python scripts use to talk to
+#  the Dockerized infrastructure over localhost-exposed ports.
+# ==============================================================================
+
+# ── Kafka producer / consumer (talks to localhost:9092) ──────────────────────
+# Using kafka-python-ng (pure Python, no C compiler needed, Python 3.13 compatible)
+kafka-python-ng==2.2.2
+
+# ── Spark structured streaming engine (submits jobs to spark-master:7077) ────
+pyspark==3.5.1
+
+# ── PostgreSQL adapter (talks to localhost:5432) ─────────────────────────────
+# Using psycopg3 (pure Python mode, Python 3.13 compatible)
+psycopg[binary]==3.2.4
+
+# ── Utilities (optional but common in streaming pipelines) ───────────────────
+python-dotenv==1.0.1            # load .env config into os.environ
