@@ -18,7 +18,7 @@ Step-by-step guide to run the real-time data streaming platform.
 # Navigate to project root
 cd c:\Users\manth\Documents\GitHub\TVMJNS
 
-# Start all 5 containers (Zookeeper, Kafka, Spark Master, Spark Worker, PostgreSQL)
+# Start all 6 containers (Zookeeper, Kafka, Spark Master, Spark Worker, PostgreSQL, Adminer)
 docker compose up -d
 
 # Verify all services are healthy
@@ -28,6 +28,7 @@ docker compose ps
 Expected output — all containers should show `(healthy)`:
 ```
 NAME           IMAGE                             STATUS
+adminer        adminer:latest                    Up
 kafka          confluentinc/cp-kafka:7.6.1       Up (healthy)
 postgres       postgres:16                       Up (healthy)
 spark-master   apache/spark:3.5.1                Up (healthy)
@@ -39,6 +40,7 @@ zookeeper      confluentinc/cp-zookeeper:7.6.1   Up (healthy)
 
 | Service | URL |
 |---------|-----|
+| **Adminer (DB GUI)** | http://localhost:8888 |
 | Spark Master | http://localhost:8080 |
 | Spark Worker | http://localhost:8081 |
 | Spark App UI | http://localhost:4040 (when job running) |
@@ -124,7 +126,80 @@ Press `Ctrl+C` to stop the consumer.
 
 ---
 
-## 5. Query PostgreSQL Directly
+## 5. Run Spark Alert Processor
+
+This demonstrates Spark processing: reads telemetry from Kafka, checks thresholds, and writes alerts to PostgreSQL.
+
+```powershell
+cd c:\Users\manth\Documents\GitHub\TVMJNS
+..\.venv\Scripts\python.exe scripts\spark_batch_alerts.py
+```
+
+**Thresholds checked:**
+- `temperature > 30°C` → **HIGH_TEMPERATURE** alert (warning)
+- `battery_level < 20%` → **LOW_BATTERY** alert (critical)
+
+Expected output:
+```
+============================================================
+TVMJNS — Spark Batch Alert Processor
+============================================================
+
+Reading from Kafka topic 'telemetry'...
+✓ Found 25 telemetry records
+
+Sample telemetry data:
++----------+---------------------------+-----------+--------+--------+-------------+
+|sensor_id |timestamp                  |temperature|humidity|pressure|battery_level|
++----------+---------------------------+-----------+--------+--------+-------------+
+|sensor_003|2026-02-25T22:40:15.123456 |28.45      |52.3    |1015.2  |85.0         |
+...
+
+Checking thresholds:
+  • Temperature > 30.0°C
+  • Battery < 20.0%
+
+🚨 Found 3 alerts:
+
++----------+----------------+--------+-----------------+-------------------+
+|sensor_id |alert_type      |severity|message          |triggered_at       |
++----------+----------------+--------+-----------------+-------------------+
+|sensor_002|HIGH_TEMPERATURE|warning |Temp=32.5°C      |2026-02-25 22:45:00|
+|sensor_004|LOW_BATTERY     |critical|Battery=15.2%    |2026-02-25 22:45:00|
+...
+
+Writing to PostgreSQL...
+✓ Wrote 3 alerts to 'alerts' table
+
+View in Adminer: http://localhost:8888
+
+Done!
+```
+
+---
+
+## 6. View Data in Adminer (Database GUI)
+
+Open **http://localhost:8888** in your browser.
+
+**Login credentials:**
+| Field | Value |
+|-------|-------|
+| System | PostgreSQL |
+| Server | `postgres` |
+| Username | `streaming_user` |
+| Password | `streaming_pass` |
+| Database | `streaming_db` |
+
+**Tables to explore:**
+- `sensors` — Registered sensors
+- `alerts` — Threshold violations detected by Spark
+- `telemetry_readings` — Raw telemetry data
+- `telemetry_stats` — Aggregated statistics
+
+---
+
+## 7. Query PostgreSQL Directly
 
 ### Using Python
 
@@ -157,7 +232,7 @@ Type `\q` to exit psql.
 
 ---
 
-## 6. Stop Everything
+## 8. Stop Everything
 
 ```powershell
 # Stop all containers
@@ -178,8 +253,8 @@ docker compose down -v
 | View logs | `docker logs <container_name>` |
 | Init database | `.\.venv\Scripts\python.exe scripts\test_db.py --init --sample` |
 | Run producer | `.\.venv\Scripts\python.exe scripts\producer.py` |
-| Run consumer | `.\.venv\Scripts\python.exe scripts\consumer.py` |
-| Stop all | `docker compose down` |
+| Run consumer | `.\.venv\Scripts\python.exe scripts\consumer.py` || **Run Spark alerts** | `.\.venv\Scripts\python.exe scripts\spark_batch_alerts.py` |
+| **Open Adminer** | http://localhost:8888 || Stop all | `docker compose down` |
 
 ---
 
@@ -217,39 +292,46 @@ docker compose restart <service_name>
 ## Architecture Recap
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Windows Host                             │
-│  ┌──────────────┐          ┌──────────────┐                │
-│  │  producer.py │──────────│  consumer.py │                │
-│  └──────┬───────┘          └───────┬──────┘                │
-│         │ :9092                    │ :9092                  │
-└─────────┼──────────────────────────┼────────────────────────┘
-          │                          │
-          ▼                          ▼
-    ┌─────────────────────────────────────┐
-    │              Kafka                  │
-    │         (localhost:9092)            │
-    └─────────────┬───────────────────────┘
-                  │
-                  ▼
-    ┌─────────────────────────────────────┐
-    │           Zookeeper                 │
-    │         (localhost:2181)            │
-    └─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Windows Host                                │
+│                                                                     │
+│  ┌──────────────┐   ┌──────────────┐   ┌─────────────────────────┐ │
+│  │  producer.py │   │  consumer.py │   │  spark_batch_alerts.py  │ │
+│  └──────┬───────┘   └───────┬──────┘   └───────────┬─────────────┘ │
+│         │                   │                      │                │
+└─────────┼───────────────────┼──────────────────────┼────────────────┘
+          │ :9092             │ :9092                │ :9092 / :5432
+          ▼                   ▼                      ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │                       Kafka                             │
+    │                  (localhost:9092)                       │
+    │                         │                               │
+    │                   Zookeeper                             │
+    │                  (localhost:2181)                       │
+    └─────────────────────────────────────────────────────────┘
 
-    ┌─────────────────────────────────────┐
-    │         Spark Master                │
-    │         (localhost:8080)            │
-    └─────────────┬───────────────────────┘
-                  │
-                  ▼
-    ┌─────────────────────────────────────┐
-    │         Spark Worker                │
-    │         (localhost:8081)            │
-    └─────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────┐
+    │              Spark Master  ←──────  Spark Worker        │
+    │             (localhost:8080)       (localhost:8081)     │
+    └─────────────────────────────────────────────────────────┘
 
-    ┌─────────────────────────────────────┐
-    │          PostgreSQL                 │
-    │         (localhost:5432)            │
-    └─────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────┐
+    │                     PostgreSQL                          │
+    │                  (localhost:5432)                       │
+    │                         │                               │
+    │                      Adminer                            │
+    │                  (localhost:8888)                       │
+    └─────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+```
+producer.py  ──▶  Kafka (telemetry topic)  ──▶  spark_batch_alerts.py
+                                                        │
+                                                        ▼
+                                               PostgreSQL (alerts)
+                                                        │
+                                                        ▼
+                                                    Adminer (GUI)
 ```

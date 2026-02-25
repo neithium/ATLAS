@@ -174,3 +174,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 6. ADMINER  —  lightweight database UI for viewing PostgreSQL
+  # ═══════════════════════════════════════════════════════════════════════════
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    hostname: adminer
+    restart: unless-stopped
+    ports:
+      - "8888:8080"                       # Access at http://localhost:8888
+    networks:
+      - streaming-net
+    depends_on:
+      postgres:
+        condition: service_healthy
