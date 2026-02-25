@@ -116,6 +116,8 @@ services:
     environment:
       SPARK_NO_DAEMONIZE: "true"          # keep process in foreground for Docker
       SPARK_MASTER_HOST: spark-master
+    volumes:
+      - ./scripts:/scripts                # mount scripts for spark-submit
     networks:
       - streaming-net
     healthcheck:

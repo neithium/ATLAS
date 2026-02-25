@@ -130,10 +130,18 @@ Press `Ctrl+C` to stop the consumer.
 
 This demonstrates Spark processing: reads telemetry from Kafka, checks thresholds, and writes alerts to PostgreSQL.
 
+**Option 1: Use the batch script (easiest)**
 ```powershell
 cd c:\Users\manth\Documents\GitHub\TVMJNS
-..\.venv\Scripts\python.exe scripts\spark_batch_alerts.py
+.\run_spark.bat
 ```
+
+**Option 2: Run directly with docker exec**
+```powershell
+docker exec spark-master /opt/spark/bin/spark-submit --conf spark.jars.ivy=/tmp/ivy2 --packages "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.postgresql:postgresql:42.7.3" /scripts/spark_docker_alerts.py
+```
+
+> **Note:** The Spark job runs inside the Docker container because Windows Java 21+ is incompatible with Hadoop. The container uses Java 11 which works correctly.
 
 **Thresholds checked:**
 - `temperature > 30°C` → **HIGH_TEMPERATURE** alert (warning)
@@ -142,34 +150,39 @@ cd c:\Users\manth\Documents\GitHub\TVMJNS
 Expected output:
 ```
 ============================================================
-TVMJNS — Spark Batch Alert Processor
+TVMJNS — Spark Batch Alert Processor (Docker)
+============================================================
+Kafka: kafka:29092
+PostgreSQL: jdbc:postgresql://postgres:5432/streaming_db
+Thresholds: temp > 30.0°C, battery < 20.0%
 ============================================================
 
 Reading from Kafka topic 'telemetry'...
-✓ Found 25 telemetry records
+Found 947 telemetry records
 
 Sample telemetry data:
-+----------+---------------------------+-----------+--------+--------+-------------+
-|sensor_id |timestamp                  |temperature|humidity|pressure|battery_level|
-+----------+---------------------------+-----------+--------+--------+-------------+
-|sensor_003|2026-02-25T22:40:15.123456 |28.45      |52.3    |1015.2  |85.0         |
++----------+--------------------------------+-----------+--------+--------+-------------+
+|sensor_id |timestamp                       |temperature|humidity|pressure|battery_level|
++----------+--------------------------------+-----------+--------+--------+-------------+
+|sensor_004|2026-02-25T17:35:58.300128+00:00|19.96      |42.71   |1017.47 |64.3         |
+|sensor_003|2026-02-25T17:36:03.054518+00:00|34.94      |59.84   |1016.3  |95.2         |
 ...
 
 Checking thresholds:
-  • Temperature > 30.0°C
-  • Battery < 20.0%
+  - Temperature > 30.0C
+  - Battery < 20.0%
 
-🚨 Found 3 alerts:
+ALERTS FOUND: 334
 
-+----------+----------------+--------+-----------------+-------------------+
-|sensor_id |alert_type      |severity|message          |triggered_at       |
-+----------+----------------+--------+-----------------+-------------------+
-|sensor_002|HIGH_TEMPERATURE|warning |Temp=32.5°C      |2026-02-25 22:45:00|
-|sensor_004|LOW_BATTERY     |critical|Battery=15.2%    |2026-02-25 22:45:00|
++----------+----------------+--------+-----------+--------------------------+
+|sensor_id |alert_type      |severity|message    |triggered_at              |
++----------+----------------+--------+-----------+--------------------------+
+|sensor_003|HIGH_TEMPERATURE|warning |Temp=34.9C |2026-02-25 18:08:32.056612|
+|sensor_004|LOW_BATTERY     |critical|Battery=15%|2026-02-25 18:08:32.056612|
 ...
 
 Writing to PostgreSQL...
-✓ Wrote 3 alerts to 'alerts' table
+Wrote 334 alerts to 'alerts' table
 
 View in Adminer: http://localhost:8888
 
@@ -253,8 +266,10 @@ docker compose down -v
 | View logs | `docker logs <container_name>` |
 | Init database | `.\.venv\Scripts\python.exe scripts\test_db.py --init --sample` |
 | Run producer | `.\.venv\Scripts\python.exe scripts\producer.py` |
-| Run consumer | `.\.venv\Scripts\python.exe scripts\consumer.py` || **Run Spark alerts** | `.\.venv\Scripts\python.exe scripts\spark_batch_alerts.py` |
-| **Open Adminer** | http://localhost:8888 || Stop all | `docker compose down` |
+| Run consumer | `.\.venv\Scripts\python.exe scripts\consumer.py` |
+| **Run Spark alerts** | `.\run_spark.bat` |
+| **Open Adminer** | http://localhost:8888 |
+| Stop all | `docker compose down` |
 
 ---
 
