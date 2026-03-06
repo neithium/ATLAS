@@ -1,0 +1,376 @@
+# =============================================================================
+# ATLAS - Advanced Telemetry Logging & Analytics System
+# 5-Container Architecture Docker Compose
+# =============================================================================
+#
+# Architecture:
+#   Container 1: atlas-ingestion   - The Generator (FastAPI Telemetry API)
+#   Container 2: atlas-broker      - The Broker (Kafka KRaft Mode)
+#   Container 3: atlas-processor   - The Processor (Spark Streaming)
+#   Container 4: atlas-lakehouse   - The Gatekeeper (Delta Lake MERGE) [ACTIVE]
+#   Container 5: atlas-analytics   - The Analytics Hub (ClickHouse + PostgreSQL)
+#
+# Data Flow:
+#   [Generator] → [Broker] → [Processor] → [Lakehouse] → [Analytics]
+#       ↓            ↓                                        ↑
+#   Raw Volume   Stream Buffer                          Dashboard
+#
+# Usage:
+#   Start all:    docker-compose up -d
+#   View logs:    docker-compose logs -f [service_name]
+#   Stop all:     docker-compose down
+#   Clean all:    docker-compose down -v
+#
+# =============================================================================
+
+networks:
+  atlas-network:
+    driver: bridge
+    name: atlas-network
+
+volumes:
+  kafka-data:
+  postgres-data:
+  clickhouse-data:
+  spark-checkpoint:
+  delta-refined:
+  raw-telemetry:
+
+services:
+
+  # ===========================================================================
+  # CONTAINER 1: THE GENERATOR (atlas-ingestion)
+  # ===========================================================================
+  # Technology: Python FastAPI / Uvicorn
+  # Role: On-Demand Ingestion Microservice
+  #
+  # Responsibilities:
+  #   - Listens for API calls to trigger data generation
+  #   - Enforces 10-char minimum for platform_customer_id & application_customer_id
+  #   - Buffer Logic: reuses 23 hours of old data, generates only 1 hour fresh
+  #   - Pushes payload to Broker and writes to Raw Directory volume
+  # ===========================================================================
+
+  # TODO: Jnana - Implement FastAPI telemetry generator
+  # atlas-ingestion:
+  #   build:
+  #     context: ./ingestion/api
+  #     dockerfile: Dockerfile
+  #   container_name: atlas-ingestion
+  #   hostname: ingestion
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - KAFKA_BOOTSTRAP_SERVERS=broker:9092
+  #     - KAFKA_TOPIC=raw-server-metrics
+  #     - DEVICE_COUNT=100000
+  #     - MIN_CUSTOMER_ID_LENGTH=10
+  #   volumes:
+  #     - ./ingestion/api:/app:ro
+  #     - ./schema:/app/schema:ro
+  #     - raw-telemetry:/app/data/raw
+  #   networks:
+  #     - atlas-network
+  #   depends_on:
+  #     atlas-broker:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  # ===========================================================================
+  # CONTAINER 2: THE BROKER (atlas-broker)
+  # ===========================================================================
+  # Technology: Apache Kafka (KRaft Mode - No Zookeeper)
+  # Role: Real-Time Streaming Buffer
+  #
+  # Responsibilities:
+  #   - Manages raw-server-metrics topic (12 partitions)
+  #   - Manages raw-server-metrics-dlq (Dead Letter Queue, 3 partitions)
+  #   - Acts as shock absorber for 4 Lakh+ device burst traffic
+  #   - Splits flow to Processor (batch) and Analytics (fast path)
+  # ===========================================================================
+
+  # TODO: Nandini - Implement Kafka broker configuration
+  # atlas-broker:
+  #   image: bitnami/kafka:3.6
+  #   container_name: atlas-broker
+  #   hostname: broker
+  #   ports:
+  #     - "9092:9092"     # Client connections
+  #     - "9093:9093"     # Controller
+  #     - "9094:9094"     # External access
+  #   environment:
+  #     # KRaft Mode Configuration (Single Node)
+  #     - KAFKA_CFG_NODE_ID=1
+  #     - KAFKA_CFG_PROCESS_ROLES=controller,broker
+  #     - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker:9093
+  #     - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster
+  #     # Listener Configuration
+  #     - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+  #     - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker:9092,EXTERNAL://localhost:9094
+  #     - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+  #     - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+  #     - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+  #     # Topic Defaults
+  #     - KAFKA_CFG_NUM_PARTITIONS=12
+  #     - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
+  #     - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+  #     # Performance Tuning for High Throughput
+  #     - KAFKA_CFG_LOG_RETENTION_HOURS=168
+  #     - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
+  #     - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
+  #   volumes:
+  #     - kafka-data:/bitnami/kafka
+  #   networks:
+  #     - atlas-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 30s
+
+  # # Kafka Topic Initialization (runs once)
+  # kafka-init:
+  #   image: bitnami/kafka:3.6
+  #   container_name: atlas-kafka-init
+  #   depends_on:
+  #     atlas-broker:
+  #       condition: service_healthy
+  #   networks:
+  #     - atlas-network
+  #   restart: "no"
+  #   command: >
+  #     bash -c "
+  #       echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+  #       echo '  ATLAS Broker - Topic Initialization' &&
+  #       echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+  #       echo '' &&
+  #       echo '[1/3] Creating raw-server-metrics (12 partitions)...' &&
+  #       kafka-topics.sh --bootstrap-server broker:9092 --create --if-not-exists \
+  #         --topic raw-server-metrics --partitions 12 --replication-factor 1 &&
+  #       echo '[2/3] Creating raw-server-metrics-dlq (3 partitions)...' &&
+  #       kafka-topics.sh --bootstrap-server broker:9092 --create --if-not-exists \
+  #         --topic raw-server-metrics-dlq --partitions 3 --replication-factor 1 &&
+  #       echo '[3/3] Verifying topics...' &&
+  #       kafka-topics.sh --bootstrap-server broker:9092 --list &&
+  #       echo '' &&
+  #       echo '✓ Broker initialization complete!' &&
+  #       echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  #     "
+
+  # ===========================================================================
+  # CONTAINER 3: THE PROCESSOR (atlas-processor)
+  # ===========================================================================
+  # Technology: Apache Spark (PySpark)
+  # Role: Heavy Compute Engine
+  #
+  # Responsibilities:
+  #   - Consumes raw JSON from Broker
+  #   - Runs .explode() to flatten nested PowerDetail arrays
+  #   - Executes 1-hour tumbling window aggregation by device_id
+  #   - Maintains checkpointing for fault tolerance
+  # ===========================================================================
+
+  # TODO: Sanjula - Implement Spark Structured Streaming job
+  # atlas-processor:
+  #   image: apache/spark:3.5.0-python3
+  #   container_name: atlas-processor
+  #   hostname: processor
+  #   ports:
+  #     - "4040:4040"   # Spark Application UI
+  #     - "8080:8080"   # Spark Master UI
+  #   environment:
+  #     - SPARK_MODE=master
+  #     - SPARK_MASTER_HOST=processor
+  #     - SPARK_DRIVER_MEMORY=4g
+  #     - SPARK_EXECUTOR_MEMORY=4g
+  #     - KAFKA_BOOTSTRAP_SERVERS=broker:9092
+  #     - KAFKA_TOPIC=raw-server-metrics
+  #     - CHECKPOINT_DIR=/app/checkpoint
+  #   volumes:
+  #     - ./processing/jobs:/app/jobs:ro
+  #     - ./schema:/app/schema:ro
+  #     - spark-checkpoint:/app/checkpoint
+  #     - raw-telemetry:/app/data/raw:ro
+  #     - delta-refined:/app/data/processed
+  #   networks:
+  #     - atlas-network
+  #   depends_on:
+  #     atlas-broker:
+  #       condition: service_healthy
+  #   command: >
+  #     bash -c "
+  #       pip install delta-spark==3.1.0 kafka-python-ng &&
+  #       spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,io.delta:delta-spark_2.12:3.1.0 \
+  #         /app/jobs/streaming_processor.py
+  #     "
+
+  # ===========================================================================
+  # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
+  # ===========================================================================
+  # Technology: PySpark + Delta Lake (delta-spark)
+  # Role: Refined Storage & Deduplication Engine (Source of Truth)
+  #
+  # Responsibilities:
+  #   - Takes Processor's 1-hour aggregated data
+  #   - Runs ACID MERGE operation for deduplication
+  #   - Uses triple-hash Composite Key: device_id + metric_time + application_customer_id
+  #   - Writes clean Parquet to 5-level directory: /refined/metric_name/date/pcid/acid/device_id/
+  #   - Runs OPTIMIZE for storage compaction
+  # ===========================================================================
+
+  atlas-lakehouse:
+    build:
+      context: ./delta_lake
+      dockerfile: Dockerfile
+      network: host
+    container_name: atlas-lakehouse
+    hostname: lakehouse
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      # Mount local data folder to see Delta Lake logs on host
+      - ./delta_lake/data:/app/data
+      # Mount scripts for live editing
+      - ./delta_lake/generate_data.py:/app/generate_data.py
+      - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
+      # Schema reference
+      - ./schema:/app/schema:ro
+    environment:
+      - SPARK_MODE=client
+      - SPARK_DRIVER_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=2g
+    working_dir: /app
+    networks:
+      - atlas-network
+    stdin_open: true
+    tty: true
+    command: >
+      bash -c "
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '  ATLAS Lakehouse - Delta Lake Deduplication Engine' &&
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '' &&
+        echo 'Step 1: Generating test data...' &&
+        python3 generate_data.py &&
+        echo '' &&
+        echo 'Step 2: Running deduplication pipeline...' &&
+        python3 delta_merge_pipeline.py
+      "
+
+  # ===========================================================================
+  # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
+  # ===========================================================================
+  # Technology: ClickHouse (Primary) + PostgreSQL (Metadata)
+  # Role: Dashboard Engine
+  #
+  # Responsibilities:
+  #   - ClickHouse: Fast analytical queries on telemetry data
+  #   - PostgreSQL: Metadata storage (device registry, locations)
+  #   - Slow Path: Python scheduler reads clean Parquet from Lakehouse
+  #   - Daily Materialized Views for validation against Processor's hourly math
+  # ===========================================================================
+
+  # TODO: Varna - Implement ClickHouse analytics
+  # atlas-analytics:
+  #   image: clickhouse/clickhouse-server:24.1
+  #   container_name: atlas-analytics
+  #   hostname: analytics
+  #   ports:
+  #     - "8123:8123"   # HTTP interface (queries, dashboards)
+  #     - "9000:9000"   # Native TCP interface (high-performance)
+  #   environment:
+  #     - CLICKHOUSE_USER=atlas
+  #     - CLICKHOUSE_PASSWORD=atlas_secure_pwd
+  #     - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+  #   volumes:
+  #     - clickhouse-data:/var/lib/clickhouse
+  #     - ./storage/clickhouse:/docker-entrypoint-initdb.d:ro
+  #     - delta-refined:/var/lib/clickhouse/user_files/refined:ro
+  #   networks:
+  #     - atlas-network
+  #   ulimits:
+  #     nofile:
+  #       soft: 262144
+  #       hard: 262144
+  #   healthcheck:
+  #     test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # # PostgreSQL - Metadata Store (Part of Analytics Domain)
+  # analytics-db:
+  #   image: postgres:16-alpine
+  #   container_name: atlas-analytics-db
+  #   hostname: analytics-db
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     - POSTGRES_USER=atlas
+  #     - POSTGRES_PASSWORD=atlas_secure_pwd
+  #     - POSTGRES_DB=atlas_metadata
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #     - ./storage/postgres:/docker-entrypoint-initdb.d:ro
+  #   networks:
+  #     - atlas-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_metadata"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # ===========================================================================
+  # DEVELOPMENT & MONITORING TOOLS (Optional)
+  # ===========================================================================
+
+  # # Kafka UI - Message monitoring and topic management
+  # kafka-ui:
+  #   image: provectuslabs/kafka-ui:latest
+  #   container_name: atlas-kafka-ui
+  #   hostname: kafka-ui
+  #   ports:
+  #     - "8090:8080"
+  #   environment:
+  #     - KAFKA_CLUSTERS_0_NAME=atlas-cluster
+  #     - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=broker:9092
+  #   networks:
+  #     - atlas-network
+  #   depends_on:
+  #     atlas-broker:
+  #       condition: service_healthy
+  #   profiles:
+  #     - dev
+
+  # Jupyter Notebook - Interactive development (uses Lakehouse image)
+  jupyter:
+    build:
+      context: ./delta_lake
+      dockerfile: Dockerfile
+    container_name: atlas-jupyter
+    hostname: jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./delta_lake/data:/app/data
+      - ./delta_lake:/app/notebooks
+      - ./schema:/app/schema:ro
+    environment:
+      - SPARK_DRIVER_MEMORY=2g
+    working_dir: /app
+    networks:
+      - atlas-network
+    command: >
+      bash -c "
+        pip install jupyter &&
+        jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
+      "
+    profiles:
+      - jupyter

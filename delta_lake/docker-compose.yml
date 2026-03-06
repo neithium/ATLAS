@@ -1,0 +1,62 @@
+# ATLAS Delta Lake Module - Docker Compose
+# Spark container for Delta Lake deduplication testing
+
+services:
+  spark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+    container_name: atlas-delta-lake
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      # Mount local data folder to see Delta Lake logs on host
+      - ./data:/app/data
+      # Mount scripts for live editing (optional)
+      - ./generate_data.py:/app/generate_data.py
+      - ./delta_merge_pipeline.py:/app/delta_merge_pipeline.py
+    environment:
+      - SPARK_MODE=client
+      - SPARK_DRIVER_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=2g
+    working_dir: /app
+    # Keep container running for interactive use
+    stdin_open: true
+    tty: true
+    # Default command runs the deduplication pipeline
+    command: >
+      bash -c "
+        echo '============================================' &&
+        echo '  ATLAS - Delta Lake Deduplication Module' &&
+        echo '============================================' &&
+        echo '' &&
+        echo 'Step 1: Generating test data...' &&
+        python3 generate_data.py &&
+        echo '' &&
+        echo 'Step 2: Running deduplication pipeline...' &&
+        python3 delta_merge_pipeline.py
+      "
+
+  # Optional: Jupyter notebook for interactive exploration
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atlas-delta-jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/app/data
+      - ./:/app/notebooks
+    environment:
+      - SPARK_DRIVER_MEMORY=2g
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install jupyter &&
+        jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
+      "
+    profiles:
+      - jupyter  # Only start with: docker-compose --profile jupyter up
