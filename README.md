@@ -130,7 +130,7 @@ Two analytical databases consume the clean data:
 # Technology Stack
 
 | Component | Technology |
-|   |   |
+| --- | --- |
 | Orchestration | Apache Airflow / Docker |
 | Streaming Broker | Apache Kafka (KRaft) |
 | Data Processing | Apache Spark (PySpark) |
@@ -144,13 +144,12 @@ Two analytical databases consume the clean data:
 # Team Responsibilities
 
 | Member | Core Domain |
-|   |   |
+| --- | --- |
 | **Jnana** | Telemetry simulation, API generation, Buffer logic |
 | **Nandini** | Kafka cluster (KRaft), Partitioning, DLQ architecture |
 | **Sanjula** | PySpark Aggregations, JSON flattening, Checkpointing |
 | **Manthan** | Delta Lake ACID architecture, Deep Partitioning, `MERGE` |
 | **Varna** | ClickHouse Engine, Materialized Views, Dashboards |
-
-```
+ 
  
  
