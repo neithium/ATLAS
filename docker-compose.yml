@@ -177,38 +177,37 @@ services:
   # ===========================================================================
 
   # TODO: Sanjula - Implement Spark Structured Streaming job
-  # atlas-processor:
-  #   image: apache/spark:3.5.0-python3
-  #   container_name: atlas-processor
-  #   hostname: processor
-  #   ports:
-  #     - "4040:4040"   # Spark Application UI
-  #     - "8080:8080"   # Spark Master UI
-  #   environment:
-  #     - SPARK_MODE=master
-  #     - SPARK_MASTER_HOST=processor
-  #     - SPARK_DRIVER_MEMORY=4g
-  #     - SPARK_EXECUTOR_MEMORY=4g
-  #     - KAFKA_BOOTSTRAP_SERVERS=broker:9092
-  #     - KAFKA_TOPIC=raw-server-metrics
-  #     - CHECKPOINT_DIR=/app/checkpoint
-  #   volumes:
-  #     - ./processing/jobs:/app/jobs:ro
-  #     - ./schema:/app/schema:ro
-  #     - spark-checkpoint:/app/checkpoint
-  #     - raw-telemetry:/app/data/raw:ro
-  #     - delta-refined:/app/data/processed
-  #   networks:
-  #     - atlas-network
-  #   depends_on:
-  #     atlas-broker:
-  #       condition: service_healthy
-  #   command: >
-  #     bash -c "
-  #       pip install delta-spark==3.1.0 kafka-python-ng &&
-  #       spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,io.delta:delta-spark_2.12:3.1.0 \
-  #         /app/jobs/streaming_processor.py
-  #     "
+  atlas-processor:
+    build:
+      context: ./processing
+      dockerfile: docker/Dockerfile
+
+    container_name: atlas-processor
+    hostname: processor
+
+    ports:
+      - "4040:4040"
+
+    environment:
+      - SPARK_MODE=driver
+      - SPARK_DRIVER_MEMORY=4g
+      - SPARK_EXECUTOR_MEMORY=4g
+
+    volumes:
+      - ./processing/jobs:/app/jobs
+      - ./schema:/app/schema:ro
+      - spark-checkpoint:/app/checkpoint
+      - raw-telemetry:/app/data/raw:ro
+      - delta-refined:/app/data/processed
+
+    networks:
+      - atlas-network
+
+    command: >
+      spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/streaming_processor.py
+
+
+
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
