@@ -1,228 +1,316 @@
 """
-ATLAS Delta Lake Module - Test Data Generator
-Generates FLATTENED Parquet files simulating pre-processed telemetry data for testing.
+ATLAS Delta Lake Module - Mock Telemetry Data Generator
 
-This simulates data that has ALREADY been processed by the ATLAS Processing Layer (Sanjula):
-- Data is already exploded (one row per reading)
-- Aggregates (min, max, avg) are pre-computed
-- Data matches the project output_schema format (../schema/output_schema.py)
+Primary mode (benchmark):
+- Generates scale-test data for up to 100,000 devices (or more)
+- Memory-safe iterative writes in batches (default 10,000 devices/batch)
+- 7 days at 5-minute cadence (2,016 rows/device)
+- Output schema:
+  device_id (string), metric_time (timestamp), application_customer_id (string),
+  platform_customer_id (string), report_type (string), partition_date (date),
+  MetricValue (double)
+- Writes partitioned Parquet store at: /raw/benchmark_data/ (partitioned by partition_date)
 
-File 1 (Baseline): 2016 flattened rows (7 days of 5-min intervals)
-File 2 (Overlap): 2016 flattened rows with 1728 overlapping + 288 new timestamps
+Compatibility mode (legacy):
+- Generates file1_baseline.parquet and file2_overlap.parquet for existing merge demo.
 """
 
-import os
-import json
-import random
-import time
 from datetime import datetime, timedelta
+import argparse
+import math
+import time
+
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (
-    StructType, StructField, StringType, DoubleType, BooleanType,
-    IntegerType
+from pyspark.sql.functions import (
+    array,
+    broadcast,
+    col,
+    dayofyear,
+    element_at,
+    explode,
+    floor,
+    format_string,
+    expr,
+    hour,
+    lit,
+    minute,
+    pmod,
+    sequence,
+    sin,
+    to_date,
+    to_timestamp,
 )
 
-# Output schema  
-flattened_schema = StructType([
-    StructField("report_id", StringType(), True),
-    StructField("device_id", StringType(), True),
-    StructField("application_customer_id", StringType(), True),
-    StructField("platform_customer_id", StringType(), True),
-    StructField("status", BooleanType(), True),
-    StructField("report_type", StringType(), True),
-    StructField("error_reason", StringType(), True),
-    StructField("MetricValue", DoubleType(), True),
-    StructField("model", StringType(), True),
-    StructField("tags", StringType(), True),
-    StructField("location_state", StringType(), True),
-    StructField("location_country", StringType(), True),
-    StructField("processor_vendor", StringType(), True),
-    StructField("server_generation", StringType(), True),
-    StructField("location_id", StringType(), True),
-    StructField("location_name", StringType(), True),
-    StructField("location_city", StringType(), True),
-    StructField("server_name", StringType(), True),
-    StructField("metric_id", StringType(), True),
-    StructField("cpu_inventory", StringType(), True),
-    StructField("memory_inventory", StringType(), True),
-    StructField("pcie_devices_count", IntegerType(), True),
-    StructField("socket_count", IntegerType(), True),
-    StructField("avg_metric_value", DoubleType(), True),
-    StructField("max_metric_value", DoubleType(), True),
-    StructField("min_metric_value", DoubleType(), True),
-    StructField("metric_time", StringType(), True),
-    StructField("datetime", DoubleType(), True),
-    StructField("timeRangeEnd", DoubleType(), True),
-    StructField("amb_temp", DoubleType(), True),
-    StructField("Insertiontime", DoubleType(), True),
-    StructField("co2_factor", DoubleType(), True),
-    StructField("energy_cost_factor", DoubleType(), True),
-    StructField("max_metric_time", StringType(), True),
-    StructField("location_date", StringType(), True),
-    StructField("inventory_date", StringType(), True)
-])
+
+def create_spark_session() -> SparkSession:
+    """Create Spark session tuned for container-constrained generation."""
+    spark = (
+        SparkSession.builder.appName("ATLAS-Benchmark-DataGenerator")
+        .master("local[*]")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "false")
+        .config("spark.sql.parquet.compression.codec", "snappy")
+        .getOrCreate()
+    )
+    spark.sparkContext.setLogLevel("WARN")
+    return spark
 
 
-def generate_flattened_rows(device_id: str, report_id: str, start_time: datetime, num_readings: int) -> list:
+def build_metric_profile(spark: SparkSession):
     """
-    Generate FLATTENED telemetry rows (already processed/exploded format).
-    Each row represents one 5-minute reading - no nested arrays.
+    Create a reusable 288-point daily profile (5-min slots) to reduce CPU load.
+
+    Instead of generating a random value for every single row, we precompute one
+    daily profile and reuse it across all 7 days and all batches with small
+    deterministic adjustments.
     """
-    rows = []
-    current_time = start_time
-    insertion_time = time.time()
-    
-    # Pre-compute aggregates for the batch (simulating upstream calculation)
-    all_values = [round(random.uniform(150.0, 400.0), 2) for _ in range(num_readings)]
-    avg_metric = round(sum(all_values) / len(all_values), 2)
-    max_metric = max(all_values)
-    min_metric = min(all_values)
-    
-    for i in range(num_readings):
-        metric_time_str = current_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        metric_timestamp = current_time.timestamp()
-        
-        row = {
-            "report_id": report_id,
-            "device_id": device_id,
-            "application_customer_id": "APP-67890",
-            "platform_customer_id": "PLAT-12345",
-            "status": True,
-            "report_type": "power_metrics",
-            "error_reason": None,
-            "MetricValue": all_values[i],
-            "model": "PowerEdge R750",
-            "tags": json.dumps({"environment": "production", "rack": "A1"}),
-            "location_state": "Texas",
-            "location_country": "USA",
-            "processor_vendor": "Intel",
-            "server_generation": "Gen15",
-            "location_id": "LOC-001",
-            "location_name": "Austin Data Center",
-            "location_city": "Austin",
-            "server_name": f"server-{device_id}",
-            "metric_id": "power",
-            "cpu_inventory": "2",
-            "memory_inventory": "DDR4-64GB",
-            "pcie_devices_count": 4,
-            "socket_count": 2,
-            "avg_metric_value": avg_metric,
-            "max_metric_value": max_metric,
-            "min_metric_value": min_metric,
-            "metric_time": metric_time_str,
-            "datetime": metric_timestamp,
-            "timeRangeEnd": metric_timestamp + 300,  # 5 minutes later
-            "amb_temp": round(random.uniform(20.0, 35.0), 2),
-            "Insertiontime": insertion_time,
-            "co2_factor": 0.5,
-            "energy_cost_factor": 0.12,
-            "max_metric_time": metric_time_str,
-            "location_date": current_time.strftime("%Y-%m-%d"),
-            "inventory_date": current_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        }
-        rows.append(row)
-        current_time += timedelta(minutes=5)
-    
-    return rows
+    return (
+        spark.range(288)
+        .withColumnRenamed("id", "slot_index")
+        .withColumn(
+            "base_metric",
+            (lit(220.0) + lit(45.0) * sin(col("slot_index") / lit(14.0)) + (pmod(col("slot_index"), lit(17)) * lit(0.85))).cast("double"),
+        )
+    )
+
+
+def build_device_batch_df(
+    spark: SparkSession,
+    batch_start: int,
+    batch_end: int,
+    start_ts: str,
+    end_ts: str,
+    profile_df,
+):
+    """Build one batch DataFrame using range + explode(sequence)."""
+    device_df = (
+        spark.range(batch_start, batch_end)
+        .withColumnRenamed("id", "device_num")
+        .withColumn("device_id", format_string("SRV-%06d", col("device_num") + lit(1)))
+        .withColumn(
+            "application_customer_id",
+            element_at(
+                array(
+                    lit("APP-001"),
+                    lit("APP-017"),
+                    lit("APP-113"),
+                    lit("APP-226"),
+                    lit("APP-67890"),
+                ),
+                (pmod(col("device_num"), lit(5)) + lit(1)).cast("int"),
+            ),
+        )
+        .withColumn(
+            "platform_customer_id",
+            element_at(
+                array(
+                    lit("PLAT-001"),
+                    lit("PLAT-021"),
+                    lit("PLAT-101"),
+                    lit("PLAT-12345"),
+                    lit("PLAT-907"),
+                ),
+                (pmod(col("device_num"), lit(5)) + lit(1)).cast("int"),
+            ),
+        )
+        .withColumn(
+            "report_type",
+            element_at(
+                array(
+                    lit("power_metrics"),
+                    lit("thermal_metrics"),
+                    lit("cpu_metrics"),
+                    lit("sustainability_metrics"),
+                ),
+                (pmod(col("device_num"), lit(4)) + lit(1)).cast("int"),
+            ),
+        )
+    )
+
+    time_df = spark.range(1).select(
+        explode(
+            sequence(
+                to_timestamp(lit(start_ts)),
+                to_timestamp(lit(end_ts)),
+                expr("INTERVAL 5 MINUTES"),
+            )
+        ).alias("metric_time")
+    )
+
+    # Cartesian expansion done per batch only (bounded), avoiding OOM from a giant global join.
+    expanded_df = device_df.crossJoin(time_df)
+
+    slot_index_expr = (hour(col("metric_time")) * lit(12) + floor(minute(col("metric_time")) / lit(5))).cast("long")
+
+    # Broadcast tiny 288-row profile and add deterministic per-device/day variation.
+    with_values_df = (
+        expanded_df.withColumn("slot_index", slot_index_expr)
+        .join(broadcast(profile_df), on="slot_index", how="left")
+        .withColumn(
+            "MetricValue",
+            (
+                col("base_metric")
+                + (pmod(col("device_num"), lit(19)) * lit(0.22))
+                + (pmod(dayofyear(col("metric_time")), lit(7)) * lit(0.31))
+            ).cast("double"),
+        )
+        .withColumn("partition_date", to_date(col("metric_time")))
+    )
+
+    return with_values_df.select(
+        "device_id",
+        "metric_time",
+        "application_customer_id",
+        "platform_customer_id",
+        "report_type",
+        "partition_date",
+        "MetricValue",
+    )
+
+
+def generate_benchmark_data(
+    spark: SparkSession,
+    output_root: str,
+    total_devices: int,
+    batch_size: int,
+    start_time: datetime,
+):
+    """Generate benchmark data iteratively and append in chunks."""
+    output_path = f"{output_root.rstrip('/')}/benchmark_data"
+    end_time = start_time + timedelta(days=7) - timedelta(minutes=5)
+
+    start_ts = start_time.strftime("%Y-%m-%d %H:%M:%S")
+    end_ts = end_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    rows_per_device = (7 * 24 * 60) // 5
+    expected_total_rows = rows_per_device * total_devices
+
+    print("=" * 80)
+    print("ATLAS Benchmark Generator")
+    print("=" * 80)
+    print(f"Output path:           {output_path}")
+    print(f"Total devices:         {total_devices:,}")
+    print(f"Batch size:            {batch_size:,}")
+    print(f"Rows per device:       {rows_per_device:,}")
+    print(f"Expected total rows:   {expected_total_rows:,}")
+    print(f"Time window:           {start_ts} -> {end_ts}")
+    print("Schema:                device_id, metric_time, application_customer_id,")
+    print("                      platform_customer_id, report_type, partition_date, MetricValue")
+
+    pipeline_start = time.perf_counter()
+    profile_df = build_metric_profile(spark)
+
+    batch_count = int(math.ceil(total_devices / batch_size))
+
+    for batch_idx, batch_start in enumerate(range(0, total_devices, batch_size), start=1):
+        batch_end = min(batch_start + batch_size, total_devices)
+        current_batch_size = batch_end - batch_start
+        mode = "overwrite" if batch_idx == 1 else "append"
+
+        batch_timer = time.perf_counter()
+        print("\n" + "-" * 80)
+        print(f"Batch {batch_idx}/{batch_count}: devices {batch_start + 1:,}..{batch_end:,}")
+        print("-" * 80)
+
+        batch_df = build_device_batch_df(
+            spark=spark,
+            batch_start=batch_start,
+            batch_end=batch_end,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            profile_df=profile_df,
+        )
+
+        # Keep output file sizes sane and partition writes by date.
+        (
+            batch_df.repartition(14, col("partition_date"))
+            .write.mode(mode)
+            .option("compression", "snappy")
+            .partitionBy("partition_date")
+            .parquet(output_path)
+        )
+
+        rows_written = current_batch_size * rows_per_device
+        elapsed = time.perf_counter() - batch_timer
+        print(f"Batch rows written:    {rows_written:,}")
+        print(f"Batch elapsed:         {elapsed:.2f}s")
+
+    total_elapsed = time.perf_counter() - pipeline_start
+
+    print("\n" + "=" * 80)
+    print("Benchmark Generation Complete")
+    print("=" * 80)
+    print(f"Output path:           {output_path}")
+    print(f"Expected total rows:   {expected_total_rows:,}")
+    print(f"Total elapsed:         {total_elapsed:.2f}s")
+    print("=" * 80)
+
+
+def generate_legacy_demo_data(spark: SparkSession, output_root: str):
+    """Compatibility mode for existing merge demo pipeline input layout."""
+    output_root = output_root.rstrip("/")
+    benchmark_root = f"{output_root}/legacy_tmp"
+
+    baseline_start = datetime(2026, 2, 26, 0, 0, 0)
+    overlap_start = baseline_start + timedelta(days=1)
+
+    profile_df = build_metric_profile(spark)
+
+    # One-device, 7-day baseline and overlap datasets to preserve old demo behavior.
+    df1 = build_device_batch_df(
+        spark=spark,
+        batch_start=100,
+        batch_end=101,
+        start_ts=baseline_start.strftime("%Y-%m-%d %H:%M:%S"),
+        end_ts=(baseline_start + timedelta(days=7) - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S"),
+        profile_df=profile_df,
+    )
+    df2 = build_device_batch_df(
+        spark=spark,
+        batch_start=100,
+        batch_end=101,
+        start_ts=overlap_start.strftime("%Y-%m-%d %H:%M:%S"),
+        end_ts=(overlap_start + timedelta(days=7) - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S"),
+        profile_df=profile_df,
+    )
+
+    df1.write.mode("overwrite").parquet(f"{output_root}/file1_baseline.parquet")
+    df2.write.mode("overwrite").parquet(f"{output_root}/file2_overlap.parquet")
+
+    print("\nLegacy demo files generated:")
+    print(f"- {output_root}/file1_baseline.parquet")
+    print(f"- {output_root}/file2_overlap.parquet")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=str, default="/raw", help="Root output directory")
+    parser.add_argument("--mode", type=str, choices=["benchmark", "legacy"], default="benchmark")
+    parser.add_argument("--devices", type=int, default=100000)
+    parser.add_argument("--batch-size", type=int, default=10000)
+    parser.add_argument("--start-time", type=str, default="2026-03-01 00:00:00")
+    return parser.parse_args()
 
 
 def main():
-    print("=" * 60)
-    print("Delta Lake MERGE Demo - Flattened Data Generator")
-    print("=" * 60)
-    print("\n📋 Generating PRE-PROCESSED (flattened) telemetry data")
-    print("   This simulates data already transformed by upstream pipeline")
-    
-    # Initialize Spark
-    spark = SparkSession.builder \
-        .appName("FlattenedDataGenerator") \
-        .master("local[*]") \
-        .getOrCreate()
-    
-    spark.sparkContext.setLogLevel("WARN")
-    
-    # Create output directory
-    output_dir = "/app/data/raw"
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # ========================================
-    # FILE 1: Baseline (7 days = 2016 rows, already flattened)
-    # ========================================
-    print("\n[1/2] Generating File 1 (Baseline - Flattened)...")
-    
-    # Start time: 7 days ago
-    baseline_start = datetime(2026, 2, 26, 0, 0, 0)
-    
-    # Generate 2016 FLATTENED rows (one row per reading)
-    rows_file1 = generate_flattened_rows("SRV-101", "RPT-001", baseline_start, 2016)
-    
-    df1 = spark.createDataFrame(rows_file1, schema=flattened_schema)
-    df1.write.mode("overwrite").parquet(f"{output_dir}/file1_baseline.parquet")
-    
-    print(f"   ✓ Created: {output_dir}/file1_baseline.parquet")
-    print(f"   ✓ Device ID: SRV-101")
-    print(f"   ✓ Flattened rows: {len(rows_file1)}")
-    print(f"   ✓ Time range: {rows_file1[0]['metric_time']} to {rows_file1[-1]['metric_time']}")
-    
-    # ========================================
-    # FILE 2: Overlap (1728 overlap + 288 new, already flattened)
-    # ========================================
-    print("\n[2/2] Generating File 2 (Overlap - Flattened)...")
-    
-    # File 2 starts 1 day after File 1 starts (6 days overlap)
-    overlap_start = baseline_start + timedelta(days=1)
-    
-    # Generate 2016 FLATTENED rows
-    rows_file2 = generate_flattened_rows("SRV-101", "RPT-002", overlap_start, 2016)
-    
-    df2 = spark.createDataFrame(rows_file2, schema=flattened_schema)
-    df2.write.mode("overwrite").parquet(f"{output_dir}/file2_overlap.parquet")
-    
-    print(f"   ✓ Created: {output_dir}/file2_overlap.parquet")
-    print(f"   ✓ Device ID: SRV-101")
-    print(f"   ✓ Flattened rows: {len(rows_file2)}")
-    print(f"   ✓ Time range: {rows_file2[0]['metric_time']} to {rows_file2[-1]['metric_time']}")
-    
-    # ========================================
-    # VERIFICATION
-    # ========================================
-    print("\n" + "=" * 60)
-    print("OVERLAP ANALYSIS")
-    print("=" * 60)
-    
-    # Calculate overlapping timestamps
-    file1_timestamps = set(r["metric_time"] for r in rows_file1)
-    file2_timestamps = set(r["metric_time"] for r in rows_file2)
-    
-    overlap_count = len(file1_timestamps & file2_timestamps)
-    unique_file1 = len(file1_timestamps - file2_timestamps)
-    unique_file2 = len(file2_timestamps - file1_timestamps)
-    
-    print(f"   File 1 unique timestamps: {unique_file1} (Day 1 only)")
-    print(f"   File 2 unique timestamps: {unique_file2} (Day 8 only)")
-    print(f"   Overlapping timestamps:   {overlap_count} (Days 2-7)")
-    print(f"\n   Expected after MERGE:")
-    print(f"   - File 1 total:    {len(rows_file1)} rows")
-    print(f"   - New from File 2: {unique_file2} rows")
-    print(f"   - Final count:     {len(rows_file1) + unique_file2} rows")
-    print(f"   - Duplicates dropped: {overlap_count}")
-    
-    # Show sample data structure
-    print("\n" + "=" * 60)
-    print("SAMPLE DATA STRUCTURE (First row)")
-    print("=" * 60)
-    sample = rows_file1[0]
-    key_fields = ["device_id", "metric_time", "MetricValue", "amb_temp", 
-                  "avg_metric_value", "max_metric_value", "min_metric_value"]
-    for field in key_fields:
-        print(f"   {field}: {sample[field]}")
-    
-    print("\n" + "=" * 60)
-    print("Data generation complete!")
-    print("Input files are ALREADY FLATTENED (no nested arrays)")
-    print("=" * 60)
-    
-    spark.stop()
+    args = parse_args()
+    spark = create_spark_session()
+
+    try:
+        start_dt = datetime.strptime(args.start_time, "%Y-%m-%d %H:%M:%S")
+
+        if args.mode == "benchmark":
+            generate_benchmark_data(
+                spark=spark,
+                output_root=args.output,
+                total_devices=args.devices,
+                batch_size=args.batch_size,
+                start_time=start_dt,
+            )
+        else:
+            generate_legacy_demo_data(spark=spark, output_root=args.output)
+    finally:
+        spark.stop()
 
 
 if __name__ == "__main__":

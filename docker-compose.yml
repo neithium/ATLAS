@@ -35,6 +35,9 @@ volumes:
   spark-checkpoint:
   delta-refined:
   raw-telemetry:
+  # Shared volumes for Lakehouse module
+  raw-volume:
+  refined-volume:
 
 services:
 
@@ -234,6 +237,9 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
+      # Shared volumes for inter-container data flow
+      - raw-volume:/raw
+      - refined-volume:/refined
       # Mount local data folder to see Delta Lake logs on host
       - ./delta_lake/data:/app/data
       # Mount scripts for live editing
@@ -245,22 +251,48 @@ services:
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=2g
+      # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
+      - RUN_GENERATOR=${RUN_GENERATOR:-n}           # y = run generator, n = skip
+      - GENERATOR_MODE=${GENERATOR_MODE:-benchmark} # benchmark | legacy
+      - DEVICE_COUNT=${DEVICE_COUNT:-100000}        # Number of devices for benchmark
+      - BATCH_SIZE=${BATCH_SIZE:-10000}             # Batch size for memory management
+      - RUN_PIPELINE=${RUN_PIPELINE:-n}             # y = run pipeline, n = skip
     working_dir: /app
     networks:
       - atlas-network
-    stdin_open: true
-    tty: true
     command: >
       bash -c "
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
         echo '  ATLAS Lakehouse - Delta Lake Deduplication Engine' &&
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
         echo '' &&
-        echo 'Step 1: Generating test data...' &&
-        python3 generate_data.py &&
+        echo 'Configuration:' &&
+        echo \"  RUN_GENERATOR=$$RUN_GENERATOR\" &&
+        echo \"  GENERATOR_MODE=$$GENERATOR_MODE\" &&
+        echo \"  DEVICE_COUNT=$$DEVICE_COUNT\" &&
+        echo \"  BATCH_SIZE=$$BATCH_SIZE\" &&
+        echo \"  RUN_PIPELINE=$$RUN_PIPELINE\" &&
         echo '' &&
-        echo 'Step 2: Running deduplication pipeline...' &&
-        python3 delta_merge_pipeline.py
+        if [ \"$$RUN_GENERATOR\" = 'y' ] || [ \"$$RUN_GENERATOR\" = 'Y' ]; then
+          if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
+            echo '[1/2] Generating legacy merge-demo input under /raw ...' &&
+            python3 generate_data.py --mode legacy --output /raw;
+          else
+            echo '[1/2] Generating benchmark data under /raw/benchmark_data ...' &&
+            python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE;
+          fi;
+        else
+          echo \"[1/2] Skipping generator (RUN_GENERATOR=$$RUN_GENERATOR)\";
+        fi &&
+        echo '' &&
+        if [ \"$$RUN_PIPELINE\" = 'y' ] || [ \"$$RUN_PIPELINE\" = 'Y' ]; then
+          echo '[2/2] Running deduplication pipeline...' &&
+          python3 delta_merge_pipeline.py --input /raw --output /refined;
+        else
+          echo \"[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
+        fi &&
+        echo '' &&
+        echo 'Done!'
       "
 
   # ===========================================================================
@@ -358,6 +390,8 @@ services:
     ports:
       - "8888:8888"
     volumes:
+      - raw-volume:/raw
+      - refined-volume:/refined
       - ./delta_lake/data:/app/data
       - ./delta_lake:/app/notebooks
       - ./schema:/app/schema:ro
