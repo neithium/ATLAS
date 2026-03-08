@@ -1,0 +1,78 @@
+# docker-compose.yml - Scale the Power Monitor API
+# Run with: docker-compose up --build
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  api:
+    build: .
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MOCK_IPMI=true
+      - DEVICE_GROUP=group-a
+      - ENABLE_POLLER=true
+    ports:
+      - "8001:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  api2:
+    build: .
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MOCK_IPMI=true
+      - DEVICE_GROUP=group-b
+      - ENABLE_POLLER=false
+    ports:
+      - "8002:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  api3:
+    build: .
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MOCK_IPMI=true
+      - DEVICE_GROUP=group-c
+      - ENABLE_POLLER=false
+    ports:
+      - "8003:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api
+      - api2
+      - api3
+
+volumes:
+  redis_data:
