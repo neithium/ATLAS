@@ -309,54 +309,98 @@ services:
   # ===========================================================================
 
   # TODO: Varna - Implement ClickHouse analytics
-  # atlas-analytics:
-  #   image: clickhouse/clickhouse-server:24.1
-  #   container_name: atlas-analytics
-  #   hostname: analytics
-  #   ports:
-  #     - "8123:8123"   # HTTP interface (queries, dashboards)
-  #     - "9000:9000"   # Native TCP interface (high-performance)
-  #   environment:
-  #     - CLICKHOUSE_USER=atlas
-  #     - CLICKHOUSE_PASSWORD=atlas_secure_pwd
-  #     - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-  #   volumes:
-  #     - clickhouse-data:/var/lib/clickhouse
-  #     - ./storage/clickhouse:/docker-entrypoint-initdb.d:ro
-  #     - delta-refined:/var/lib/clickhouse/user_files/refined:ro
-  #   networks:
-  #     - atlas-network
-  #   ulimits:
-  #     nofile:
-  #       soft: 262144
-  #       hard: 262144
-  #   healthcheck:
-  #     test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  atlas-analytics:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: atlas-analytics
+    hostname: analytics
+    ports:
+      - "8123:8123"   # HTTP interface (queries, dashboards)
+      - "9000:9000"   # Native TCP interface (high-performance)
+    environment:
+      - CLICKHOUSE_USER=atlas
+      - CLICKHOUSE_PASSWORD=atlas_secure_pwd
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./storage/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./delta_lake/data/refined:/opt/refined-data:ro
+    networks:
+      - atlas-network
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # # PostgreSQL - Metadata Store (Part of Analytics Domain)
-  # analytics-db:
-  #   image: postgres:16-alpine
-  #   container_name: atlas-analytics-db
-  #   hostname: analytics-db
-  #   ports:
-  #     - "5432:5432"
-  #   environment:
-  #     - POSTGRES_USER=atlas
-  #     - POSTGRES_PASSWORD=atlas_secure_pwd
-  #     - POSTGRES_DB=atlas_metadata
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #     - ./storage/postgres:/docker-entrypoint-initdb.d:ro
-  #   networks:
-  #     - atlas-network
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_metadata"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  # PostgreSQL - Metadata Store (Part of Analytics Domain)
+  analytics-db:
+    image: postgres:16-alpine
+    container_name: atlas-analytics-db
+    hostname: analytics-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=atlas
+      - POSTGRES_PASSWORD=atlas_secure_pwd
+      - POSTGRES_DB=atlas_metadata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./storage/postgres:/docker-entrypoint-initdb.d:ro
+    networks:
+      - atlas-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_metadata"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Delta → ClickHouse Loader (One-shot job)
+  # ---------------------------------------------------------------------------
+  # Reads clean Parquet from Lakehouse's refined volume and batch-inserts
+  # into ClickHouse. Logs pipeline metadata to PostgreSQL.
+  # ---------------------------------------------------------------------------
+  atlas-loader:
+    image: python:3.11-slim
+    container_name: atlas-loader
+    hostname: loader
+    environment:
+      - CLICKHOUSE_HOST=analytics
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_USER=atlas
+      - CLICKHOUSE_PASSWORD=atlas_secure_pwd
+      - POSTGRES_HOST=analytics-db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=atlas
+      - POSTGRES_PASSWORD=atlas_secure_pwd
+      - POSTGRES_DB=atlas_metadata
+      - REFINED_DATA_PATH=/data/refined
+      - BATCH_SIZE=10000
+      - SCHEDULE_INTERVAL_SECONDS=3600    # Persistent: poll every hour (0 = one-shot)
+    volumes:
+      - ./delta_lake/data/refined:/data/refined:ro
+      - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
+      - ./schema:/app/schema:ro
+    networks:
+      - atlas-network
+    depends_on:
+      atlas-analytics:
+        condition: service_healthy
+      analytics-db:
+        condition: service_healthy
+    restart: unless-stopped
+    command: >
+      bash -c "
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '  ATLAS Loader — Refined → ClickHouse (Scheduler)' &&
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        pip install --quiet clickhouse-connect 'psycopg[binary]' pyarrow pandas deltalake &&
+        python /app/delta_loader.py
+      "
 
   # ===========================================================================
   # DEVELOPMENT & MONITORING TOOLS (Optional)
