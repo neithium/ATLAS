@@ -40,7 +40,7 @@ input_schema = StructType([
     StructField("metric_type", StringType(), True),
     StructField("inventory_data", StructType([
         StructField("cpu_count", IntegerType(), True),
-        StructField("socket_count", IntegerType(), True)
+        StructField("socket_count", IntegerType(), True),
         StructField("cpu_inventory", ArrayType(StructType([
             StructField("model", StringType(), True),
             StructField("speed", IntegerType(), True),
