@@ -298,65 +298,58 @@ services:
   # ===========================================================================
   # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
   # ===========================================================================
-  # Technology: ClickHouse (Primary) + PostgreSQL (Metadata)
-  # Role: Dashboard Engine
+  # Technology: ClickHouse + PostgreSQL + Python Loader (unified container)
+  # Role: Dashboard Engine + Metadata Store + Batch Ingestion
   #
-  # Responsibilities:
-  #   - ClickHouse: Fast analytical queries on telemetry data
-  #   - PostgreSQL: Metadata storage (device registry, locations)
-  #   - Slow Path: Python scheduler reads clean Parquet from Lakehouse
-  #   - Daily Materialized Views for validation against Processor's hourly math
+  # Managed by supervisord inside a single container:
+  #   - ClickHouse: Fast analytical queries on deduplicated telemetry data
+  #   - PostgreSQL: Metadata store (watermarks, device/location registry)
+  #   - Delta Loader: Partition-aware batch ingestion from Refined Layer
+  #     (persistent scheduler — polls every SCHEDULE_INTERVAL_SECONDS)
+  #
+  # The Loader reads from refined-volume using the 5-level partition scheme:
+  #   report_type / partition_date / platform_customer_id /
+  #   application_customer_id / device_id
+  # and prunes by partition_date for incremental loads.
   # ===========================================================================
 
-  # TODO: Varna - Implement ClickHouse analytics
-  # atlas-analytics:
-  #   image: clickhouse/clickhouse-server:24.1
-  #   container_name: atlas-analytics
-  #   hostname: analytics
-  #   ports:
-  #     - "8123:8123"   # HTTP interface (queries, dashboards)
-  #     - "9000:9000"   # Native TCP interface (high-performance)
-  #   environment:
-  #     - CLICKHOUSE_USER=atlas
-  #     - CLICKHOUSE_PASSWORD=atlas_secure_pwd
-  #     - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-  #   volumes:
-  #     - clickhouse-data:/var/lib/clickhouse
-  #     - ./storage/clickhouse:/docker-entrypoint-initdb.d:ro
-  #     - delta-refined:/var/lib/clickhouse/user_files/refined:ro
-  #   networks:
-  #     - atlas-network
-  #   ulimits:
-  #     nofile:
-  #       soft: 262144
-  #       hard: 262144
-  #   healthcheck:
-  #     test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-
-  # # PostgreSQL - Metadata Store (Part of Analytics Domain)
-  # analytics-db:
-  #   image: postgres:16-alpine
-  #   container_name: atlas-analytics-db
-  #   hostname: analytics-db
-  #   ports:
-  #     - "5432:5432"
-  #   environment:
-  #     - POSTGRES_USER=atlas
-  #     - POSTGRES_PASSWORD=atlas_secure_pwd
-  #     - POSTGRES_DB=atlas_metadata
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #     - ./storage/postgres:/docker-entrypoint-initdb.d:ro
-  #   networks:
-  #     - atlas-network
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_metadata"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  atlas-analytics:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    container_name: atlas-analytics
+    hostname: analytics
+    ports:
+      - "8123:8123"   # ClickHouse HTTP interface (queries, dashboards)
+      - "9000:9000"   # ClickHouse Native TCP interface
+      - "5432:5432"   # PostgreSQL
+    env_file: .env.example
+    environment:
+      # Override hosts for internal (same-container) connections
+      - CLICKHOUSE_HOST=127.0.0.1
+      - POSTGRES_HOST=127.0.0.1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - postgres-data:/var/lib/postgresql/data
+      # READ from the same refined-volume that Lakehouse writes to
+      - refined-volume:/data/refined:ro
+      # Init scripts (run on first start by loader-start.sh)
+      - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
+      - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
+      # Application code
+      - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
+      - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
+      # Schema reference
+      - ./schema:/app/schema:ro
+    networks:
+      - atlas-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host 127.0.0.1 --query 'SELECT 1' && pg_isready -h 127.0.0.1 -p 5432"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   # ===========================================================================
   # DEVELOPMENT & MONITORING TOOLS (Optional)

@@ -62,6 +62,16 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_runs(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_started ON pipeline_runs(started_at);
 
 -- -----------------------------------------------------------------------------
+-- Data Load Watermarks Table (Tracks incremental loads into ClickHouse)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS data_load_watermarks (
+    source VARCHAR(100) PRIMARY KEY,
+    last_metric_time TIMESTAMP WITH TIME ZONE,
+    last_loaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    rows_loaded BIGINT DEFAULT 0
+);
+
+-- -----------------------------------------------------------------------------
 -- Grant permissions
 -- -----------------------------------------------------------------------------
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO atlas;
