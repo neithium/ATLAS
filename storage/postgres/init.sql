@@ -71,8 +71,6 @@ CREATE TABLE IF NOT EXISTS data_load_watermarks (
     rows_loaded BIGINT DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_watermark_source ON data_load_watermarks(source);
-
 -- -----------------------------------------------------------------------------
 -- Grant permissions
 -- -----------------------------------------------------------------------------
