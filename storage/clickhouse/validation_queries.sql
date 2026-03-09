@@ -25,12 +25,16 @@ FROM atlas.telemetry_refined;
 -- 2. DUPLICATE CHECK
 -- ============================================================
 -- Should return 0 rows.
+-- Groups by the full device-identity key to avoid false positives
+-- when different customers share the same device_id.
 SELECT
+    platform_customer_id,
+    application_customer_id,
     device_id,
     metric_time,
     count() AS dup_count
 FROM atlas.telemetry_refined
-GROUP BY device_id, metric_time
+GROUP BY platform_customer_id, application_customer_id, device_id, metric_time
 HAVING dup_count > 1
 ORDER BY dup_count DESC
 LIMIT 20;
