@@ -41,9 +41,9 @@ from delta.tables import DeltaMergeBuilder
 class PipelineConfig:
     """Configuration for ATLAS Refined Layer Pipeline."""
     
-    # Paths
-    RAW_DATA_PATH = "/app/data/raw"
-    REFINED_PATH = "/app/data/refined"
+    # Paths (now configurable via CLI args)
+    RAW_DATA_PATH = "/raw"
+    REFINED_PATH = "/refined"
     
     # Triple-Hash Composite Primary Key columns
     PRIMARY_KEY_COLUMNS = ["device_id", "metric_time", "application_customer_id"]
@@ -443,6 +443,14 @@ def main():
     print("[STEP 1] Initializing Spark session with Delta Lake...")
     print("-" * 80)
     
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', type=str, default=PipelineConfig.RAW_DATA_PATH, help='Input raw parquet directory')
+    parser.add_argument('--output', type=str, default=PipelineConfig.REFINED_PATH, help='Output refined delta directory')
+    args = parser.parse_args()
+    PipelineConfig.RAW_DATA_PATH = args.input
+    PipelineConfig.REFINED_PATH = args.output
+
     pipeline_start = time.perf_counter()
     spark = create_spark_session()
     print("         ✓ SparkSession created with Delta Lake 3.1.0")
@@ -456,9 +464,10 @@ def main():
     print("[STEP 2] Reading baseline data (File 1 - pre-flattened)...")
     print("-" * 80)
     
+    latency_start = time.perf_counter()
     df1_raw = spark.read.parquet(f"{PipelineConfig.RAW_DATA_PATH}/file1_baseline.parquet")
     df1_prepared = prepare_partition_columns(df1_raw)
-    
+
     file1_count = df1_prepared.count()
     print(f"         ✓ File 1 rows: {file1_count:,}")
     print(f"         ✓ Partition columns added: {PipelineConfig.PARTITION_COLUMNS}")
@@ -476,7 +485,7 @@ def main():
         path=PipelineConfig.REFINED_PATH,
         partition_cols=PipelineConfig.PARTITION_COLUMNS
     )
-    
+
     print(f"         ✓ Delta table created at {PipelineConfig.REFINED_PATH}")
     print(f"         ✓ Baseline records: {file1_count:,}")
     
@@ -489,7 +498,7 @@ def main():
     
     df2_raw = spark.read.parquet(f"{PipelineConfig.RAW_DATA_PATH}/file2_overlap.parquet")
     df2_prepared = prepare_partition_columns(df2_raw)
-    
+
     file2_count = df2_prepared.count()
     print(f"         ✓ File 2 rows: {file2_count:,}")
     print(f"         ✓ Expected overlap with File 1 (6-day window)")
@@ -504,13 +513,13 @@ def main():
     print("         Logic: WHEN MATCHED → Ignore | WHEN NOT MATCHED → Insert")
     
     merge_start = time.perf_counter()
-    
+
     merge_metrics = execute_merge_deduplication(
         spark=spark,
         target_path=PipelineConfig.REFINED_PATH,
         source_df=df2_prepared
     )
-    
+
     merge_elapsed = time.perf_counter() - merge_start
     print(f"         ✓ MERGE completed in {merge_elapsed:.2f}s")
     print(f"         ✓ Operation: {merge_metrics['operation']}")
@@ -524,16 +533,16 @@ def main():
     print("         Compacting small files for columnar read efficiency...")
     
     optimize_start = time.perf_counter()
-    
+
     optimize_metrics = optimize_delta_table(
         spark=spark,
         path=PipelineConfig.REFINED_PATH,
         zorder_col=PipelineConfig.ZORDER_COLUMN
     )
-    
+
     optimize_elapsed = time.perf_counter() - optimize_start
     print(f"         ✓ OPTIMIZE completed in {optimize_elapsed:.2f}s")
-    
+
     if "numFilesRemoved" in optimize_metrics:
         print(f"         ✓ Files removed: {optimize_metrics['numFilesRemoved']}")
         print(f"         ✓ Files added: {optimize_metrics['numFilesAdded']}")
@@ -550,15 +559,17 @@ def main():
         path=PipelineConfig.REFINED_PATH,
         input_counts={"file1_count": file1_count, "file2_count": file2_count}
     )
-    
+
     # Print table metadata
     print_table_info(spark, PipelineConfig.REFINED_PATH)
-    
+
     # =========================================================================
     # RESULTS SUMMARY
     # =========================================================================
     pipeline_elapsed = time.perf_counter() - pipeline_start
-    
+    latency_end = time.perf_counter()
+    latency = latency_end - latency_start
+
     print("\n" + "=" * 80)
     print("  PIPELINE EXECUTION SUMMARY")
     print("=" * 80)
@@ -566,31 +577,32 @@ def main():
     print(f"  - File 1 (baseline):     {file1_count:,} rows")
     print(f"  - File 2 (overlap):      {file2_count:,} rows")
     print(f"  - Total input:           {verification['total_input']:,} rows")
-    
+
     print(f"\n  Deduplication Results:")
     print(f"  - Final table rows:      {verification['final_count']:,}")
     print(f"  - Duplicates dropped:    {verification['duplicates_dropped']:,}")
     print(f"  - Dedup ratio:           {verification['deduplication_ratio']:.1f}%")
     print(f"  - Partition count:       {verification['partition_count']}")
-    
+
     print(f"\n  Performance Metrics:")
     print(f"  - MERGE time:            {merge_elapsed:.2f}s")
     print(f"  - OPTIMIZE time:         {optimize_elapsed:.2f}s")
     print(f"  - Total pipeline time:   {pipeline_elapsed:.2f}s")
-    
+    print(f"  - Delta Lake latency (read/write): {latency:.2f}s")
+
     print(f"\n  Architecture Verification:")
     print(f"  ✓ Triple-Hash Key: device_id + metric_time + application_customer_id")
     print(f"  ✓ 5-Level Partitioning: {'/'.join(PipelineConfig.PARTITION_COLUMNS)}")
     print(f"  ✓ Storage Format: Parquet (Delta Lake native)")
     print(f"  ✓ Z-ORDER Clustering: {PipelineConfig.ZORDER_COLUMN}")
-    
+
     print("\n" + "=" * 80)
     print("  ATLAS REFINED LAYER PIPELINE COMPLETE")
     print("=" * 80 + "\n")
-    
+
     # Cleanup
     spark.stop()
-    
+
     return verification
 
 
