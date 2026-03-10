@@ -9,7 +9,7 @@ services:
       network: host
     container_name: atlas-delta-lake
     dns:
-      - 8.8.8.8
+      - 8.8.8.8 
       - 8.8.4.4
     volumes:
       # Shared volume for /raw (processing <-> delta_lake)
@@ -28,7 +28,11 @@ services:
       - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy
       - DEVICE_COUNT=${DEVICE_COUNT:-100000}   # Number of devices for benchmark
       - BATCH_SIZE=${BATCH_SIZE:-10000}        # Batch size for memory management
+      - NUM_DAYS=${NUM_DAYS:-7}                # Number of daily files (7-day rolling window)
+      - START_DATE=${START_DATE:-2026-03-01}   # First file date (YYYY-MM-DD)
       - RUN_PIPELINE=${RUN_PIPELINE:-n}        # y = run pipeline, n = skip
+      - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}  # benchmark | legacy (must match GENERATOR_MODE)
+      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}    # Run OPTIMIZE after every N batches
     working_dir: /app
     # Command checks environment variables (no interactive prompts)
     command: >
@@ -38,29 +42,33 @@ services:
         echo '============================================' &&
         echo '' &&
         echo 'Configuration:' &&
-        echo '  RUN_GENERATOR=$$RUN_GENERATOR' &&
-        echo '  GENERATOR_MODE=$$GENERATOR_MODE' &&
-        echo '  DEVICE_COUNT=$$DEVICE_COUNT' &&
-        echo '  BATCH_SIZE=$$BATCH_SIZE' &&
-        echo '  RUN_PIPELINE=$$RUN_PIPELINE' &&
+        echo \"  RUN_GENERATOR=$$RUN_GENERATOR\" &&
+        echo \"  GENERATOR_MODE=$$GENERATOR_MODE\" &&
+        echo \"  DEVICE_COUNT=$$DEVICE_COUNT\" &&
+        echo \"  BATCH_SIZE=$$BATCH_SIZE\" &&
+        echo \"  NUM_DAYS=$$NUM_DAYS\" &&
+        echo \"  START_DATE=$$START_DATE\" &&
+        echo \"  RUN_PIPELINE=$$RUN_PIPELINE\" &&
+        echo \"  PIPELINE_MODE=$$PIPELINE_MODE\" &&
+        echo \"  OPTIMIZE_EVERY=$$OPTIMIZE_EVERY\" &&
         echo '' &&
         if [ \"$$RUN_GENERATOR\" = 'y' ] || [ \"$$RUN_GENERATOR\" = 'Y' ]; then
           if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
             echo '[1/2] Generating legacy merge-demo input under /raw ...' &&
             python3 generate_data.py --mode legacy --output /raw;
           else
-            echo '[1/2] Generating benchmark data under /raw/benchmark_data ...' &&
-            python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE;
+            echo '[1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...' &&
+            python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE --num-days $$NUM_DAYS --start-date $$START_DATE;
           fi;
         else
-          echo '[1/2] Skipping generator (RUN_GENERATOR=$$RUN_GENERATOR)';
+          echo \"[1/2] Skipping generator (RUN_GENERATOR=$$RUN_GENERATOR)\";
         fi &&
         echo '' &&
         if [ \"$$RUN_PIPELINE\" = 'y' ] || [ \"$$RUN_PIPELINE\" = 'Y' ]; then
-          echo '[2/2] Running deduplication pipeline...' &&
-          python3 delta_merge_pipeline.py --input /raw --output /refined;
+          echo \"[2/2] Running deduplication pipeline (mode=$$PIPELINE_MODE)...\" &&
+          python3 delta_merge_pipeline.py --input /raw --output /refined --mode $$PIPELINE_MODE --optimize-every $$OPTIMIZE_EVERY;
         else
-          echo '[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)';
+          echo \"[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
         fi &&
         echo '' &&
         echo 'Done!'
