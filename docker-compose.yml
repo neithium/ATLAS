@@ -90,6 +90,7 @@ services:
   # Technology: Apache Kafka (KRaft Mode - No Zookeeper)
   # Role: Real-Time Streaming Buffer
   #
+  #
   # Responsibilities:
   #   - Manages raw-server-metrics topic (12 partitions)
   #   - Manages raw-server-metrics-dlq (Dead Letter Queue, 3 partitions)
