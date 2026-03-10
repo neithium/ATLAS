@@ -1,21 +1,41 @@
 # ATLAS Delta Lake - Implementation Notes
 
-**Date:** March 8, 2026  
+**Last Updated:** March 10, 2026  
 **Module:** Refined Layer Delta Lake Pipeline  
 **Objective:** Implement high-performance deduplication for 400K+ device scale
+
+---
+
+## Table of Contents
+
+1. [Initial Requirements](#1-initial-requirements)
+2. [Problems Encountered & Solutions](#2-problems-encountered--solutions)
+3. [Final Architecture](#3-final-architecture)
+4. [Pipeline Modes](#4-pipeline-modes)
+5. [Features Added](#5-features-added)
+6. [Data Generation Strategy](#6-data-generation-strategy)
+7. [Performance Optimizations](#7-performance-optimizations)
+8. [Test Results](#8-test-results)
+9. [Key Decisions Summary](#9-key-decisions-summary)
+10. [Files Modified](#10-files-modified)
+11. [Commands Reference](#11-commands-reference)
+12. [Future Considerations](#12-future-considerations)
 
 ---
 
 ## 1. Initial Requirements
 
 The goal was to update the existing `delta_merge_pipeline.py` to implement:
-g
+
 | Requirement | Description |
 |-------------|-------------|
 | **Triple-Hash Composite Key** | `device_id`, `metric_time`, `application_customer_id` for multi-tenant uniqueness |
 | **5-Level Deep Partitioning** | Directory structure for partition pruning in downstream queries |
 | **Delta MERGE Deduplication** | Handle 7-day rolling overlap (ignore existing, insert new) |
 | **Storage Optimization** | Parquet format + OPTIMIZE with Z-ORDER clustering |
+| **Scalability** | Support 100K-400K devices with fault tolerance |
+| **Latency Tracking** | Measure P50/P95/P99 percentiles for batch operations |
+| **Benchmark Mode** | Real-time batch streaming simulation instead of 2-file demo |
 
 ---
 
@@ -114,6 +134,100 @@ device_id is a partition column. Z-Ordering can only be performed on data column
 
 ---
 
+### Problem 5: Interactive Prompts in Docker Compose
+
+**Issue:** Original docker-compose.yml used `read -p` for interactive prompts, which doesn't work in automated CI/CD pipelines or non-TTY environments.
+
+**Original Design:**
+```bash
+read -p "Run generator? (y/n): " run_gen
+```
+
+**Solution:** Replaced with environment variables:
+```yaml
+environment:
+  - RUN_GENERATOR=${RUN_GENERATOR:-n}
+  - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}
+  - DEVICE_COUNT=${DEVICE_COUNT:-100000}
+  - RUN_PIPELINE=${RUN_PIPELINE:-n}
+```
+
+**Usage:**
+```bash
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y spark
+```
+
+**Learning:** Always design containerized workflows to be non-interactive. Use environment variables for configuration to enable automation.
+
+---
+
+### Problem 6: Wrong Deduplication Ratio (-1.1% instead of 85.7%)
+
+**Symptom:** After running the benchmark pipeline, the deduplication ratio showed -1.1% (rows were being ADDED instead of removed).
+
+**Error Log:**
+```
+Dedup ratio: -1.1%  # Expected: ~85.7%
+```
+
+**Root Cause:** The data generator was creating **unique data per date partition** instead of simulating the **7-day rolling window overlap pattern**.
+
+**The Math of Real-World Data:**
+- Each incoming file contains 2,016 rows per device (7 days × 288 datapoints/day)
+- Only 288 rows are new (that day's data)
+- 1,728 rows are duplicates from previous 6 days
+- Expected dedup ratio per file: 1,728/2,016 = **85.7%**
+
+**Original (Wrong) Generator Logic:**
+```python
+# Data was partitioned by metric_time date
+.withColumn("partition_date", to_date(col("metric_time")))
+# Result: Each date had unique data, no overlap!
+```
+
+**Fixed Generator Logic:**
+```python
+# file_date = date the batch was "received" (determines 7-day window)
+# metric_time spans (file_date - 6 days) to file_date
+def build_daily_file_df(spark, batch_start, batch_end, file_date, profile_df):
+    window_start = file_date - timedelta(days=6)  # 7-day rolling window
+    window_end = file_date + timedelta(hours=23, minutes=55)
+    # Each file now contains overlapping data!
+```
+
+**Learning:** When simulating real-world data patterns, understand the actual data flow:
+- `file_date` = when the batch was received (partition key for incoming data)
+- `partition_date` = actual metric timestamp date (partition key for refined layer)
+- These are DIFFERENT concepts that serve different purposes
+
+---
+
+### Problem 7: Pipeline Processing by Wrong Partition Key
+
+**Issue:** After fixing the generator, the pipeline was still processing by `partition_date` (metric date) instead of `file_date` (batch arrival date).
+
+**Original Pipeline Logic:**
+```python
+# Processing by metric date - wrong!
+date_partitions = get_date_partitions(spark, benchmark_path)
+partition_df = spark.read.parquet(path).filter(col("partition_date") == date)
+```
+
+**Fixed Pipeline Logic:**
+```python
+# Processing by file_date - simulates real batch arrival
+file_dates = get_file_dates(spark, benchmark_path)
+batch_df = spark.read.parquet(path).filter(col("file_date") == file_date)
+batch_df = batch_df.drop("file_date")  # Not needed in refined layer
+```
+
+**Learning:** The batch processing key must match how data arrives in production:
+- Data arrives as daily batches (keyed by `file_date`)
+- Each batch contains a 7-day rolling window of `metric_time` values
+- The refined layer partitions by `partition_date` (metric date) after deduplication
+
+---
+
 ## 3. Final Architecture
 
 ### 3.1 Composite Primary Key (Triple-Hash)
@@ -134,7 +248,7 @@ merge_condition = """
 ### 3.2 5-Level Partition Structure
 
 ```
-/app/data/refined/
+/refined/
 └── report_type=power_metrics/
     └── partition_date=2026-02-26/
         └── platform_customer_id=PLAT-12345/
@@ -161,65 +275,226 @@ merge_condition = """
 
 ---
 
-## 4. Pipeline Flow
+## 4. Pipeline Modes
+
+The pipeline supports two operational modes:
+
+### 4.1 Legacy Mode
+
+For backward compatibility and simple demos with 2 static files.
+
+```bash
+docker compose run -e RUN_GENERATOR=y -e GENERATOR_MODE=legacy -e RUN_PIPELINE=y -e PIPELINE_MODE=legacy spark
+```
+
+**Flow:**
+1. Generate `file1_baseline.parquet` and `file2_overlap.parquet`
+2. Initialize Delta table with file1
+3. MERGE file2 (deduplicating 6-day overlap)
+4. Single OPTIMIZE + Z-ORDER
+
+### 4.2 Benchmark Mode
+
+For production-scale testing with N daily files simulating real batch streaming.
+
+```bash
+docker compose run -e RUN_GENERATOR=y -e DEVICE_COUNT=100000 -e NUM_DAYS=7 -e RUN_PIPELINE=y spark
+```
+
+**Flow:**
+1. Generate N daily files with 7-day rolling windows
+2. Process each file_date batch incrementally
+3. MERGE with deduplication (85.7% duplicates per file after first)
+4. Periodic OPTIMIZE every N batches
+5. Checkpoint state for fault tolerance
+
+---
+
+## 5. Features Added
+
+### 5.1 LatencyTracker Class
+
+Comprehensive latency metrics with percentile calculations:
+
+```python
+class LatencyTracker:
+    def record_batch(self, batch_time, merge_time, read_time, rows):
+        # Track per-batch metrics
+    
+    def get_summary(self):
+        return {
+            "batch_p50": percentile(self.batch_latencies, 50),
+            "batch_p95": percentile(self.batch_latencies, 95),
+            "batch_p99": percentile(self.batch_latencies, 99),
+            "throughput": total_rows / elapsed_time
+        }
+```
+
+**Output Example:**
+```
+Batch Latency (seconds):
+- Min:  1.457s
+- Max:  9.744s
+- Mean: 3.058s
+- P50:  1.873s
+- P95:  7.784s
+- P99:  9.352s
+```
+
+### 5.2 CheckpointManager Class
+
+Fault-tolerant state management for resumable pipelines:
+
+```python
+class CheckpointManager:
+    def __init__(self, checkpoint_path):
+        self.state_file = f"{checkpoint_path}/pipeline_state.json"
+    
+    def mark_batch_complete(self, batch_id, rows, state):
+        state["completed_batches"].append(batch_id)
+        state["total_rows_processed"] += rows
+        self._save_state(state)
+        return state
+    
+    def load_state(self):
+        # Resume from last checkpoint
+```
+
+**Usage:**
+```bash
+# First run (or reset)
+python delta_merge_pipeline.py --mode benchmark --reset
+
+# Resume after failure
+python delta_merge_pipeline.py --mode benchmark --resume
+```
+
+### 5.3 Adaptive OPTIMIZE Frequency
+
+Configurable OPTIMIZE interval to balance latency vs. compaction:
+
+```python
+OPTIMIZE_EVERY_N_BATCHES = 3  # Default: every 3 batches
+```
+
+**Via Environment Variable:**
+```bash
+docker compose run -e OPTIMIZE_EVERY=5 spark  # Every 5 batches
+```
+
+### 5.4 Environment Variable Configuration
+
+Full Docker Compose configuration via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RUN_GENERATOR` | `n` | Run data generator (y/n) |
+| `GENERATOR_MODE` | `benchmark` | Generator mode (benchmark/legacy) |
+| `DEVICE_COUNT` | `100000` | Number of devices to generate |
+| `BATCH_SIZE` | `10000` | Devices per batch (memory management) |
+| `NUM_DAYS` | `7` | Number of daily files to generate |
+| `START_DATE` | `2026-03-01` | First file date (YYYY-MM-DD) |
+| `RUN_PIPELINE` | `n` | Run deduplication pipeline (y/n) |
+| `PIPELINE_MODE` | `benchmark` | Pipeline mode (benchmark/legacy) |
+| `OPTIMIZE_EVERY` | `3` | OPTIMIZE frequency (batches) |
+
+---
+
+## 6. Data Generation Strategy
+
+### 6.1 Real-World Pattern Simulation
+
+Each incoming telemetry file in production contains a **7-day rolling window**:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 1: Initialize SparkSession with Delta Lake                    │
-│  - Enable vectorized Parquet reader                                 │
-│  - Enable Adaptive Query Execution                                  │
-│  - Configure auto schema merge                                      │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 2: Read Baseline Data (File 1)                                │
-│  - Load pre-flattened Parquet                                       │
-│  - Add partition_date column (extract from metric_time)             │
-│  - Handle null partition values with defaults                       │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 3: Initialize Delta Table                                     │
-│  - Write with 5-level partitioning                                  │
-│  - Set overwriteSchema=true for clean slate                         │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 4: Read Overlap Data (File 2)                                 │
-│  - 7-day rolling window data                                        │
-│  - Contains 6 days overlap + 1 day new                              │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 5: Delta MERGE Deduplication                                  │
-│  - Match on: device_id + metric_time + application_customer_id      │
-│  - WHEN MATCHED: Do nothing (ignore duplicates)                     │
-│  - WHEN NOT MATCHED: Insert all columns                             │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 6: OPTIMIZE + Z-ORDER                                         │
-│  - Compact small files                                              │
-│  - Z-ORDER BY metric_time for time-series locality                  │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 7: Verification                                               │
-│  - Count final rows                                                 │
-│  - Calculate deduplication ratio                                    │
-│  - Report partition statistics                                      │
-└─────────────────────────────────────────────────────────────────────┘
+Day 1 File: metric_time spans Day -6 to Day 1 (2016 unique rows)
+Day 2 File: metric_time spans Day -5 to Day 2 (288 new, 1728 duplicates)
+Day 3 File: metric_time spans Day -4 to Day 3 (288 new, 1728 duplicates)
+...
+```
+
+### 6.2 Data Schema
+
+```python
+# Generated columns:
+- device_id           # SRV-000001 to SRV-NNNNNN
+- metric_time         # Timestamp at 5-minute intervals
+- application_customer_id  # APP-001, APP-017, etc.
+- platform_customer_id     # PLAT-001, PLAT-021, etc.
+- report_type         # power_metrics, thermal_metrics, etc.
+- file_date           # Date batch was "received" (partition key for raw)
+- partition_date      # Date of metric_time (partition key for refined)
+- MetricValue         # Simulated metric value (sinusoidal pattern)
+```
+
+### 6.3 Expected Deduplication Math
+
+For N daily files with 7-day rolling windows:
+
+| Files | Total Raw Rows | Unique Rows | Dedup Ratio |
+|-------|----------------|-------------|-------------|
+| 1 | 2,016 × D | 2,016 × D | 0% |
+| 2 | 4,032 × D | 2,304 × D | 42.9% |
+| 7 | 14,112 × D | 3,744 × D | 73.5% |
+| 14 | 28,224 × D | 5,760 × D | 79.6% |
+| 100 | 201,600 × D | 30,528 × D | 84.9% |
+| ∞ | - | - | 85.7% |
+
+Where D = number of devices.
+
+---
+
+## 7. Performance Optimizations
+
+### 7.1 In-Container Data Generation
+
+**Before:** Data was written to mounted volumes (network I/O overhead)
+**After:** Data stays within container volumes (local I/O)
+
+**Result:** Total latency reduced from **55.10s → 35.41s** (36% improvement)
+
+### 7.2 Spark-Based Data Generation
+
+**Before:** Python-based row-by-row generation (inefficient)
+**After:** Spark DataFrame operations with `explode()` and `sequence()`
+
+```python
+# Efficient time dimension generation
+time_df = spark.range(1).select(
+    explode(
+        sequence(
+            to_timestamp(lit(start_ts)),
+            to_timestamp(lit(end_ts)),
+            expr("INTERVAL 5 MINUTES"),
+        )
+    ).alias("metric_time")
+)
+```
+
+### 7.3 Broadcast Join for Metric Profile
+
+Small lookup tables are broadcast to avoid shuffle:
+
+```python
+profile_df = build_metric_profile(spark)  # 288 rows (one day's slots)
+with_values_df = expanded_df.join(broadcast(profile_df), on="slot_index")
+```
+
+### 7.4 Batch Processing for Memory Management
+
+Large device counts are processed in configurable batches:
+
+```python
+for batch_start in range(0, total_devices, batch_size):
+    batch_df = build_daily_file_df(spark, batch_start, batch_end, ...)
+    batch_df.write.mode("append").parquet(output_path)
 ```
 
 ---
 
-## 5. Test Results
+## 8. Test Results
+
+### 8.1 Legacy Mode (2 Files, 1 Device)
 
 | Metric | Value |
 |--------|-------|
@@ -229,13 +504,30 @@ merge_condition = """
 | **Final deduplicated** | **2,304 rows** |
 | Duplicates dropped | 1,728 |
 | Deduplication ratio | 42.9% |
-| MERGE time | 5.43s |
-| OPTIMIZE time | 4.06s |
-| Total pipeline time | 55.10s |
+| Total pipeline time | 35.41s |
+
+### 8.2 Benchmark Mode (7 Files, 10 Devices)
+
+| Metric | Value |
+|--------|-------|
+| Total input rows | 141,120 |
+| Final unique rows | 37,440 |
+| Duplicates removed | 103,680 |
+| **Deduplication ratio** | **73.5%** |
+| Data generation time | 11.45s |
+| Pipeline execution time | 65.97s |
+| Throughput | 2,139.2 rows/sec |
+
+**Latency Percentiles:**
+| Metric | P50 | P95 | P99 |
+|--------|-----|-----|-----|
+| Batch | 1.87s | 7.78s | 9.35s |
+| MERGE | 1.73s | 7.33s | 8.84s |
+| Read | 0.12s | 0.43s | 0.51s |
 
 ---
 
-## 6. Key Decisions Summary
+## 9. Key Decisions Summary
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
@@ -244,52 +536,157 @@ merge_condition = """
 | Z-ORDER column | `metric_time` | Can't use partition columns; time-series queries benefit most |
 | Schema overwrite | Enabled | Needed for partition structure changes |
 | MERGE strategy | Insert-only-if-new | Preserves existing records, strips 7-day overlap |
+| Batch processing key | `file_date` | Simulates real-world batch arrival pattern |
+| OPTIMIZE frequency | Every 3 batches | Balance between latency and compaction |
+| Checkpoint storage | JSON file | Simple, human-readable, resumable |
 
 ---
 
-## 7. Files Modified
+## 10. Files Modified
 
-1. **`delta_lake/delta_merge_pipeline.py`** - Complete rewrite with:
-   - `PipelineConfig` class for configuration
-   - `prepare_partition_columns()` for data preparation
-   - `execute_merge_deduplication()` for MERGE logic
-   - `optimize_delta_table()` for Z-ORDER optimization
-   - `verify_deduplication()` for result validation
+### 10.1 `delta_lake/delta_merge_pipeline.py`
 
-2. **`schema/input_schema.py`** - Fixed missing comma syntax error
+Complete rewrite with:
+- `PipelineConfig` class for centralized configuration
+- `LatencyTracker` class for P50/P95/P99 metrics
+- `CheckpointManager` class for fault tolerance
+- `run_legacy_pipeline()` for 2-file demo mode
+- `run_benchmark_pipeline()` for production-scale testing
+- `get_file_dates()` for batch discovery
+- `prepare_partition_columns()` for data preparation
+- `execute_merge_deduplication()` for MERGE logic
+- `optimize_delta_table()` for Z-ORDER optimization
+- `verify_deduplication()` for result validation
+
+### 10.2 `delta_lake/generate_data.py`
+
+Complete rewrite with:
+- 7-day rolling window simulation per `file_date`
+- `build_daily_file_df()` for single-day batch generation
+- `build_metric_profile()` for efficient metric value lookup
+- Spark-based generation with `explode()` and `sequence()`
+- Batch processing for memory management at scale
+- Support for `NUM_DAYS` and `START_DATE` parameters
+
+### 10.3 `delta_lake/docker-compose.yml`
+
+Updated with:
+- Environment variable controls (non-interactive)
+- New variables: `NUM_DAYS`, `START_DATE`, `OPTIMIZE_EVERY`
+- Updated command script for rolling window generation
+
+### 10.4 `schema/input_schema.py`
+
+Fixed missing comma syntax error on line 44.
 
 ---
 
-## 8. Future Considerations
+## 11. Commands Reference
 
-1. **Schema Evolution:** Consider using `mergeSchema` for additive changes instead of `overwriteSchema`
-2. **Partition Pruning Validation:** Add query explain plans to verify partition pruning is working
-3. **Vacuum Strategy:** Implement regular VACUUM to clean old Delta log files
-4. **Multi-device Testing:** Current test uses single device; scale test to 400K devices
-5. **Metrics Dashboard:** Export pipeline metrics to monitoring system
-
----
-
-## 9. Commands Reference
+### Quick Start
 
 ```bash
-# Build and run the pipeline
+# Navigate to delta_lake module
 cd delta_lake
-docker compose up --build
 
-# Clean up existing data (if needed)
-rm -rf data/refined/*
+# Full pipeline: generate + deduplicate (10 devices, 7 days)
+docker compose run --rm \
+  -e RUN_GENERATOR=y \
+  -e DEVICE_COUNT=10 \
+  -e NUM_DAYS=7 \
+  -e RUN_PIPELINE=y \
+  spark
 
-# View Delta table history (in Spark)
-delta_table.history().show()
+# Production scale: 100K devices
+docker compose run --rm \
+  -e RUN_GENERATOR=y \
+  -e DEVICE_COUNT=100000 \
+  -e BATCH_SIZE=10000 \
+  -e NUM_DAYS=7 \
+  -e RUN_PIPELINE=y \
+  -e OPTIMIZE_EVERY=5 \
+  spark
+```
+
+### Generator Only
+
+```bash
+# Benchmark data
+docker compose run --rm -e RUN_GENERATOR=y -e DEVICE_COUNT=1000 spark
+
+# Legacy demo data
+docker compose run --rm -e RUN_GENERATOR=y -e GENERATOR_MODE=legacy spark
+```
+
+### Pipeline Only
+
+```bash
+# Run pipeline on existing data
+docker compose run --rm -e RUN_PIPELINE=y spark
+
+# Resume from checkpoint
+docker compose run --rm -e RUN_PIPELINE=y spark --resume
+
+# Reset checkpoints and rerun
+docker compose run --rm -e RUN_PIPELINE=y spark --reset
+```
+
+### Cleanup
+
+```bash
+# Remove all data and volumes
+docker compose down -v
 ```
 
 ---
 
-*Document generated from implementation session on March 8, 2026*
- 
----- * document addition -- next iteration * ----
+## 12. Future Considerations
 
-- the total latency reduced from 55.10s to 35.41 seconds, by eliminating the network latency generated by writing the data outside the container.
+1. **Schema Evolution:** Consider using `mergeSchema` for additive changes instead of `overwriteSchema`
 
-- python based data generation was highly inefficient, so we switch to spark based data generation, with explode function which makes it more easier.
+2. **Partition Pruning Validation:** Add query explain plans to verify partition pruning is working
+
+3. **Vacuum Strategy:** Implement regular VACUUM to clean old Delta log files:
+   ```python
+   delta_table.vacuum(retentionHours=168)  # 7 days
+   ```
+
+4. **Streaming Integration:** Add Spark Structured Streaming support for true real-time processing
+
+5. **Metrics Dashboard:** Export pipeline metrics to Prometheus/Grafana for monitoring
+
+6. **Horizontal Scaling:** Test with Spark cluster mode for distributed processing
+
+7. **Compression Tuning:** Evaluate ZSTD vs Snappy for better compression ratios
+
+8. **Bloom Filters:** Enable bloom filters on primary key columns for faster lookups
+
+---
+
+## Changelog
+
+### March 10, 2026
+
+- **Fixed** data generator to simulate 7-day rolling window pattern
+- **Fixed** pipeline to process by `file_date` instead of `partition_date`
+- **Added** `LatencyTracker` class with P50/P95/P99 percentile tracking
+- **Added** `CheckpointManager` class for fault-tolerant resumable pipelines
+- **Added** environment variables: `NUM_DAYS`, `START_DATE`, `OPTIMIZE_EVERY`
+- **Added** dual mode support: legacy (2-file demo) and benchmark (N-file streaming)
+- **Verified** 73.5% deduplication ratio with 7 daily files (matches expected math)
+
+### March 8, 2026
+
+- **Fixed** syntax error in `input_schema.py` (missing comma)
+- **Fixed** column name mismatch (`metric_type` → `report_type`)
+- **Fixed** Delta table schema mismatch with `overwriteSchema=true`
+- **Fixed** Z-ORDER on partition column (changed to `metric_time`)
+- **Implemented** Triple-Hash composite primary key
+- **Implemented** 5-level deep partitioning
+- **Implemented** Delta MERGE deduplication strategy
+- **Optimized** in-container data generation (55.10s → 35.41s)
+- **Optimized** Python → Spark-based data generation with `explode()`
+
+---
+
+*Document maintained as part of ATLAS Delta Lake implementation*
