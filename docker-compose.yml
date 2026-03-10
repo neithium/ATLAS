@@ -298,6 +298,8 @@ services:
   # ===========================================================================
   # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
   # ===========================================================================
+  # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
+  # ===========================================================================
   # Technology: ClickHouse + PostgreSQL + Python Loader (unified container)
   # Role: Dashboard Engine + Metadata Store + Batch Ingestion
   #
@@ -311,6 +313,16 @@ services:
   #   report_type / partition_date / platform_customer_id /
   #   application_customer_id / device_id
   # and prunes by partition_date for incremental loads.
+  #
+  # Credentials: All DB credentials are sourced from .env.example via env_file.
+  # To change creds, edit .env.example — they flow into entrypoint.sh,
+  # loader-start.sh, and delta_loader.py automatically.
+  #
+  # SCHEDULE_INTERVAL_SECONDS (default 3600 in .env.example):
+  #   The Delta Loader polls the refined layer every 3600 s (1 hour).
+  #   3600 s matches the upstream 1-hour tumbling-window batch cadence
+  #   so each loader run picks up exactly the latest hourly batch.
+  #   Set to 0 for a single one-shot run.
   # ===========================================================================
 
   atlas-analytics:
@@ -325,13 +337,17 @@ services:
       - "5432:5432"   # PostgreSQL
     env_file: .env.example
     environment:
-      # Override hosts for internal (same-container) connections
+      # Override hosts for internal (same-container) connections.
+      # .env.example sets CLICKHOUSE_HOST=analytics / POSTGRES_HOST=analytics
+      # which is the hostname for OTHER containers; inside this container we
+      # must use 127.0.0.1 since all three services share one network namespace.
       - CLICKHOUSE_HOST=127.0.0.1
       - POSTGRES_HOST=127.0.0.1
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - postgres-data:/var/lib/postgresql/data
-      # READ from the same refined-volume that Lakehouse writes to
+      # READ from the same refined-volume that Lakehouse writes to.
+      # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
       - refined-volume:/data/refined:ro
       # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
@@ -344,7 +360,8 @@ services:
     networks:
       - atlas-network
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --host 127.0.0.1 --query 'SELECT 1' && pg_isready -h 127.0.0.1 -p 5432"]
+      # Use default user (no auth) for ClickHouse probe — matches loader-start.sh
+      test: ["CMD-SHELL", "clickhouse-client --host 127.0.0.1 --query 'SELECT 1' && pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-atlas}"]
       interval: 15s
       timeout: 10s
       retries: 5

@@ -9,8 +9,15 @@ Materialized Views (hourly_mv, daily_mv) fire automatically on insert.
 Supports incremental loading via a PostgreSQL watermark table so that
 re-runs only process new data.
 
-Supports persistent scheduler mode via SCHEDULE_INTERVAL_SECONDS env var.
-When set to 0 (default), runs once and exits. When > 0, loops forever.
+Scheduler Mode (SCHEDULE_INTERVAL_SECONDS):
+    0    → One-shot: run once and exit.
+    3600 → Persistent scheduler: run, sleep 3600 s (1 hour), repeat.
+
+    Why 3600 s?  The upstream Spark processor produces 1-hour tumbling-
+    window aggregations and the Lakehouse MERGE runs after each batch.
+    Polling every 3600 s lets the loader pick up exactly the latest
+    hourly batch each cycle, avoiding redundant scans while keeping
+    the ClickHouse analytics layer at most 1 hour behind real-time.
 
 Partition-Aware Reading:
     The Refined Layer uses a 5-level Hive partition scheme:
@@ -19,11 +26,24 @@ Partition-Aware Reading:
     When a watermark exists, the loader prunes partitions by partition_date
     so only new/updated date directories are scanned.
 
+Metadata Piping (PostgreSQL):
+    After each successful ClickHouse load the loader writes metadata into
+    four PostgreSQL tables:
+      1. data_load_watermarks — last loaded metric_time for incremental mode
+      2. pipeline_runs        — audit log of every loader invocation
+      3. device_registry      — unique devices seen (upsert on composite key)
+      4. location_registry    — unique locations seen (upsert on location_id)
+    This metadata is consumed by dashboards and downstream monitoring.
+
 Owner : Varna (Analytics Layer)
 Reads : refined-volume (Lakehouse Refined Layer) — READ-ONLY
 Writes: ClickHouse atlas.* tables, PostgreSQL metadata tables
 
-Environment Variables (set via .env.example + docker-compose overrides):
+Credentials:
+    All DB credentials are read from environment variables.
+    In Docker they flow from .env.example → docker-compose env_file →
+    container environment → this loader.  Edit .env.example to change them.
+
     CLICKHOUSE_HOST          default: 127.0.0.1
     CLICKHOUSE_PORT          default: 8123
     CLICKHOUSE_USER          default: atlas
@@ -521,18 +541,46 @@ def main():
     log.info("=" * 60)
     log.info("ATLAS Delta Loader — Refined → ClickHouse")
     log.info("=" * 60)
-    log.info("ClickHouse : %s:%s", CH_HOST, CH_PORT)
-    log.info("PostgreSQL : %s:%s/%s", PG_HOST, PG_PORT, PG_DB)
+    log.info("ClickHouse : %s:%s  user=%s", CH_HOST, CH_PORT, CH_USER)
+    log.info("PostgreSQL : %s:%s/%s  user=%s", PG_HOST, PG_PORT, PG_DB, PG_USER)
     log.info("Refined    : %s", REFINED_PATH)
+    log.info("Batch size : %d", BATCH_SIZE)
+    log.info("Scheduler  : %s",
+             f"every {SCHEDULE_INTERVAL}s" if SCHEDULE_INTERVAL > 0 else "one-shot")
+
+    # --- Check refined path exists before connecting to DBs ---------------
+    refined_dir = Path(REFINED_PATH)
+    if not refined_dir.exists():
+        log.warning("Refined data path does not exist yet: %s", REFINED_PATH)
+        log.warning("Lakehouse may not have produced data. Nothing to load.")
+        return
+
+    parquet_count = sum(1 for f in refined_dir.rglob("*.parquet")
+                        if "_delta_log" not in str(f) and not f.name.startswith("."))
+    if parquet_count == 0:
+        log.warning("No parquet files found in %s — nothing to load.", REFINED_PATH)
+        return
+    log.info("Found %d parquet file(s) in refined path", parquet_count)
 
     # --- Connect ---------------------------------------------------------
     pg_conn = pg_connect()
-    log.info("Connected to PostgreSQL")
+    log.info("Connected to PostgreSQL (%s:%s/%s)", PG_HOST, PG_PORT, PG_DB)
 
     ch_client = clickhouse_connect.get_client(
         host=CH_HOST, port=CH_PORT, username=CH_USER, password=CH_PASS,
     )
     log.info("Connected to ClickHouse (server version %s)", ch_client.server_version)
+
+    # Verify atlas DB and table exist
+    try:
+        ch_client.command("SELECT count() FROM atlas.telemetry_refined")
+        log.info("Verified: atlas.telemetry_refined table accessible")
+    except Exception as exc:
+        log.error("atlas.telemetry_refined not accessible: %s", exc)
+        log.error("ClickHouse init may have failed. Check loader-start.sh logs.")
+        pg_conn.close()
+        ch_client.close()
+        raise
 
     # --- Read watermark --------------------------------------------------
     watermark = get_watermark(pg_conn)
@@ -585,16 +633,26 @@ def main():
         ch_client.close()
         raise
 
-    # --- Update metadata -------------------------------------------------
+    # --- Update metadata (PostgreSQL piping) ------------------------------
+    # Four metadata operations after each successful ClickHouse load:
+    #   1. Watermark: track last loaded metric_time for incremental mode
+    #   2. Device registry: upsert unique devices from this batch
+    #   3. Location registry: upsert unique locations from this batch
+    #   4. Pipeline runs: audit log entry for this invocation
+    log.info("--- PostgreSQL metadata piping ---")
+
     max_metric_time = df["metric_time"].max().isoformat()
     update_watermark(pg_conn, max_metric_time, rows_inserted)
-    log.info("Watermark updated to %s", max_metric_time)
+    log.info("[metadata 1/4] Watermark updated to %s", max_metric_time)
 
     upsert_device_registry(pg_conn, df)
+    log.info("[metadata 2/4] Device registry upserted")
+
     upsert_location_registry(pg_conn, df)
+    log.info("[metadata 3/4] Location registry upserted")
 
     log_pipeline_run(pg_conn, "completed", rows_inserted)
-    log.info("Pipeline run logged successfully")
+    log.info("[metadata 4/4] Pipeline run logged")
 
     # --- Summary ---------------------------------------------------------
     log.info("-" * 60)
@@ -613,13 +671,20 @@ def main():
 if __name__ == "__main__":
     if SCHEDULE_INTERVAL > 0:
         log.info("=" * 60)
-        log.info("PERSISTENT SCHEDULER MODE — interval: %ds", SCHEDULE_INTERVAL)
+        log.info("PERSISTENT SCHEDULER MODE — interval: %ds (%d min)",
+                 SCHEDULE_INTERVAL, SCHEDULE_INTERVAL // 60)
+        log.info("  Why %ds?  Matches the upstream 1-hour tumbling-window batch",
+                 SCHEDULE_INTERVAL)
+        log.info("  cadence so each cycle picks up exactly the latest hourly batch.")
         log.info("=" * 60)
+        cycle = 0
         while True:
+            cycle += 1
+            log.info("--- Scheduler cycle %d ---", cycle)
             try:
                 main()
             except Exception as exc:
-                log.error("Scheduler iteration failed: %s", exc)
+                log.error("Scheduler cycle %d failed: %s", cycle, exc)
                 log.error("Will retry in %ds...", SCHEDULE_INTERVAL)
             log.info("Sleeping %ds until next run...", SCHEDULE_INTERVAL)
             time.sleep(SCHEDULE_INTERVAL)
