@@ -688,5 +688,7 @@ docker compose down -v
 - **Optimized** Python → Spark-based data generation with `explode()`
 
 ---
+- docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=100000 -e BATCH_SIZE=10000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse
 
+- docker compose down -v; docker compose run --rm -e RUN_GENERATOR=y -e DEVICE_COUNT=10 -e BATCH_SIZE=10 -e NUM_DAYS=7 -e RUN_PIPELINE=y spark
 *Document maintained as part of ATLAS Delta Lake implementation*
