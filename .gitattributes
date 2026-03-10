@@ -1,3 +1,9 @@
-# Force Unix line endings for shell scripts (prevents Docker CRLF issues)
+# Normalize line endings: text files get LF on checkout (cross-platform safe)
+* text=auto
+
+# Shell scripts MUST be LF — CRLF breaks the shebang line inside Linux containers
 *.sh text eol=lf
-entrypoint.sh text eol=lf
+
+# Explicitly list all container entrypoints/start scripts
+storage/entrypoint.sh   text eol=lf
+storage/loader-start.sh text eol=lf
