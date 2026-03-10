@@ -1,78 +1,56 @@
-# TODO: Add inventory_data support to match input_schema
+# Implementation TODO: Redis + MinIO 7-Day Warmup Solution
 
-## Analysis
+## Status: COMPLETED
 
-- The input_schema includes `inventory_data` with fields:
-  - `cpu_count` (IntegerType)
-  - `socket_count` (IntegerType)
-  - `cpu_inventory` (Array of: model, speed, total_cores)
-  - `memory_inventory` (Array of: memory_size, operating_freq, memory_device_type)
+### Step 1: Create MinIO Store Module
 
-- Current code does NOT fetch or return this data
+- [x] Create `core/minio_store.py` - MinIO client for historical data storage
+- [x] Methods: save_readings(), get_history(), get_history_range()
 
-## Implementation Plan - COMPLETED
+### Step 2: Update Device Config
 
-### ✅ Step 1: Add IPMI inventory fetching functions to `core/ipmi_reader.py`
+- [x] Add MinIO configuration to `config/devices.py`
+- [x] Add MINIO_HOST, MINIO_PORT, MINIO_BUCKET, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 
-- Added `_run_ipmitool()` helper function
-- Added `_get_inventory_real()` function to fetch real BMC inventory using ipmitool
-- Added `_get_inventory_mock()` function for dev/testing
-- Added `fetch_inventory()` public function
-- Commands used:
-  - `ipmitool fru print` - Field Replaceable Unit info (CPU, memory)
-  - `ipmitool dcmi info` - DCMI info including processor count
-  - `ipmitool dcmi get memory_info` - Memory information (when available)
+### Step 3: Modify Redis Store
 
-### ✅ Step 2: Update `core/response_builder.py`
+- [x] Update `core/redis_store.py` to archive old data to MinIO
+- [x] Reduce Redis retention to 24 hours (288 readings)
 
-- Added import for `fetch_inventory`
-- Added inventory_data to the response structure in `build_response()`
-- Added inventory_data to `_empty_response()` function
+### Step 4: Update Response Builder
 
-### ✅ Step 3: Add endpoint in `main.py`
+- [x] Modify `core/response_builder.py` to merge Redis + MinIO data
+- [x] Add coverage_pct and complete fields to response
 
-- Added `GET /devices/{device_id}/inventory` endpoint
-- Added import for `fetch_inventory`
+### Step 5: Update Docker Compose
 
-## How to Test
+- [x] Add MinIO service to `ATLAS/simulation1/docker-compose.yml`
+- [x] Add minio to requirements.txt
 
-### Testing Mock Mode (default - no real IPMI needed):
+### Step 6: Test
 
-```bash
-# Start the API
-uvicorn main:app --reload
+- [ ] Verify warmup scenario works correctly
+- [ ] Verify coverage_pct shows correct percentage
+- [ ] Verify complete field works correctly
 
-# Test the new inventory endpoint
-curl http://localhost:8000/devices/DEV-SERVER-01/inventory
+## Architecture Summary
 
-# Test full device data (includes inventory_data)
-curl http://localhost:8000/devices/DEV-SERVER-01
-```
+### Data Flow:
 
-### Testing with Real IPMI:
+1. **Redis** → Last 24 hours (288 readings at 5-min intervals)
+2. **MinIO** → Previous 6 days (1728 readings) stored as hourly JSON files
+3. **Merged** → Full 7 days (2016 readings) returned to clients
 
-```bash
-# Set MOCK_IPMI=false to use real IPMI commands
-export MOCK_IPMI=false
-export IPMI_HOST_01=your-bmc-ip
-export IPMI_USER_01=admin
-export IPMI_PASS_01=password
+### Warmup Behavior:
 
-uvicorn main:app --reload
-```
+- **Never crashes** - Returns available data instead of failing
+- **coverage_pct** - Tells clients exact completion % (Day 1: ~8.9%, Day 7+: 100%)
+- **complete** - Boolean explicitly indicates full 7-day data availability
 
-### IPMI Commands Used:
+### Key Changes:
 
-```bash
-# CPU and FRU info
-ipmitool -I lanplus -H <host> -U <user> -P <pass> fru print
-
-# Processor count
-ipmitool -I lanplus -H <host> -U <user> -P <pass> dcmi info
-
-# Memory info (if available)
-ipmitool -I lanplus -H <host> -U <user> -P <pass> dcmi get memory_info
-
-# CPU sensors
-ipmitool -I lanplus -H <host> -U <user> -P <pass> sensor list CPU
-```
+1. Added `core/minio_store.py` for S3-compatible storage
+2. Modified Redis to only keep 24 hours, archive older data to MinIO
+3. Response builder now merges Redis + MinIO data
+4. All endpoints handle warmup gracefully
+5. Added MinIO to docker-compose and requirements

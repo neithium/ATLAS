@@ -181,9 +181,20 @@ REDIS_PORT     = int(os.getenv("REDIS_PORT", 6379))
 REDIS_DB       = int(os.getenv("REDIS_DB",   0))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 
+# ── MinIO config ──────────────────────────────────────────────────────────────
+MINIO_HOST      = os.getenv("MINIO_HOST", "localhost")
+MINIO_PORT      = int(os.getenv("MINIO_PORT", 9000))
+MINIO_BUCKET    = os.getenv("MINIO_BUCKET", "power-readings")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_SECURE    = os.getenv("MINIO_SECURE", "false").lower() == "true"
+
 # ── Poller config ──────────────────────────────────────────────────────────────
 POLL_INTERVAL_SECONDS = 300          # 5 minutes
 READINGS_PER_HOUR     = 12
 TOTAL_READINGS        = 2016         # 12 × 24 × 7
-FRESH_READINGS        = 12           # 1 hour of new data per response
-TTL_SECONDS           = 7 * 24 * 3600   # Redis key expiry = 7 days
+FRESH_READINGS        = 12           # 1 hour of new data per response (Redis)
+HISTORICAL_READINGS  = 1728         # 12 × 24 × 6 = 6 days of historical data (MinIO)
+REDIS_READINGS        = 288          # 12 × 24 = 24 hours of recent data in Redis
+TTL_SECONDS           = 24 * 3600    # Redis key expiry = 24 hours (not 7 days!)
+MINIO_RETENTION_DAYS  = 6            # Keep 6 days of historical data in MinIO

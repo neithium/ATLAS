@@ -75,29 +75,29 @@ Swagger UI → http://localhost:8000/docs
 
 ## Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `MOCK_IPMI` | `true` | Use simulated data instead of real IPMI |
-| `REDIS_HOST` | `localhost` | Redis hostname |
-| `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_PASSWORD` | _(none)_ | Redis auth password |
-| `IPMI_HOST_01` | `192.168.1.11` | BMC IP for DEV-SERVER-01 |
-| `IPMI_USER_01` | `admin` | IPMI username |
-| `IPMI_PASS_01` | `admin` | IPMI password |
+| Variable         | Default        | Description                             |
+| ---------------- | -------------- | --------------------------------------- |
+| `MOCK_IPMI`      | `true`         | Use simulated data instead of real IPMI |
+| `REDIS_HOST`     | `localhost`    | Redis hostname                          |
+| `REDIS_PORT`     | `6379`         | Redis port                              |
+| `REDIS_PASSWORD` | _(none)_       | Redis auth password                     |
+| `IPMI_HOST_01`   | `192.168.1.11` | BMC IP for DEV-SERVER-01                |
+| `IPMI_USER_01`   | `admin`        | IPMI username                           |
+| `IPMI_PASS_01`   | `admin`        | IPMI password                           |
 
 ## Endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Redis status + buffer coverage per device |
-| `GET` | `/devices` | List all registered devices |
-| `GET` | `/devices/{device_id}` | **Full 7-day JSON** (2016 readings) |
-| `GET` | `/devices/{device_id}?from_time=&to_time=&limit=` | Filtered slice |
-| `GET` | `/devices/{device_id}/fresh` | Last 12 readings (1 hour) only |
-| `GET` | `/devices/{device_id}/latest` | Single most-recent reading |
-| `GET` | `/devices/{device_id}/summary` | Aggregated stats, no PowerDetail |
-| `POST` | `/devices/{device_id}/poll` | Force immediate IPMI poll |
-| `DELETE` | `/devices/{device_id}/flush` | Clear Redis buffer for device |
+| Method   | Path                                              | Description                               |
+| -------- | ------------------------------------------------- | ----------------------------------------- |
+| `GET`    | `/health`                                         | Redis status + buffer coverage per device |
+| `GET`    | `/devices`                                        | List all registered devices               |
+| `GET`    | `/devices/{device_id}`                            | **Full 7-day JSON** (2016 readings)       |
+| `GET`    | `/devices/{device_id}?from_time=&to_time=&limit=` | Filtered slice                            |
+| `GET`    | `/devices/{device_id}/fresh`                      | Last 12 readings (1 hour) only            |
+| `GET`    | `/devices/{device_id}/latest`                     | Single most-recent reading                |
+| `GET`    | `/devices/{device_id}/summary`                    | Aggregated stats, no PowerDetail          |
+| `POST`   | `/devices/{device_id}/poll`                       | Force immediate IPMI poll                 |
+| `DELETE` | `/devices/{device_id}/flush`                      | Clear Redis buffer for device             |
 
 ## Example requests
 

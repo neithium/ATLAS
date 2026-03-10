@@ -30,7 +30,8 @@ import redis.asyncio as redis
 
 from config.devices import (
     REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD,
-    TOTAL_READINGS, FRESH_READINGS, TTL_SECONDS,
+    TOTAL_READINGS, FRESH_READINGS, REDIS_READINGS, TTL_SECONDS,
+    HISTORICAL_READINGS,
 )
 
 log = logging.getLogger(__name__)
@@ -81,8 +82,9 @@ def _key(device_id: str) -> str:
 async def push_reading(device_id: str, reading: dict) -> int:
     """
     Append one PowerDetail reading to the device's Redis list.
-    Trims to TOTAL_READINGS (2016) from the right (newest end).
+    Trims to REDIS_READINGS (288) from the right (newest end).
     Resets TTL on every write.
+    When Redis reaches capacity (288), archives older readings to MinIO.
     Returns current list length.
     """
     r = await get_redis()
@@ -90,13 +92,58 @@ async def push_reading(device_id: str, reading: dict) -> int:
 
     pipe = r.pipeline()
     pipe.rpush(key, json.dumps(reading))          # append to right (newest)
-    pipe.ltrim(key, -TOTAL_READINGS, -1)          # keep only last 2016
-    pipe.expire(key, TTL_SECONDS)                 # reset 7-day TTL
+    pipe.ltrim(key, -REDIS_READINGS, -1)          # keep only last 288
+    pipe.expire(key, TTL_SECONDS)                 # reset 24-hour TTL
     await pipe.execute()
 
     count = await r.llen(key)
     log.debug(f"[redis] push {device_id} → len={count}")
+    
+    # Check if we need to archive to MinIO
+    # When Redis is full (288), we should have readings to archive
+    if count >= REDIS_READINGS:
+        await _archive_to_minio(device_id)
+    
     return count
+
+
+async def _archive_to_minio(device_id: str):
+    """
+    Archive readings older than 24 hours to MinIO.
+    Called when Redis buffer reaches capacity.
+    """
+    try:
+        from core import minio_store
+        
+        r = await get_redis()
+        key = _key(device_id)
+        
+        # Get all readings currently in Redis
+        raw = await r.lrange(key, 0, -1)
+        readings = [json.loads(item) for item in raw]
+        
+        if len(readings) < REDIS_READINGS:
+            return  # Not enough readings to archive yet
+        
+        # Split: keep last 288 in Redis, archive the rest
+        # Readings are oldest → newest in the list
+        # First 288-12 = 276 are older than 1 hour (can be archived)
+        # Last 12 are fresh (keep in Redis)
+        archive_count = max(0, len(readings) - FRESH_READINGS)
+        
+        if archive_count > 0:
+            older_readings = readings[:-FRESH_READINGS] if FRESH_READINGS > 0 else readings
+            
+            # Save to MinIO (grouped by hour)
+            success = await minio_store.save_reading_batch(device_id, older_readings)
+            
+            if success:
+                log.info(f"[minio] Archived {len(older_readings)} readings for {device_id}")
+            
+    except ImportError:
+        log.warning("MinIO store not available, skipping archive")
+    except Exception as e:
+        log.error(f"[minio] Archive error for {device_id}: {e}")
 
 
 # ── read ──────────────────────────────────────────────────────────────────────

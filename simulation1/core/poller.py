@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from config.devices import DEVICES, POLL_INTERVAL_SECONDS
+from config.devices import DEVICES, POLL_INTERVAL_SECONDS, REDIS_READINGS, TOTAL_READINGS
 from core.ipmi_reader import read_device
 from core.redis_store import push_reading
 
@@ -38,7 +38,7 @@ async def _poll_single(device_id: str):
             f"[poller] ✓ {device_id} | "
             f"avg={reading['Average']}W  cpu={reading['CpuUtil']}%  "
             f"temp={reading['AmbTemp']}°C | "
-            f"buffered={count}/2016"
+            f"buffered={count}/{TOTAL_READINGS} (Redis:{REDIS_READINGS})"
         )
     except ConnectionError as e:
         log.warning(f"[poller] ✗ {device_id} unreachable → {e}")
@@ -79,3 +79,4 @@ def start(run_immediately: bool = True):
 def stop():
     scheduler.shutdown(wait=False)
     log.info("[poller] Scheduler stopped")
+

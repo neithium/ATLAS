@@ -5,9 +5,9 @@ Assembles the final JSON document that the API returns.
 
 Data composition per response
 ──────────────────────────────
-  Fresh  : last 12 readings  (1 hour)   ← from IPMI via Redis (newest)
-  History: last 2004 readings (23hr + 6 days) ← from Redis ring buffer
-  Total  : 2016 readings     (7 days)
+  Redis  : last 288 readings  (24 hours)   ← recent data
+  MinIO  : previous 1728 readings (6 days) ← historical data
+  Combined: 2016 readings     (7 days)
 
 The output matches input_schema exactly:
   top-level metadata  → from DEVICES registry
@@ -15,6 +15,12 @@ The output matches input_schema exactly:
   data.Average/Max/Min→ computed from PowerDetail
   inventory_data     → CPU and memory inventory from IPMI
   summary            → aggregated stats
+
+Warmup handling
+───────────────
+  - Never crashes - returns available data instead of failing
+  - coverage_pct - tells clients exact completion % (Day 1: ~8.9%, Day 7+: 100%)
+  - complete - boolean explicitly indicates full 7-day data availability
 """
 
 import asyncio
@@ -23,7 +29,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from config.devices import DEVICES, TOTAL_READINGS, FRESH_READINGS
+from config.devices import DEVICES, TOTAL_READINGS, FRESH_READINGS, REDIS_READINGS
 from core.redis_store import get_history
 from core.ipmi_reader import fetch_inventory
 
@@ -35,26 +41,51 @@ async def build_response(device_id: str, preloaded_readings: list[dict] = None) 
     Build the complete JSON document for a device_id.
 
     Reading composition:
-      • Fetches all buffered readings from Redis (up to 2016)
-      • Last 12  = fresh (current hour from IPMI)
-      • Rest     = historical (23 hrs + 6 days from Redis)
-      • Combined = exactly what was in Redis (already in order)
+      • Fetches from Redis (last 288 readings = 24 hours)
+      • Fetches from MinIO (previous 1728 readings = 6 days)
+      • Merges both sources for full 7-day coverage
       
-    If preloaded_readings is provided, use that data instead of fetching from Redis.
+    If preloaded_readings is provided, use that data instead of fetching from Redis/MinIO.
     """
     meta     = DEVICES[device_id]
 
-    # ── Pull from Redis (or use preloaded) ───────────────────────────────────
+    # ── Pull from Redis and MinIO (or use preloaded) ─────────────────────────
     if preloaded_readings is not None:
         all_readings = preloaded_readings
     else:
-        # Redis list is oldest→newest; get_history returns last 2016
-        all_readings = await get_history(device_id, last_n=TOTAL_READINGS)
+        # Get recent data from Redis
+        redis_readings = await get_history(device_id, last_n=REDIS_READINGS)
+        
+        # Get historical data from MinIO
+        try:
+            from core.minio_store import get_history as get_minio_history
+            minio_readings = await get_minio_history(device_id, last_n=TOTAL_READINGS)
+        except ImportError:
+            log.warning("MinIO store not available, using only Redis data")
+            minio_readings = []
+        
+        # Merge: oldest from MinIO → newest from Redis
+        all_readings = minio_readings + redis_readings
+        
+        # Deduplicate by timestamp (some readings might overlap)
+        seen_times = set()
+        merged = []
+        for r in all_readings:
+            t = r.get("Time")
+            if t and t not in seen_times:
+                seen_times.add(t)
+                merged.append(r)
+        
+        # Sort by timestamp and limit to TOTAL_READINGS
+        merged.sort(key=lambda r: r.get("Time", ""))
+        all_readings = merged[:TOTAL_READINGS]
 
     if not all_readings:
         return await _empty_response(device_id, meta)
 
     total = len(all_readings)
+    coverage_pct = round(total / TOTAL_READINGS * 100, 1)
+    complete = total >= TOTAL_READINGS
 
     # ── Annotate which readings are "fresh" vs "historical" ──────────────────
     # Last FRESH_READINGS (12) = fresh, everything before = historical
@@ -77,7 +108,7 @@ async def build_response(device_id: str, preloaded_readings: list[dict] = None) 
     max_power = float(max(peaks))                   if peaks  else None
     min_power = float(min(mins))                    if mins   else None
 
-    # ── Assemble document (matches input_schema) ──────────────────────────────
+    # ── Assemble document (matches input_schema) ─────────────────────────────
     
     # Fetch inventory data from IPMI (or mock)
     try:
@@ -115,6 +146,14 @@ async def build_response(device_id: str, preloaded_readings: list[dict] = None) 
         "platform_customer_id"   : meta["platform_customer_id"],
         "application_customer_id": meta["application_customer_id"],
 
+        # ── warmup status ────────────────────────────────────────────────────
+        "coverage_pct"           : coverage_pct,
+        "complete"               : complete,
+        "data_source"            : {
+            "redis_count"        : min(total, REDIS_READINGS),
+            "minio_count"        : max(0, total - REDIS_READINGS),
+        },
+
         # ── data block ───────────────────────────────────────────────────────
         "data": {
             "Id"         : str(uuid.uuid4()),
@@ -122,7 +161,7 @@ async def build_response(device_id: str, preloaded_readings: list[dict] = None) 
             "Maximum"    : max_power,
             "Minimum"    : min_power,
             "Name"       : f"PowerReport-{device_id}",
-            "PowerDetail": all_readings,      # ← 2016-entry nested array
+            "PowerDetail": all_readings,      # ← up to 2016-entry nested array
         },
         
         # ── inventory data ───────────────────────────────────────────────────
@@ -141,6 +180,8 @@ async def build_response(device_id: str, preloaded_readings: list[dict] = None) 
             "avg_cpu_util_pct"    : round(sum(cpu_utils)/len(cpu_utils), 2) if cpu_utils else None,
             "avg_amb_temp_c"      : round(sum(temps)/len(temps), 2)         if temps     else None,
             "total_energy_kwh"    : total_energy,
+            "coverage_pct"        : coverage_pct,
+            "complete"            : complete,
         },
     }
 
@@ -185,4 +226,8 @@ async def _empty_response(device_id: str, meta: dict) -> dict:
                         "Minimum": None, "Name": None, "PowerDetail": []},
         "inventory_data": inventory_data,
         "summary"    : None,
+        # ── warmup status (even for empty) ─────────────────────────────────
+        "coverage_pct": 0.0,
+        "complete"   : False,
     }
+
