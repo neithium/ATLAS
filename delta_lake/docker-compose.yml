@@ -9,7 +9,7 @@ services:
       network: host
     container_name: atlas-delta-lake
     dns:
-      - 8.8.8.8
+      - 8.8.8.8 
       - 8.8.4.4
     volumes:
       # Shared volume for /raw (processing <-> delta_lake)

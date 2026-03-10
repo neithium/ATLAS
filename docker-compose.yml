@@ -253,11 +253,15 @@ services:
       - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=2g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
-      - RUN_GENERATOR=${RUN_GENERATOR:-n}           # y = run generator, n = skip
-      - GENERATOR_MODE=${GENERATOR_MODE:-benchmark} # benchmark | legacy
-      - DEVICE_COUNT=${DEVICE_COUNT:-100000}        # Number of devices for benchmark
-      - BATCH_SIZE=${BATCH_SIZE:-10000}             # Batch size for memory management
-      - RUN_PIPELINE=${RUN_PIPELINE:-n}             # y = run pipeline, n = skip
+      - RUN_GENERATOR=${RUN_GENERATOR:-n}            # y = run generator, n = skip
+      - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy
+      - DEVICE_COUNT=${DEVICE_COUNT:-100000}         # Number of devices for benchmark
+      - BATCH_SIZE=${BATCH_SIZE:-10000}              # Batch size for memory management
+      - NUM_DAYS=${NUM_DAYS:-7}                      # Number of daily files (7-day rolling window)
+      - START_DATE=${START_DATE:-2026-03-01}         # First file date (YYYY-MM-DD)
+      - RUN_PIPELINE=${RUN_PIPELINE:-n}              # y = run pipeline, n = skip
+      - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
+      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}          # Run OPTIMIZE after every N batches
     working_dir: /app
     networks:
       - atlas-network
@@ -272,23 +276,27 @@ services:
         echo \"  GENERATOR_MODE=$$GENERATOR_MODE\" &&
         echo \"  DEVICE_COUNT=$$DEVICE_COUNT\" &&
         echo \"  BATCH_SIZE=$$BATCH_SIZE\" &&
+        echo \"  NUM_DAYS=$$NUM_DAYS\" &&
+        echo \"  START_DATE=$$START_DATE\" &&
         echo \"  RUN_PIPELINE=$$RUN_PIPELINE\" &&
+        echo \"  PIPELINE_MODE=$$PIPELINE_MODE\" &&
+        echo \"  OPTIMIZE_EVERY=$$OPTIMIZE_EVERY\" &&
         echo '' &&
         if [ \"$$RUN_GENERATOR\" = 'y' ] || [ \"$$RUN_GENERATOR\" = 'Y' ]; then
           if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
             echo '[1/2] Generating legacy merge-demo input under /raw ...' &&
             python3 generate_data.py --mode legacy --output /raw;
           else
-            echo '[1/2] Generating benchmark data under /raw/benchmark_data ...' &&
-            python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE;
+            echo '[1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...' &&
+            python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE --num-days $$NUM_DAYS --start-date $$START_DATE;
           fi;
         else
           echo \"[1/2] Skipping generator (RUN_GENERATOR=$$RUN_GENERATOR)\";
         fi &&
         echo '' &&
         if [ \"$$RUN_PIPELINE\" = 'y' ] || [ \"$$RUN_PIPELINE\" = 'Y' ]; then
-          echo '[2/2] Running deduplication pipeline...' &&
-          python3 delta_merge_pipeline.py --input /raw --output /refined;
+          echo \"[2/2] Running deduplication pipeline (mode=$$PIPELINE_MODE)...\" &&
+          python3 delta_merge_pipeline.py --input /raw --output /refined --mode $$PIPELINE_MODE --optimize-every $$OPTIMIZE_EVERY;
         else
           echo \"[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
         fi &&
@@ -309,55 +317,47 @@ services:
   #   - Daily Materialized Views for validation against Processor's hourly math
   # ===========================================================================
 
-  # TODO: Varna - Implement ClickHouse analytics
-  # atlas-analytics:
-  #   image: clickhouse/clickhouse-server:24.1
-  #   container_name: atlas-analytics
-  #   hostname: analytics
-  #   ports:
-  #     - "8123:8123"   # HTTP interface (queries, dashboards)
-  #     - "9000:9000"   # Native TCP interface (high-performance)
-  #   environment:
-  #     - CLICKHOUSE_USER=atlas
-  #     - CLICKHOUSE_PASSWORD=atlas_secure_pwd
-  #     - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-  #   volumes:
-  #     - clickhouse-data:/var/lib/clickhouse
-  #     - ./storage/clickhouse:/docker-entrypoint-initdb.d:ro
-  #     - delta-refined:/var/lib/clickhouse/user_files/refined:ro
-  #   networks:
-  #     - atlas-network
-  #   ulimits:
-  #     nofile:
-  #       soft: 262144
-  #       hard: 262144
-  #   healthcheck:
-  #     test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-
-  # # PostgreSQL - Metadata Store (Part of Analytics Domain)
-  # analytics-db:
-  #   image: postgres:16-alpine
-  #   container_name: atlas-analytics-db
-  #   hostname: analytics-db
-  #   ports:
-  #     - "5432:5432"
-  #   environment:
-  #     - POSTGRES_USER=atlas
-  #     - POSTGRES_PASSWORD=atlas_secure_pwd
-  #     - POSTGRES_DB=atlas_metadata
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #     - ./storage/postgres:/docker-entrypoint-initdb.d:ro
-  #   networks:
-  #     - atlas-network
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U atlas -d atlas_metadata"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  atlas-analytics:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    container_name: atlas-analytics
+    hostname: analytics
+    ports:
+      - "8123:8123"   # ClickHouse HTTP interface (queries, dashboards)
+      - "9000:9000"   # ClickHouse Native TCP interface
+      - "5432:5432"   # PostgreSQL
+    env_file: .env.example
+    environment:
+      # Override hosts for internal (same-container) connections.
+      # .env.example sets CLICKHOUSE_HOST=analytics / POSTGRES_HOST=analytics
+      # which is the hostname for OTHER containers; inside this container we
+      # must use 127.0.0.1 since all three services share one network namespace.
+      - CLICKHOUSE_HOST=127.0.0.1
+      - POSTGRES_HOST=127.0.0.1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - postgres-data:/var/lib/postgresql/data
+      # READ from the same refined-volume that Lakehouse writes to.
+      # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
+      - refined-volume:/data/refined:ro
+      # Init scripts (run on first start by loader-start.sh)
+      - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
+      - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
+      # Application code
+      - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
+      - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
+      # Schema reference
+      - ./schema:/app/schema:ro
+    networks:
+      - atlas-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host 127.0.0.1 --query 'SELECT 1' && pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-atlas}"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   # ===========================================================================
   # DEVELOPMENT & MONITORING TOOLS (Optional)
