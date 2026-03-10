@@ -307,14 +307,31 @@ services:
   # ===========================================================================
   # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
   # ===========================================================================
-  # Technology: ClickHouse (Primary) + PostgreSQL (Metadata)
-  # Role: Dashboard Engine
+  # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
+  # ===========================================================================
+  # Technology: ClickHouse + PostgreSQL + Python Loader (unified container)
+  # Role: Dashboard Engine + Metadata Store + Batch Ingestion
   #
-  # Responsibilities:
-  #   - ClickHouse: Fast analytical queries on telemetry data
-  #   - PostgreSQL: Metadata storage (device registry, locations)
-  #   - Slow Path: Python scheduler reads clean Parquet from Lakehouse
-  #   - Daily Materialized Views for validation against Processor's hourly math
+  # Managed by supervisord inside a single container:
+  #   - ClickHouse: Fast analytical queries on deduplicated telemetry data
+  #   - PostgreSQL: Metadata store (watermarks, device/location registry)
+  #   - Delta Loader: Partition-aware batch ingestion from Refined Layer
+  #     (persistent scheduler — polls every SCHEDULE_INTERVAL_SECONDS)
+  #
+  # The Loader reads from refined-volume using the 5-level partition scheme:
+  #   report_type / partition_date / platform_customer_id /
+  #   application_customer_id / device_id
+  # and prunes by partition_date for incremental loads.
+  #
+  # Credentials: All DB credentials are sourced from .env.example via env_file.
+  # To change creds, edit .env.example — they flow into entrypoint.sh,
+  # loader-start.sh, and delta_loader.py automatically.
+  #
+  # SCHEDULE_INTERVAL_SECONDS (default 3600 in .env.example):
+  #   The Delta Loader polls the refined layer every 3600 s (1 hour).
+  #   3600 s matches the upstream 1-hour tumbling-window batch cadence
+  #   so each loader run picks up exactly the latest hourly batch.
+  #   Set to 0 for a single one-shot run.
   # ===========================================================================
 
   atlas-analytics:
@@ -352,6 +369,7 @@ services:
     networks:
       - atlas-network
     healthcheck:
+      # Use default user (no auth) for ClickHouse probe — matches loader-start.sh
       test: ["CMD-SHELL", "clickhouse-client --host 127.0.0.1 --query 'SELECT 1' && pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-atlas}"]
       interval: 15s
       timeout: 10s
