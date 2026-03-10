@@ -1,0 +1,3 @@
+# Force Unix line endings for shell scripts (prevents Docker CRLF issues)
+*.sh text eol=lf
+entrypoint.sh text eol=lf
