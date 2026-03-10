@@ -33,7 +33,7 @@ async def _poll_single(device_id: str):
             ipmi_password= meta["ipmi_password"],
             ipmi_port    = meta.get("ipmi_port", 623),
         )
-        count = push_reading(device_id, reading)
+        count = await push_reading(device_id, reading)
         log.info(
             f"[poller] ✓ {device_id} | "
             f"avg={reading['Average']}W  cpu={reading['CpuUtil']}%  "

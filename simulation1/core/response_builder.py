@@ -17,6 +17,7 @@ The output matches input_schema exactly:
   summary            → aggregated stats
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -29,7 +30,7 @@ from core.ipmi_reader import fetch_inventory
 log = logging.getLogger(__name__)
 
 
-def build_response(device_id: str) -> dict:
+async def build_response(device_id: str, preloaded_readings: list[dict] = None) -> dict:
     """
     Build the complete JSON document for a device_id.
 
@@ -38,15 +39,20 @@ def build_response(device_id: str) -> dict:
       • Last 12  = fresh (current hour from IPMI)
       • Rest     = historical (23 hrs + 6 days from Redis)
       • Combined = exactly what was in Redis (already in order)
+      
+    If preloaded_readings is provided, use that data instead of fetching from Redis.
     """
     meta     = DEVICES[device_id]
 
-    # ── Pull from Redis ───────────────────────────────────────────────────────
-    # Redis list is oldest→newest; get_history returns last 2016
-    all_readings = get_history(device_id, last_n=TOTAL_READINGS)
+    # ── Pull from Redis (or use preloaded) ───────────────────────────────────
+    if preloaded_readings is not None:
+        all_readings = preloaded_readings
+    else:
+        # Redis list is oldest→newest; get_history returns last 2016
+        all_readings = await get_history(device_id, last_n=TOTAL_READINGS)
 
     if not all_readings:
-        return _empty_response(device_id, meta)
+        return await _empty_response(device_id, meta)
 
     total = len(all_readings)
 
@@ -139,7 +145,7 @@ def build_response(device_id: str) -> dict:
     }
 
 
-def _empty_response(device_id: str, meta: dict) -> dict:
+async def _empty_response(device_id: str, meta: dict) -> dict:
     """Returned when no readings are buffered yet for a device."""
     # Try to fetch inventory even when no readings
     try:

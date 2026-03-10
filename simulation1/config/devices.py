@@ -40,15 +40,17 @@ def _validate_device_config(device_id: str, config: dict):
 
 # ── Device registry ───────────────────────────────────────────────────────────
 
+# Platform prefixes for organization:
+# PLAT1 = Platform 1, PLAT2 = Platform 2, PLAT3 = Platform 3
+
 DEVICES: dict[str, dict] = {
-    "DEV-SERVER-01": {
-        # ── IPMI connection ────────────────────────────────────────────
-        "ipmi_host"    : os.getenv("IPMI_HOST_01", "192.168.1.11"),
-        "ipmi_user"    : os.getenv("IPMI_USER_01", "admin"),
-        "ipmi_password": os.getenv("IPMI_PASS_01", "admin"),
+    # ── PLATFORM 1 (PLAT1) ───────────────────────────────────────────────
+    "PLAT1-DEV-001": {
+        "ipmi_host"    : os.getenv("IPMI_HOST_PLAT1_001", "192.168.1.11"),
+        "ipmi_user"    : os.getenv("IPMI_USER_PLAT1_001", "admin"),
+        "ipmi_password": os.getenv("IPMI_PASS_PLAT1_001", "admin"),
         "ipmi_port"    : 623,
 
-        # ── metadata (written into every JSON response) ────────────────
         "server_name"            : "srv-austin-001",
         "model"                  : "ProLiant DL360 Gen11",
         "processor_vendor"       : "Intel",
@@ -61,13 +63,12 @@ DEVICES: dict[str, dict] = {
         "platform_customer_id"   : "PLATCUST001",
         "application_customer_id": "APPCUST00001",
     },
-    "DEV-SERVER-02": {
-        "ipmi_host"    : os.getenv("IPMI_HOST_02", "192.168.1.12"),
-        "ipmi_user"    : os.getenv("IPMI_USER_02", "admin"),
-        "ipmi_password": os.getenv("IPMI_PASS_02", "admin"),
+    "PLAT1-DEV-002": {
+        "ipmi_host"    : os.getenv("IPMI_HOST_PLAT1_002", "192.168.1.12"),
+        "ipmi_user"    : os.getenv("IPMI_USER_PLAT1_002", "admin"),
+        "ipmi_password": os.getenv("IPMI_PASS_PLAT1_002", "admin"),
         "ipmi_port"    : 623,
 
-        # ── metadata (written into every JSON response) ────────────────
         "server_name"            : "srv-austin-002",
         "model"                  : "ProLiant DL380 Gen11",
         "processor_vendor"       : "AMD",
@@ -80,55 +81,99 @@ DEVICES: dict[str, dict] = {
         "platform_customer_id"   : "PLATCUST001",
         "application_customer_id": "APPCUST00002",
     },
-    "DEV-SERVER-03": {
-        "ipmi_host"    : os.getenv("IPMI_HOST_03", "192.168.1.13"),
-        "ipmi_user"    : os.getenv("IPMI_USER_03", "admin"),
-        "ipmi_password": os.getenv("IPMI_PASS_03", "admin"),
+
+    # ── PLATFORM 2 (PLAT2) ───────────────────────────────────────────────
+    "PLAT2-DEV-001": {
+        "ipmi_host"    : os.getenv("IPMI_HOST_PLAT2_001", "192.168.2.11"),
+        "ipmi_user"    : os.getenv("IPMI_USER_PLAT2_001", "admin"),
+        "ipmi_password": os.getenv("IPMI_PASS_PLAT2_001", "admin"),
         "ipmi_port"    : 623,
 
-        # ── metadata (written into every JSON response) ────────────────
-        "server_name"            : "srv-austin-003",
-        "model"                  : "ProLiant DL560 Gen11",
+        "server_name"            : "srv-denver-001",
+        "model"                  : "PowerEdge R750",
         "processor_vendor"       : "Intel",
-        "server_generation"      : "Gen11",
-        "location_id"            : "LOC-001",
-        "location_city"          : "Austin",
-        "location_state"         : "TX",
+        "server_generation"      : "Gen15",
+        "location_id"            : "LOC-002",
+        "location_city"          : "Denver",
+        "location_state"         : "CO",
         "location_country"       : "US",
-        "location_name"          : "DC-Austin-01",
-        "platform_customer_id"   : "PLATCUST001",
-        "application_customer_id": "APPCUST00003",
+        "location_name"          : "DC-Denver-01",
+        "platform_customer_id"   : "PLATCUST002",
+        "application_customer_id": "APPCUST10001",
     },
-    "DEV-SERVER-04": {
-        # ── IPMI connection ────────────────────────────────────────────
-        "ipmi_host"    : os.getenv("IPMI_HOST_04", "192.168.1.14"),
-        "ipmi_user"    : os.getenv("IPMI_USER_04", "admin"),
-        "ipmi_password": os.getenv("IPMI_PASS_04", "admin"),
+    "PLAT2-DEV-002": {
+        "ipmi_host"    : os.getenv("IPMI_HOST_PLAT2_002", "192.168.2.12"),
+        "ipmi_user"    : os.getenv("IPMI_USER_PLAT2_002", "admin"),
+        "ipmi_password": os.getenv("IPMI_PASS_PLAT2_002", "admin"),
         "ipmi_port"    : 623,
 
-        # ── metadata (written into every JSON response) ────────────────
-        "server_name"            : "srv-austin-004",
-        "model"                  : "ProLiant DL360 Gen11",
-        "processor_vendor"       : "Intel",
-        "server_generation"      : "Gen11",
-        "location_id"            : "LOC-001",
-        "location_city"          : "Austin",
-        "location_state"         : "TX",
+        "server_name"            : "srv-denver-002",
+        "model"                  : "PowerEdge R650",
+        "processor_vendor"       : "AMD",
+        "server_generation"      : "Gen15",
+        "location_id"            : "LOC-002",
+        "location_city"          : "Denver",
+        "location_state"         : "CO",
         "location_country"       : "US",
-        "location_name"          : "DC-Austin-01",
-        "platform_customer_id"   : "PLATCUST001",
-        "application_customer_id": "APPCUST00004",
+        "location_name"          : "DC-Denver-01",
+        "platform_customer_id"   : "PLATCUST002",
+        "application_customer_id": "APPCUST10002",
+    },
+
+    # ── PLATFORM 3 (PLAT3) ───────────────────────────────────────────────
+    "PLAT3-DEV-001": {
+        "ipmi_host"    : os.getenv("IPMI_HOST_PLAT3_001", "192.168.3.11"),
+        "ipmi_user"    : os.getenv("IPMI_USER_PLAT3_001", "admin"),
+        "ipmi_password": os.getenv("IPMI_PASS_PLAT3_001", "admin"),
+        "ipmi_port"    : 623,
+
+        "server_name"            : "srv-phoenix-001",
+        "model"                  : "UCS C220 M6",
+        "processor_vendor"       : "Intel",
+        "server_generation"      : "Gen5",
+        "location_id"            : "LOC-003",
+        "location_city"          : "Phoenix",
+        "location_state"         : "AZ",
+        "location_country"       : "US",
+        "location_name"          : "DC-Phoenix-01",
+        "platform_customer_id"   : "PLATCUST003",
+        "application_customer_id": "APPCUST20001",
+    },
+    "PLAT3-DEV-002": {
+        "ipmi_host"    : os.getenv("IPMI_HOST_PLAT3_002", "192.168.3.12"),
+        "ipmi_user"    : os.getenv("IPMI_USER_PLAT3_002", "admin"),
+        "ipmi_password": os.getenv("IPMI_PASS_PLAT3_002", "admin"),
+        "ipmi_port"    : 623,
+
+        "server_name"            : "srv-phoenix-002",
+        "model"                  : "UCS C240 M6",
+        "processor_vendor"       : "AMD",
+        "server_generation"      : "Gen5",
+        "location_id"            : "LOC-003",
+        "location_city"          : "Phoenix",
+        "location_state"         : "AZ",
+        "location_country"       : "US",
+        "location_name"          : "DC-Phoenix-01",
+        "platform_customer_id"   : "PLATCUST0",
+        "application_customer_id": "APPCUST20002",
     },
 }
 
 # ── Validate all devices on startup ───────────────────────────────────────────
+# Skip invalid devices instead of crashing the entire app
 
+_valid_devices = {}
 for device_id, config in DEVICES.items():
     try:
         _validate_device_config(device_id, config)
+        _valid_devices[device_id] = config
     except ValueError as e:
-        log.error(f"Device config validation failed: {e}")
-        raise
+        log.error(f"Device config validation failed for {device_id}: {e}")
+        log.warning(f"Skipping device {device_id} due to validation error")
+
+# Replace DEVICES with only validated devices
+DEVICES = _valid_devices
+log.info(f"Validated {len(DEVICES)} device(s) from configuration")
 
 # ── Redis config ───────────────────────────────────────────────────────────────
 REDIS_HOST     = os.getenv("REDIS_HOST", "localhost")
@@ -142,4 +187,3 @@ READINGS_PER_HOUR     = 12
 TOTAL_READINGS        = 2016         # 12 × 24 × 7
 FRESH_READINGS        = 12           # 1 hour of new data per response
 TTL_SECONDS           = 7 * 24 * 3600   # Redis key expiry = 7 days
-

@@ -29,10 +29,10 @@ from core import poller
 from core.redis_store import (
     get_history, get_fresh, get_history_range,
     reading_count, get_all_device_ids, flush_device, ping as redis_ping,
+    get_history_batch, reading_count_batch, push_reading,
 )
 from core.response_builder import build_response
 from core.ipmi_reader import read_device, fetch_inventory
-from core.redis_store import push_reading
 
 # Control which instance runs the poller (only "api" should run it)
 ENABLE_POLLER = os.getenv("ENABLE_POLLER", "false").lower() == "true"
@@ -70,7 +70,7 @@ async def startup():
     log.info("=" * 60)
     log.info("Power Monitor API starting up")
     log.info(f"Registered devices : {list(DEVICES.keys())}")
-    log.info(f"Redis              : {redis_ping()}")
+    log.info(f"Redis              : {await redis_ping()}")
     log.info(f"Poller enabled     : {ENABLE_POLLER}")
     if ENABLE_POLLER:
         poller.start(run_immediately=True)
@@ -96,8 +96,8 @@ def _require_device(device_id: str):
             },
         )
 
-def _require_readings(device_id: str):
-    if reading_count(device_id) == 0:
+async def _require_readings(device_id: str):
+    if await reading_count(device_id) == 0:
         raise HTTPException(
             status_code = 404,
             detail      = {
@@ -114,11 +114,14 @@ async def health():
     """
     Returns API health, Redis connectivity, and buffer status per device.
     """
-    redis_ok = redis_ping()
+    redis_ok = await redis_ping()
     devices_status = {}
 
+    # Fetch all counts in parallel for better performance
+    counts = await reading_count_batch(list(DEVICES.keys()))
+
     for did in DEVICES:
-        count = reading_count(did)
+        count = counts.get(did, 0)
         devices_status[did] = {
             "server_name"    : DEVICES[did]["server_name"],
             "buffered"       : count,
@@ -139,9 +142,12 @@ async def health():
 @app.get("/devices", tags=["Devices"])
 async def list_devices():
     """List all registered devices with metadata and buffer status."""
+    # Fetch all counts in parallel for better performance
+    counts = await reading_count_batch(list(DEVICES.keys()))
+    
     result = []
     for did, meta in DEVICES.items():
-        count = reading_count(did)
+        count = counts.get(did, 0)
         result.append({
             "device_id"              : did,
             "server_name"            : meta["server_name"],
@@ -173,8 +179,13 @@ async def get_devices_batch(
     requested device. Invalid or missing device IDs are included in the
     response with error information.
     
+    Uses asyncio.gather() for parallel Redis fetching - all devices are
+    fetched concurrently instead of sequentially.
+    
     Example: `/devices/batch?ids=DEV-SERVER-01,DEV-SERVER-02,DEV-SERVER-03`
     """
+    import asyncio
+    
     # Parse comma-separated IDs
     device_ids = [d.strip() for d in ids.split(",") if d.strip()]
     
@@ -190,7 +201,8 @@ async def get_devices_batch(
             detail      = "Maximum 20 devices allowed per batch request",
         )
     
-    results = {}
+    # Separate valid and invalid device IDs
+    valid_device_ids = []
     errors = []
     
     for device_id in device_ids:
@@ -200,24 +212,37 @@ async def get_devices_batch(
                 "error": f"Device '{device_id}' not registered",
                 "registered_ids": list(DEVICES.keys()),
             })
-            results[device_id] = None
             continue
-            
-        if reading_count(device_id) == 0:
+        valid_device_ids.append(device_id)
+    
+    # Fetch all counts in parallel
+    counts = await reading_count_batch(valid_device_ids)
+    
+    # Separate devices with no readings vs with readings
+    devices_with_readings = []
+    for did in valid_device_ids:
+        if counts.get(did, 0) == 0:
             errors.append({
-                "device_id": device_id,
-                "error": f"No readings buffered yet for '{device_id}'",
+                "device_id": did,
+                "error": f"No readings buffered yet for '{did}'",
                 "hint": "Wait for the next 5-min poll or POST /devices/{device_id}/poll",
             })
-            results[device_id] = None
-            continue
-        
-        # Return full response for valid device
-        results[device_id] = build_response(device_id)
+        else:
+            devices_with_readings.append(did)
+    
+    # Fetch all history data in PARALLEL using asyncio.gather
+    history_data = await get_history_batch(devices_with_readings, last_n=TOTAL_READINGS)
+    
+    # Build all responses in PARALLEL using asyncio.gather
+    async def build_one(did: str):
+        return (did, await build_response(did, preloaded_readings=history_data.get(did, [])))
+    
+    responses = await asyncio.gather(*[build_one(did) for did in devices_with_readings])
+    results = {did: response for did, response in responses}
     
     return {
         "requested_count": len(device_ids),
-        "successful_count": len([d for d in device_ids if results.get(d) is not None]),
+        "successful_count": len(results),
         "failed_count": len(errors),
         "errors": errors,
         "devices": results,
@@ -244,11 +269,11 @@ async def get_device_data(
     Optionally filter by `from_time` / `to_time` or cap with `limit`.
     """
     _require_device(device_id)
-    _require_readings(device_id)
+    await _require_readings(device_id)
 
     if from_time or to_time or limit:
         # Filtered mode — return slice only, no full schema wrapping
-        readings = get_history_range(device_id, from_time, to_time, limit)
+        readings = await get_history_range(device_id, from_time, to_time, limit)
         meta     = DEVICES[device_id]
         return {
             "device_id"  : device_id,
@@ -259,7 +284,7 @@ async def get_device_data(
         }
 
     # Full mode — returns complete input_schema-shaped document
-    return build_response(device_id)
+    return await build_response(device_id)
 
 
 @app.get("/devices/{device_id}/fresh", tags=["Data"])
@@ -268,9 +293,9 @@ async def get_fresh_readings(device_id: str):
     Return only the **12 most recent readings** (current hour from IPMI).
     """
     _require_device(device_id)
-    _require_readings(device_id)
+    await _require_readings(device_id)
 
-    readings = get_fresh(device_id)
+    readings = await get_fresh(device_id)
     meta     = DEVICES[device_id]
     return {
         "device_id"  : device_id,
@@ -285,9 +310,9 @@ async def get_fresh_readings(device_id: str):
 async def get_latest_reading(device_id: str):
     """Return the single most-recent reading for a device."""
     _require_device(device_id)
-    _require_readings(device_id)
+    await _require_readings(device_id)
 
-    readings = get_history(device_id, last_n=1)
+    readings = await get_history(device_id, last_n=1)
     return {
         "device_id"  : device_id,
         "server_name": DEVICES[device_id]["server_name"],
@@ -302,9 +327,9 @@ async def get_summary(device_id: str):
     Fast — no large payload.
     """
     _require_device(device_id)
-    _require_readings(device_id)
+    await _require_readings(device_id)
 
-    doc = build_response(device_id)
+    doc = await build_response(device_id)
     return {
         "device_id"  : device_id,
         "server_name": doc["server_name"],
@@ -330,7 +355,7 @@ async def force_poll(device_id: str):
             ipmi_password= meta["ipmi_password"],
             ipmi_port    = meta.get("ipmi_port", 623),
         )
-        count = push_reading(device_id, reading)
+        count = await push_reading(device_id, reading)
         return {
             "status"     : "ok",
             "device_id"  : device_id,
@@ -381,7 +406,7 @@ async def flush_buffer(device_id: str):
     The poller will start refilling from the next poll cycle.
     """
     _require_device(device_id)
-    deleted = flush_device(device_id)
+    deleted = await flush_device(device_id)
     return {
         "status"    : "flushed" if deleted else "already_empty",
         "device_id" : device_id,
