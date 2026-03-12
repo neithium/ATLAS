@@ -25,6 +25,10 @@ Schema (flattened from PowerDetail array):
 - file_date: Date file was received (partition column)
 - MetricValue: The actual metric value
 
+Output Modes:
+- file: Write to Parquet files (original behavior)
+- dataframe: Return DataFrame directly (for batch pipeline integration)
+
 Example with 3 daily files:
 - File Day 8:  metric_time spans Day 2-8, file_date=Day 8
 - File Day 9:  metric_time spans Day 3-9, file_date=Day 9
@@ -33,11 +37,13 @@ Example with 3 daily files:
 """
 
 from datetime import datetime, timedelta
+from typing import Optional, List
 import argparse
 import math
+import os
 import time
 
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
     array,
     broadcast,
@@ -60,6 +66,20 @@ from pyspark.sql.functions import (
 )
 
 
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+class GeneratorConfig:
+    """Configuration for data generator."""
+    
+    # Compression codec (matches batch pipeline)
+    COMPRESSION_CODEC = os.getenv("COMPRESSION_CODEC", "zstd")
+    
+    # Default output mode
+    OUTPUT_MODE = os.getenv("OUTPUT_MODE", "file")  # file | dataframe
+
+
 def create_spark_session() -> SparkSession:
     """Create Spark session tuned for container-constrained generation."""
     spark = (
@@ -67,7 +87,7 @@ def create_spark_session() -> SparkSession:
         .master("local[*]")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.execution.arrow.pyspark.enabled", "false")
-        .config("spark.sql.parquet.compression.codec", "snappy")
+        .config("spark.sql.parquet.compression.codec", GeneratorConfig.COMPRESSION_CODEC)
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
@@ -305,7 +325,7 @@ def generate_benchmark_data(
             (
                 batch_df.repartition(4, col("file_date"))
                 .write.mode(mode)
-                .option("compression", "snappy")
+                .option("compression", GeneratorConfig.COMPRESSION_CODEC)
                 .partitionBy("file_date")
                 .parquet(output_path)
             )
@@ -326,6 +346,99 @@ def generate_benchmark_data(
     print(f"Expected dedup ratio:   {expected_dedup_ratio:.1f}%")
     print(f"Total elapsed:          {total_elapsed:.2f}s")
     print("=" * 80)
+
+
+# =============================================================================
+# DATAFRAME MODE - Direct DataFrame Generation
+# =============================================================================
+
+def generate_batch_dataframe(
+    spark: SparkSession,
+    total_devices: int,
+    file_date: datetime,
+    profile_df = None
+) -> DataFrame:
+    """
+    Generate a complete batch DataFrame for direct pipeline integration.
+    
+    This function returns a DataFrame instead of writing to files, enabling
+    direct integration with the batch merge pipeline's DataFrame mode.
+    
+    Creates a 7-day rolling window of data (2016 rows per device).
+    
+    Args:
+        spark: SparkSession
+        total_devices: Number of devices to generate
+        file_date: The date this batch was "received" (determines 7-day window)
+        profile_df: Optional pre-computed metric profile (for efficiency)
+    
+    Returns:
+        DataFrame with complete batch data ready for merge pipeline
+    
+    Usage:
+        from generate_data import generate_batch_dataframe
+        from delta_merge_pipeline import process_dataframe
+        
+        spark = SparkSession.builder.getOrCreate()
+        batch_df = generate_batch_dataframe(spark, total_devices=1000, file_date=datetime.now())
+        result = process_dataframe(batch_df, output_path="/refined")
+    """
+    if profile_df is None:
+        profile_df = build_metric_profile(spark)
+    
+    return build_daily_file_df(
+        spark=spark,
+        batch_start=0,
+        batch_end=total_devices,
+        file_date=file_date,
+        profile_df=profile_df
+    )
+
+
+def generate_multi_day_dataframe(
+    spark: SparkSession,
+    total_devices: int,
+    start_date: datetime,
+    num_days: int = 7
+) -> DataFrame:
+    """
+    Generate multiple days of batch data as a single DataFrame.
+    
+    Creates a combined DataFrame spanning multiple daily batches,
+    simulating the accumulation of rolling window data over time.
+    
+    Args:
+        spark: SparkSession
+        total_devices: Number of devices per day
+        start_date: First file's date
+        num_days: Number of daily batches to combine
+    
+    Returns:
+        DataFrame with all daily batches combined
+    """
+    profile_df = build_metric_profile(spark)
+    
+    dataframes: List[DataFrame] = []
+    
+    for day_idx in range(num_days):
+        file_date = start_date + timedelta(days=day_idx)
+        
+        daily_df = build_daily_file_df(
+            spark=spark,
+            batch_start=0,
+            batch_end=total_devices,
+            file_date=file_date,
+            profile_df=profile_df
+        )
+        
+        dataframes.append(daily_df)
+    
+    # Union all daily DataFrames
+    combined_df = dataframes[0]
+    for df in dataframes[1:]:
+        combined_df = combined_df.union(df)
+    
+    return combined_df
 
 
 def generate_legacy_demo_data(spark: SparkSession, output_root: str):
@@ -355,8 +468,8 @@ def generate_legacy_demo_data(spark: SparkSession, output_root: str):
         profile_df=profile_df,
     )
 
-    df1.drop("file_date").write.mode("overwrite").parquet(f"{output_root}/file1_baseline.parquet")
-    df2.drop("file_date").write.mode("overwrite").parquet(f"{output_root}/file2_overlap.parquet")
+    df1.drop("file_date").write.mode("overwrite").option("compression", GeneratorConfig.COMPRESSION_CODEC).parquet(f"{output_root}/file1_baseline.parquet")
+    df2.drop("file_date").write.mode("overwrite").option("compression", GeneratorConfig.COMPRESSION_CODEC).parquet(f"{output_root}/file2_overlap.parquet")
 
     print("\nLegacy demo files generated:")
     print(f"- {output_root}/file1_baseline.parquet (2016 rows)")
@@ -364,19 +477,61 @@ def generate_legacy_demo_data(spark: SparkSession, output_root: str):
     print(f"- Expected dedup ratio: 85.7% (1728/2016)")
 
 
+def generate_legacy_demo_dataframe(spark: SparkSession) -> tuple:
+    """
+    Generate legacy demo data as DataFrames instead of files.
+    
+    Returns:
+        Tuple of (baseline_df, overlap_df) for direct pipeline integration
+    """
+    baseline_start = datetime(2026, 2, 26, 0, 0, 0)
+    profile_df = build_metric_profile(spark)
+
+    df1 = build_daily_file_df(
+        spark=spark,
+        batch_start=100,
+        batch_end=101,
+        file_date=baseline_start + timedelta(days=6),
+        profile_df=profile_df,
+    ).drop("file_date")
+    
+    df2 = build_daily_file_df(
+        spark=spark,
+        batch_start=100,
+        batch_end=101,
+        file_date=baseline_start + timedelta(days=7),
+        profile_df=profile_df,
+    ).drop("file_date")
+
+    return df1, df2
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ATLAS Benchmark Data Generator")
     parser.add_argument("--output", type=str, default="/raw", help="Root output directory")
-    parser.add_argument("--mode", type=str, choices=["benchmark", "legacy"], default="benchmark")
+    parser.add_argument("--mode", type=str, choices=["benchmark", "legacy", "dataframe"], default="benchmark",
+                        help="Generation mode: benchmark (files), legacy (2-file demo), dataframe (API mode)")
     parser.add_argument("--devices", type=int, default=100000, help="Number of devices")
     parser.add_argument("--batch-size", type=int, default=10000, help="Devices per batch")
     parser.add_argument("--num-days", type=int, default=7, help="Number of daily files to generate")
     parser.add_argument("--start-date", type=str, default="2026-03-01", help="First file date (YYYY-MM-DD)")
+    parser.add_argument("--compression", type=str, default="zstd", choices=["zstd", "snappy", "gzip"],
+                        help="Compression codec (default: zstd)")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    
+    # Update compression config
+    GeneratorConfig.COMPRESSION_CODEC = args.compression
+    
+    print("\n" + "=" * 80)
+    print("  ATLAS DATA GENERATOR")
+    print("=" * 80)
+    print(f"\n  Mode: {args.mode.upper()}")
+    print(f"  Compression: {args.compression.upper()}")
+    
     spark = create_spark_session()
 
     try:
@@ -391,8 +546,47 @@ def main():
                 start_date=start_dt,
                 num_days=args.num_days,
             )
-        else:
+        elif args.mode == "legacy":
             generate_legacy_demo_data(spark=spark, output_root=args.output)
+        else:  # dataframe mode - demonstrate API usage
+            print("\n  DataFrame Mode - Demonstrating API Usage")
+            print("  " + "-" * 40)
+            print("\n  Example 1: Single batch DataFrame")
+            
+            batch_df = generate_batch_dataframe(
+                spark=spark,
+                total_devices=10,  # Small demo
+                file_date=start_dt
+            )
+            
+            print(f"  Generated {batch_df.count()} rows")
+            print("\n  Schema:")
+            batch_df.printSchema()
+            print("\n  Sample data:")
+            batch_df.show(5, truncate=False)
+            
+            print("\n  " + "-" * 40)
+            print("  Example 2: Multi-day DataFrame")
+            
+            multi_df = generate_multi_day_dataframe(
+                spark=spark,
+                total_devices=5,
+                start_date=start_dt,
+                num_days=3
+            )
+            
+            print(f"  Generated {multi_df.count()} rows across 3 days")
+            
+            print("\n  " + "-" * 40)
+            print("  Usage in your code:")
+            print("  ```python")
+            print("  from generate_data import generate_batch_dataframe")
+            print("  from delta_merge_pipeline import process_dataframe")
+            print("")
+            print("  batch_df = generate_batch_dataframe(spark, total_devices=1000, file_date=datetime.now())")
+            print("  result = process_dataframe(batch_df, output_path='/refined')")
+            print("  ```")
+            
     finally:
         spark.stop()
 
