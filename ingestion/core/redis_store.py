@@ -27,8 +27,10 @@ Operations (Async)
   archive_hourly_to_minio()  hourly job: copy Redis → MinIO
 """
 
+import asyncio
 import json
 import logging
+import os
 from typing import Optional
 
 import redis.asyncio as redis
@@ -50,13 +52,16 @@ async def get_redis_pool() -> redis.ConnectionPool:
     """Get or create the async Redis connection pool."""
     global _pool
     if _pool is None:
+        # For 100k devices with concurrent workers, we need a larger pool
+        # Each worker can have multiple concurrent Redis operations
+        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "500"))
         _pool = redis.ConnectionPool(
             host=REDIS_HOST,
             port=REDIS_PORT,
             db=REDIS_DB,
             password=REDIS_PASSWORD,
             decode_responses=True,
-            max_connections=20,
+            max_connections=max_conn,
         )
     return _pool
 
@@ -84,26 +89,39 @@ def _key(device_id: str) -> str:
 
 # ── write ─────────────────────────────────────────────────────────────────────
 
-async def push_reading(device_id: str, reading: dict) -> int:
+async def push_reading(device_id: str, reading: dict, max_retries: int = 3) -> int:
     """
     Append one PowerDetail reading to the device's Redis list.
     Trims to REDIS_READINGS (288) from the right (newest end).
     Redis acts as a ring buffer - oldest pushed out naturally.
     Returns current list length.
-    """
-    r = await get_redis()
-    key = _key(device_id)
-
-    pipe = r.pipeline()
-    pipe.rpush(key, json.dumps(reading))          # append to right (newest)
-    pipe.ltrim(key, -REDIS_READINGS, -1)          # keep only last 288
-    pipe.expire(key, TTL_SECONDS)                 # reset 24-hour TTL
-    await pipe.execute()
-
-    count = await r.llen(key)
-    log.debug(f"[redis] push {device_id} → len={count}")
     
-    return count
+    Includes retry logic for connection errors.
+    """
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            r = await get_redis()
+            key = _key(device_id)
+
+            pipe = r.pipeline()
+            pipe.rpush(key, json.dumps(reading))          # append to right (newest)
+            pipe.ltrim(key, -REDIS_READINGS, -1)          # keep only last 288
+            pipe.expire(key, TTL_SECONDS)                 # reset 24-hour TTL
+            await pipe.execute()
+
+            count = await r.llen(key)
+            log.debug(f"[redis] push {device_id} → len={count}")
+            
+            return count
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                log.warning(f"[redis] Retry {attempt + 1}/{max_retries} for {device_id}: {e}")
+                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+    
+    log.error(f"[redis] Failed to push {device_id} after {max_retries} attempts: {last_error}")
+    raise last_error
 
 
 async def archive_hourly_to_minio():

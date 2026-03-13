@@ -16,8 +16,10 @@ POST /devices/{device_id}/poll            → force immediate IPMI poll
 DELETE /devices/{device_id}/flush         → clear Redis buffer for device
 """
 
+import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -225,10 +227,8 @@ async def get_devices_batch(
     Uses asyncio.gather() for parallel Redis fetching - all devices are
     fetched concurrently instead of sequentially.
     
-    Example: `/devices/batch?ids=DEV-SERVER-01,DEV-SERVER-02,DEV-SERVER-03`
+Example: `/devices/batch?ids=DEV-SERVER-01,DEV-SERVER-02,DEV-SERVER-03`
     """
-    import asyncio
-    
     # Parse comma-separated IDs
     device_ids = [d.strip() for d in ids.split(",") if d.strip()]
     
@@ -288,6 +288,111 @@ async def get_devices_batch(
         "successful_count": len(results),
         "failed_count": len(errors),
         "errors": errors,
+        "devices": results,
+    }
+
+
+@app.get("/devices/range", tags=["Devices"])
+async def get_devices_range(
+    start: str = Query(..., description="Start device ID, e.g. PLAT1-DEV-0001-001"),
+    end: str = Query(..., description="End device ID, e.g. PLAT1-DEV-0001-050"),
+    include_data: bool = Query(False, description="Include full readings data"),
+):
+    """
+    **Range endpoint** to retrieve devices within an ID range.
+    
+    Returns all devices from start to end (inclusive).
+    Supports prefix matching, e.g., PLAT1-DEV-0001-001 to PLAT1-DEV-0001-050.
+    
+Example: `/devices/range?start=PLAT1-DEV-0001-001&end=PLAT1-DEV-0001-050`
+    """
+    # Normalize: extract prefix and numeric range
+    # Match pattern like PLAT1-DEV-0001-001
+    pattern = r"^(.+?)(\d+)$"
+    
+    start_match = re.match(pattern, start)
+    end_match = re.match(pattern, end)
+    
+    if not start_match or not end_match:
+        raise HTTPException(
+            status_code = 400,
+            detail      = "Invalid device ID format. Use format like PLAT1-DEV-0001-001",
+        )
+    
+    start_prefix, start_num_str = start_match.groups()
+    end_prefix, end_num_str = end_match.groups()
+    
+    if start_prefix != end_prefix:
+        raise HTTPException(
+            status_code = 400,
+            detail      = "Start and end must have same prefix (e.g., both PLAT1)",
+        )
+    
+    start_num = int(start_num_str)
+    end_num = int(end_num_str)
+    
+    # Find all matching devices
+    all_device_ids = sorted(DEVICES.keys())
+    matching_ids = []
+    
+    for did in all_device_ids:
+        match = re.match(pattern, did)
+        if match:
+            prefix, num_str = match.groups()
+            if prefix == start_prefix:
+                num = int(num_str)
+                if start_num <= num <= end_num:
+                    matching_ids.append(did)
+    
+    if not matching_ids:
+        return {
+            "start": start,
+            "end": end,
+            "count": 0,
+            "devices": [],
+            "message": "No devices found in range",
+        }
+    
+    # Fetch counts
+    counts = await reading_count_batch(matching_ids)
+    
+    if not include_data:
+        # Return device metadata only
+        result = []
+        for did in matching_ids:
+            meta = DEVICES[did]
+            count = counts.get(did, 0)
+            result.append({
+                "device_id": did,
+                "server_name": meta["server_name"],
+                "model": meta["model"],
+                "processor_vendor": meta["processor_vendor"],
+                "location_city": meta["location_city"],
+                "platform_customer_id": meta["platform_customer_id"],
+                "application_customer_id": meta["application_customer_id"],
+                "buffered": count,
+                "coverage_pct": round(count / TOTAL_READINGS * 100, 1),
+            })
+        return {
+            "start": start,
+            "end": end,
+            "count": len(result),
+            "devices": result,
+        }
+    
+    # Include full data
+    history_data = await get_history_batch(matching_ids, last_n=TOTAL_READINGS)
+    
+    async def build_one(did: str):
+        return (did, await build_response(did, preloaded_readings=history_data.get(did, [])))
+    
+    responses = await asyncio.gather(*[build_one(did) for did in matching_ids])
+    results = {did: response for did, response in responses}
+    
+    return {
+        "start": start,
+        "end": end,
+        "count": len(results),
         "devices": results,
     }
 
@@ -409,12 +514,17 @@ async def force_poll(device_id: str):
 
     meta = DEVICES[device_id]
     try:
-        reading = read_device(
-            device_id    = device_id,
-            ipmi_host    = meta["ipmi_host"],
-            ipmi_user    = meta["ipmi_user"],
-            ipmi_password= meta["ipmi_password"],
-            ipmi_port    = meta.get("ipmi_port", 623),
+        # Run blocking IPMI call in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        reading = await loop.run_in_executor(
+            None,
+            lambda: read_device(
+                device_id    = device_id,
+                ipmi_host    = meta["ipmi_host"],
+                ipmi_user    = meta["ipmi_user"],
+                ipmi_password= meta["ipmi_password"],
+                ipmi_port    = meta.get("ipmi_port", 623),
+            )
         )
         count = await push_reading(device_id, reading)
         return {
@@ -444,12 +554,17 @@ async def get_inventory(device_id: str):
 
     meta = DEVICES[device_id]
     try:
-        inventory = fetch_inventory(
-            device_id    = device_id,
-            ipmi_host    = meta["ipmi_host"],
-            ipmi_user    = meta["ipmi_user"],
-            ipmi_password= meta["ipmi_password"],
-            ipmi_port    = meta.get("ipmi_port", 623),
+        # Run blocking IPMI call in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        inventory = await loop.run_in_executor(
+            None,
+            lambda: fetch_inventory(
+                device_id    = device_id,
+                ipmi_host    = meta["ipmi_host"],
+                ipmi_user    = meta["ipmi_user"],
+                ipmi_password= meta["ipmi_password"],
+                ipmi_port    = meta.get("ipmi_port", 623),
+            )
         )
         return {
             "device_id"    : device_id,
