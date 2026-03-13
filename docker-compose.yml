@@ -314,18 +314,19 @@ services:
       - ./schema:/app/schema:ro
     environment:
       - SPARK_MODE=client
-      - SPARK_DRIVER_MEMORY=2g
-      - SPARK_EXECUTOR_MEMORY=2g
+      - SPARK_DRIVER_MEMORY=4g
+      - SPARK_EXECUTOR_MEMORY=4g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
-      - RUN_GENERATOR=${RUN_GENERATOR:-n}            # y = run generator, n = skip
+      - RUN_GENERATOR=${RUN_GENERATOR:-y}            # y = run generator, n = skip
       - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy
-      - DEVICE_COUNT=${DEVICE_COUNT:-100000}         # Number of devices for benchmark
-      - BATCH_SIZE=${BATCH_SIZE:-10000}              # Batch size for memory management
+      - DEVICE_COUNT=${DEVICE_COUNT:-100}            # Number of devices for benchmark
+      - BATCH_SIZE=${BATCH_SIZE:-1000}               # Batch size for memory management
       - NUM_DAYS=${NUM_DAYS:-7}                      # Number of daily files (7-day rolling window)
       - START_DATE=${START_DATE:-2026-03-01}         # First file date (YYYY-MM-DD)
-      - RUN_PIPELINE=${RUN_PIPELINE:-n}              # y = run pipeline, n = skip
+      - RUN_PIPELINE=${RUN_PIPELINE:-y}              # y = run pipeline, n = skip
       - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
       - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}          # Run OPTIMIZE after every N batches
+      - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
     working_dir: /app
     networks:
       - atlas-network
@@ -345,6 +346,7 @@ services:
         echo \"  RUN_PIPELINE=$$RUN_PIPELINE\" &&
         echo \"  PIPELINE_MODE=$$PIPELINE_MODE\" &&
         echo \"  OPTIMIZE_EVERY=$$OPTIMIZE_EVERY\" &&
+        echo \"  KEEP_ALIVE=$$KEEP_ALIVE\" &&
         echo '' &&
         if [ \"$$RUN_GENERATOR\" = 'y' ] || [ \"$$RUN_GENERATOR\" = 'Y' ]; then
           if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
@@ -365,7 +367,11 @@ services:
           echo \"[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
         fi &&
         echo '' &&
-        echo 'Done!'
+        echo 'Done!' &&
+        if [ \"$$KEEP_ALIVE\" = 'y' ] || [ \"$$KEEP_ALIVE\" = 'Y' ]; then
+          echo '[3/3] KEEP_ALIVE enabled: container will stay running.' &&
+          tail -f /dev/null;
+        fi
       "
 
   # ===========================================================================

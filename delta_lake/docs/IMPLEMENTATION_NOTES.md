@@ -369,6 +369,8 @@ python delta_merge_pipeline.py --mode benchmark --reset
 python delta_merge_pipeline.py --mode benchmark --resume
 ```
 
+Note: In benchmark mode, when `--resume` is not provided, the pipeline now starts a fresh run by clearing the existing output path before Batch 1 initialization.
+
 ### 5.3 Adaptive OPTIMIZE Frequency
 
 Configurable OPTIMIZE interval to balance latency vs. compaction:
@@ -690,5 +692,5 @@ docker compose down -v
 ---
 - docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=100000 -e BATCH_SIZE=10000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse
 
-- docker compose down -v; docker compose run --rm -e RUN_GENERATOR=y -e DEVICE_COUNT=10 -e BATCH_SIZE=10 -e NUM_DAYS=7 -e RUN_PIPELINE=y spark
-*Document maintained as part of ATLAS Delta Lake implementation*
+ 
+- docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=10 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse   

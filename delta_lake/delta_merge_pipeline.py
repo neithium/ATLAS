@@ -24,6 +24,7 @@ NOTE: Input data is ALREADY FLATTENED by upstream Spark processing layer.
 
 import json
 import os
+import shutil
 import statistics
 import time
 from datetime import datetime
@@ -37,6 +38,7 @@ from pyspark.sql.functions import (
 from pyspark.sql.types import StringType
 from delta import DeltaTable
 from delta.tables import DeltaMergeBuilder
+from py4j.protocol import Py4JJavaError
 
 
 # =============================================================================
@@ -347,13 +349,28 @@ def execute_merge_deduplication(
         AND target.application_customer_id = source.application_customer_id
     """
     
-    merge_builder = (
-        delta_table.alias("target")
-        .merge(source_df.alias("source"), merge_condition)
-        .whenNotMatchedInsertAll()
-    )
-    
-    merge_builder.execute()
+    max_retries = 2
+    for attempt in range(max_retries + 1):
+        try:
+            merge_builder = (
+                delta_table.alias("target")
+                .merge(source_df.alias("source"), merge_condition)
+                .whenNotMatchedInsertAll()
+            )
+            merge_builder.execute()
+            break
+        except Py4JJavaError as exc:
+            msg = str(exc)
+            is_missing_file_error = (
+                "SparkFileNotFoundException" in msg
+                or "does not exist" in msg
+            )
+            if not is_missing_file_error or attempt == max_retries:
+                raise
+            print(f"         ⚠ MERGE retry {attempt + 1}/{max_retries} after file metadata refresh...")
+            spark.catalog.clearCache()
+            delta_table = DeltaTable.forPath(spark, target_path)
+            time.sleep(1)
     
     history_df = delta_table.history(1)
     history_row = history_df.collect()[0]
@@ -627,7 +644,15 @@ def run_benchmark_pipeline(
     print(f"         ✓ File batches to process: {len(file_dates_to_process)}")
     
     total_rows_processed = state.get("total_rows_processed", 0)
-    table_initialized = delta_table_exists(spark, PipelineConfig.REFINED_PATH)
+
+    if resume:
+        table_initialized = delta_table_exists(spark, PipelineConfig.REFINED_PATH)
+    else:
+        table_initialized = False
+        if os.path.exists(PipelineConfig.REFINED_PATH):
+            print(f"         ℹ Fresh benchmark run detected (resume=False): clearing existing output at {PipelineConfig.REFINED_PATH}")
+            shutil.rmtree(PipelineConfig.REFINED_PATH, ignore_errors=True)
+
     optimize_counter = 0
     
     print("\n" + "-" * 80)
