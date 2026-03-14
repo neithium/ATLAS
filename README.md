@@ -38,9 +38,6 @@ ClickHouse Kafka   Spark Processing Engine
 
 ```
  ![ System Architecture 01 ](/docs/arch1.png) 
-
-# Proposed System Architecture 02:
- ![ System Architecture 02 ](/docs/arch2.png) 
  
 
 # Data Characteristics & Identity
