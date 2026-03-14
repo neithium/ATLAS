@@ -181,6 +181,36 @@ services:
   # ===========================================================================
 
   # TODO: Sanjula - Implement Spark Structured Streaming job
+  # atlas-processor:
+  #   build:
+  #     context: ./processing
+  #     dockerfile: docker/Dockerfile
+
+  #   container_name: atlas-processor
+  #   hostname: processor
+
+  #   ports:
+  #     - "4040:4040"
+
+  #   environment:
+  #     - SPARK_MODE=driver
+  #     - SPARK_DRIVER_MEMORY=4g
+  #     - SPARK_EXECUTOR_MEMORY=4g
+
+  #   volumes:
+  #     - ./processing/jobs:/app/jobs
+  #     - ./schema:/app/schema:ro
+  #     - spark-checkpoint:/app/checkpoint
+  #     - raw-telemetry:/app/data/raw:ro
+  #     - delta-refined:/app/data/processed
+
+  #   networks:
+  #     - atlas-network
+
+  #   # command: >
+  #   #   spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/streaming_processor.py
+  #   command: >
+  #     spark-submit /app/jobs/streaming_processor.py
   atlas-processor:
     build:
       context: ./processing
@@ -188,6 +218,8 @@ services:
 
     container_name: atlas-processor
     hostname: processor
+
+    user: root
 
     ports:
       - "4040:4040"
@@ -208,7 +240,12 @@ services:
       - atlas-network
 
     command: >
-      spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/streaming_processor.py
+      bash -c "
+      mkdir -p /app/data/processed/stream &&
+      mkdir -p /app/data/processed/batch &&
+      mkdir -p /app/checkpoint/stream &&
+      spark-submit /app/jobs/streaming_job.py
+      "
 
 
 
