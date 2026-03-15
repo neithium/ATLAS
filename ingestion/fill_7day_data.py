@@ -26,32 +26,26 @@ from typing import Optional
 # Configuration - Hierarchical structure
 # Total: 100 devices from all 3 platforms
 # Hierarchy: PLATCUST → APPCUST → DEVICES
+
 PLATFORM_CONFIGS = [
     {
         "prefix": "PLAT1", 
         "platform_customer_id": "PLATCUST001", 
-        "app_customers": 1,    # 1 app customer
-        "devices_per_app": 34, # 34 devices = 34 total
+        "app_customers": 10,   
+        "devices_per_app": 50, # 500 devices
         "location": "Austin", 
         "state": "TX"
     },
     {
         "prefix": "PLAT2", 
         "platform_customer_id": "PLATCUST002", 
-        "app_customers": 1,    # 1 app customer
-        "devices_per_app": 33, # 33 devices = 33 total
+        "app_customers": 10,   
+        "devices_per_app": 50, # 500 devices
         "location": "Denver", 
         "state": "CO"
     },
-    {
-        "prefix": "PLAT3", 
-        "platform_customer_id": "PLATCUST003", 
-        "app_customers": 1,    # 1 app customer
-        "devices_per_app": 33, # 33 devices = 33 total
-        "location": "Phoenix", 
-        "state": "AZ"
-    },
 ]
+
 
 # For 100k production:
 # PLAT1: 1200 app_customers × 50 = 60,000

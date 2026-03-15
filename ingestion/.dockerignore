@@ -1,0 +1,13 @@
+# Exclude venv (built at runtime, Windows perms issue)
+venv/
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+# Logs
+*.log
+# OS
+.DS_Store
+Thumbs.db

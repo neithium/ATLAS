@@ -72,11 +72,12 @@ def _load_devices_from_json(json_path: str = None) -> dict:
 # PLAT1 = Platform 1, PLAT2 = Platform 2, PLAT3 = Platform 3
 
 # Try to load from JSON first, fall back to hardcoded
-DEVICES: dict[str, dict] = _load_devices_from_json()
+DEVICES: dict[str, dict] = _load_devices_from_json() or {}
 
-if DEVICES is None:
-    # Fallback to hardcoded devices (for development/testing)
-    log.info("Using hardcoded device configurations")
+log.info(f"Loaded {len(DEVICES)} devices from JSON")
+
+if not DEVICES:
+    log.warning("No devices loaded - using hardcoded")
     DEVICES = {
         # ── PLATFORM 1 (PLAT1) ───────────────────────────────────────────────
         "PLAT1-DEV-0001-001": {

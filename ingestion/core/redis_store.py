@@ -54,7 +54,7 @@ async def get_redis_pool() -> redis.ConnectionPool:
     if _pool is None:
         # For 100k devices with concurrent workers, we need a larger pool
         # Each worker can have multiple concurrent Redis operations
-        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "500"))
+        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "2000"))
         _pool = redis.ConnectionPool(
             host=REDIS_HOST,
             port=REDIS_PORT,

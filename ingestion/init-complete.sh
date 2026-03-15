@@ -4,7 +4,7 @@ set -e
 echo '=== Starting All-in-One PowerPulse ==='
 
 # Data dirs
-mkdir -p /data/redis /data/minio /app/venv
+mkdir -p /data/redis /data/minio
 
 # Redis
 echo 'Starting Redis...'
@@ -32,8 +32,9 @@ done
 # Python API
 echo 'Starting API...'
 cd /app
-. venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000 &
+uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info &
+
+sleep 5
 
 # Nginx
 echo 'Starting Nginx...'
@@ -41,3 +42,4 @@ nginx -g 'daemon off;' &
 
 echo 'All services running - tailing logs to keep alive...'
 tail -f /dev/null
+

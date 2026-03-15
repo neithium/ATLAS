@@ -1,6 +1,5 @@
 """
 main.py
--------
 FastAPI entry point.
 
 Endpoints
@@ -581,9 +580,53 @@ async def flush_buffer(device_id: str):
     Clear all buffered readings for a device from Redis.
     The poller will start refilling from the next poll cycle.
     """
-    _require_device(device_id)
-    deleted = await flush_device(device_id)
     return {
         "status"    : "flushed" if deleted else "already_empty",
         "device_id" : device_id,
+    }
+
+@app.get("/acid/{acid}/devices", tags=["Data"])
+async def get_devices_by_acid(acid: str):
+    """
+    Return full telemetry data for all devices under a given
+    application_customer_id (ACID).
+
+    If N devices belong to this ACID, the response will contain
+    up to 2016 * N datapoints.
+
+    Example:
+    /acid/APP-CUST-0001/devices
+    """
+
+    # Find all devices with this ACID
+    device_ids = [
+        did for did, meta in DEVICES.items()
+        if meta.get("application_customer_id") == acid
+    ]
+
+    if not device_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No devices found for application_customer_id '{acid}'"
+        )
+
+    # Fetch history for all devices in parallel
+    history_data = await get_history_batch(device_ids, last_n=TOTAL_READINGS)
+
+    # Build responses in parallel
+    async def build_one(did: str):
+        return (did, await build_response(did, preloaded_readings=history_data.get(did, [])))
+
+    responses = await asyncio.gather(*[build_one(did) for did in device_ids])
+
+    results = {did: resp for did, resp in responses}
+
+    total_points = sum(len(resp["data"]["PowerDetail"]) for resp in results.values())
+
+    return {
+        "application_customer_id": acid,
+        "device_count": len(device_ids),
+        "expected_points": TOTAL_READINGS * len(device_ids),
+        "returned_points": total_points,
+        "devices": results,
     }
