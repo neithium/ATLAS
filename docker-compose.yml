@@ -38,12 +38,16 @@ volumes:
   # Shared volumes for Lakehouse module
   raw-volume:
   refined-volume:
+  # Redis and MinIO data volumes
+  redis-data:
+  minio-data:
 
 services:
 
   # ===========================================================================
   # CONTAINER 1: THE GENERATOR (atlas-ingestion)
   # ===========================================================================
+
   # Technology: Python FastAPI / Uvicorn
   # Role: On-Demand Ingestion Microservice
   #
@@ -55,34 +59,48 @@ services:
   # ===========================================================================
 
   # TODO: Jnana - Implement FastAPI telemetry generator
-  # atlas-ingestion:
-  #   build:
-  #     context: ./ingestion/api
-  #     dockerfile: Dockerfile
-  #   container_name: atlas-ingestion
-  #   hostname: ingestion
-  #   ports:
-  #     - "8000:8000"
-  #   environment:
+  atlas-ingestion:
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile.allinone.final
+    container_name: atlas-ingestion
+    hostname: ingestion
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=localhost
+      - REDIS_PORT=6379
+      - MINIO_HOST=localhost
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MOCK_IPMI=true
+      - ENABLE_POLLER=true
   #     - KAFKA_BOOTSTRAP_SERVERS=broker:9092
   #     - KAFKA_TOPIC=raw-server-metrics
   #     - DEVICE_COUNT=100000
   #     - MIN_CUSTOMER_ID_LENGTH=10
-  #   volumes:
+    volumes:
+      - ./ingestion:/app
+      - redis-data:/data/redis
+      - minio-data:/data
+      - ./ingestion/nginx-allinone.conf:/etc/nginx/nginx.conf:ro
+      - raw-telemetry:/app/data/raw
   #     - ./ingestion/api:/app:ro
   #     - ./schema:/app/schema:ro
   #     - raw-telemetry:/app/data/raw
   #   networks:
   #     - atlas-network
-  #   depends_on:
-  #     atlas-broker:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #   command: uvicorn main:app --host 0.0.0.0 --port 8000
+  #   no external dependencies - self-contained
+
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: ["/init-complete.sh"]
+
 
   # ===========================================================================
   # CONTAINER 2: THE BROKER (atlas-broker)

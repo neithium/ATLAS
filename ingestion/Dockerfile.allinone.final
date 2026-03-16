@@ -1,0 +1,36 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    nginx-extras \
+    redis-server \
+    wget \
+    curl \
+    ipmitool \
+    python3 \
+    python3-pip \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# MinIO binary
+RUN wget https://dl.min.io/server/minio/release/linux-amd64/minio \
+    -O /usr/local/bin/minio \
+    && chmod +x /usr/local/bin/minio
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+COPY . .
+COPY nginx-allinone.conf /etc/nginx/nginx.conf
+COPY init-complete.sh /init-complete.sh
+RUN chmod +x /init-complete.sh
+
+VOLUME ["/data/redis", "/data"]
+
+EXPOSE 80 443 8000 9000 9001 6379
+
+CMD ["/init-complete.sh"]
+
