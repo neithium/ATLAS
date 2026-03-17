@@ -77,11 +77,12 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_refined
     energy_cost_factor Float64,
     -- Date columns
     max_metric_time String,
-    location_date String,                      -- Kept as String per output_schema.py
+    location_date String,                      
     inventory_date String
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(metric_time)
+) ENGINE = ReplacingMergeTree()
+PARTITION BY toYYYYMMDD(metric_time)
 ORDER BY (platform_customer_id, application_customer_id, device_id, metric_time)
+TTL metric_time + INTERVAL 7 DAY DELETE
 SETTINGS index_granularity = 8192;
 
 -- -----------------------------------------------------------------------------
@@ -140,7 +141,8 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_daily
     avg_amb_temp Float64
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(day)
-ORDER BY (platform_customer_id, application_customer_id, device_id, day);
+ORDER BY (platform_customer_id, application_customer_id, device_id, day)
+TTL day + INTERVAL 3 YEAR DELETE;
 
 -- Materialized view: 24-hour rollups from raw MetricValue
 CREATE MATERIALIZED VIEW IF NOT EXISTS atlas.telemetry_daily_mv
