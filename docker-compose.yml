@@ -367,6 +367,27 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
+      # ============================================
+  # Kafka Topic Initialization (runs once on startup)
+  # ============================================
+  kafka-init:
+    image: soldevelo/kafka:4.0
+    container_name: kafka-init
+    hostname: kafka-init
+    networks:
+      - atlas-network
+    depends_on:
+      broker1:
+        condition: service_healthy
+    restart: "no"
+    command: >
+      bash -c "
+        echo 'Creating Kafka topics...' &&
+        kafka-topics.sh --bootstrap-server broker1:9092 --create --if-not-exists --topic raw-server-metrics --partitions 12 --replication-factor ${KAFKA_REPLICATION_FACTOR:-1} &&
+        kafka-topics.sh --bootstrap-server broker1:9092 --create --if-not-exists --topic raw-server-metrics-dlq --partitions 3 --replication-factor ${KAFKA_REPLICATION_FACTOR:-1} &&
+        echo 'Topics created successfully!' &&
+        kafka-topics.sh --bootstrap-server broker1:9092 --list
+      "
 
   # ===========================================================================
   # CONTAINER 3: THE PROCESSOR (atlas-processor)
