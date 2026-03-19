@@ -42,11 +42,15 @@ volumes:
   kafka-data-1:
   kafka-data-2:
   kafka-data-3:
+  # Redis and MinIO data volumes
+  redis-data:
+  minio-data:
 
 services:
   # ===========================================================================
   # CONTAINER 1: THE GENERATOR (atlas-ingestion)
   # ===========================================================================
+
   # Technology: Python FastAPI / Uvicorn
   # Role: On-Demand Ingestion Microservice
   #
@@ -58,34 +62,48 @@ services:
   # ===========================================================================
 
   # TODO: Jnana - Implement FastAPI telemetry generator
-  # atlas-ingestion:
-  #   build:
-  #     context: ./ingestion/api
-  #     dockerfile: Dockerfile
-  #   container_name: atlas-ingestion
-  #   hostname: ingestion
-  #   ports:
-  #     - "8000:8000"
-  #   environment:
+  atlas-ingestion:
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile.allinone.final
+    container_name: atlas-ingestion
+    hostname: ingestion
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=localhost
+      - REDIS_PORT=6379
+      - MINIO_HOST=localhost
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MOCK_IPMI=true
+      - ENABLE_POLLER=true
   #     - KAFKA_BOOTSTRAP_SERVERS=broker:9092
   #     - KAFKA_TOPIC=raw-server-metrics
   #     - DEVICE_COUNT=100000
   #     - MIN_CUSTOMER_ID_LENGTH=10
-  #   volumes:
+    volumes:
+      - ./ingestion:/app
+      - redis-data:/data/redis
+      - minio-data:/data
+      - ./ingestion/nginx-allinone.conf:/etc/nginx/nginx.conf:ro
+      - raw-telemetry:/app/data/raw
   #     - ./ingestion/api:/app:ro
   #     - ./schema:/app/schema:ro
   #     - raw-telemetry:/app/data/raw
   #   networks:
   #     - atlas-network
-  #   depends_on:
-  #     atlas-broker:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #   command: uvicorn main:app --host 0.0.0.0 --port 8000
+  #   no external dependencies - self-contained
+
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: ["/init-complete.sh"]
+
 
   # ===========================================================================
   # CONTAINER 2: THE BROKER (atlas-broker)
@@ -290,6 +308,36 @@ services:
   # ===========================================================================
 
   # TODO: Sanjula - Implement Spark Structured Streaming job
+  # atlas-processor:
+  #   build:
+  #     context: ./processing
+  #     dockerfile: docker/Dockerfile
+
+  #   container_name: atlas-processor
+  #   hostname: processor
+
+  #   ports:
+  #     - "4040:4040"
+
+  #   environment:
+  #     - SPARK_MODE=driver
+  #     - SPARK_DRIVER_MEMORY=4g
+  #     - SPARK_EXECUTOR_MEMORY=4g
+
+  #   volumes:
+  #     - ./processing/jobs:/app/jobs
+  #     - ./schema:/app/schema:ro
+  #     - spark-checkpoint:/app/checkpoint
+  #     - raw-telemetry:/app/data/raw:ro
+  #     - delta-refined:/app/data/processed
+
+  #   networks:
+  #     - atlas-network
+
+  #   # command: >
+  #   #   spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/streaming_processor.py
+  #   command: >
+  #     spark-submit /app/jobs/streaming_processor.py
   atlas-processor:
     build:
       context: ./processing
@@ -297,6 +345,8 @@ services:
 
     container_name: atlas-processor
     hostname: processor
+
+    user: root
 
     ports:
       - "4040:4040"
@@ -317,7 +367,12 @@ services:
       - atlas-network
 
     command: >
-      spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/streaming_processor.py
+      bash -c "
+      mkdir -p /app/data/processed/stream &&
+      mkdir -p /app/data/processed/batch &&
+      mkdir -p /app/checkpoint/stream &&
+      spark-submit /app/jobs/streaming_job.py
+      "
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
@@ -356,9 +411,10 @@ services:
       - ./schema:/app/schema:ro
     environment:
       - SPARK_MODE=client
-      - SPARK_DRIVER_MEMORY=2g
-      - SPARK_EXECUTOR_MEMORY=2g
+      - SPARK_DRIVER_MEMORY=4g
+      - SPARK_EXECUTOR_MEMORY=4g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
+<<<<<<< HEAD
       - RUN_GENERATOR=${RUN_GENERATOR:-n} # y = run generator, n = skip
       - GENERATOR_MODE=${GENERATOR_MODE:-benchmark} # benchmark | legacy
       - DEVICE_COUNT=${DEVICE_COUNT:-100000} # Number of devices for benchmark
@@ -368,6 +424,18 @@ services:
       - RUN_PIPELINE=${RUN_PIPELINE:-n} # y = run pipeline, n = skip
       - PIPELINE_MODE=${PIPELINE_MODE:-benchmark} # benchmark | legacy (must match GENERATOR_MODE)
       - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3} # Run OPTIMIZE after every N batches
+=======
+      - RUN_GENERATOR=${RUN_GENERATOR:-y}            # y = run generator, n = skip
+      - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy
+      - DEVICE_COUNT=${DEVICE_COUNT:-100}            # Number of devices for benchmark
+      - BATCH_SIZE=${BATCH_SIZE:-1000}               # Batch size for memory management
+      - NUM_DAYS=${NUM_DAYS:-7}                      # Number of daily files (7-day rolling window)
+      - START_DATE=${START_DATE:-2026-03-01}         # First file date (YYYY-MM-DD)
+      - RUN_PIPELINE=${RUN_PIPELINE:-y}              # y = run pipeline, n = skip
+      - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
+      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}          # Run OPTIMIZE after every N batches
+      - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
+>>>>>>> e8fd000f87e1ddb8ed5ac63ea92bb24a6d72bf1b
     working_dir: /app
     networks:
       - atlas-network
@@ -387,6 +455,7 @@ services:
         echo \"  RUN_PIPELINE=$$RUN_PIPELINE\" &&
         echo \"  PIPELINE_MODE=$$PIPELINE_MODE\" &&
         echo \"  OPTIMIZE_EVERY=$$OPTIMIZE_EVERY\" &&
+        echo \"  KEEP_ALIVE=$$KEEP_ALIVE\" &&
         echo '' &&
         if [ \"$$RUN_GENERATOR\" = 'y' ] || [ \"$$RUN_GENERATOR\" = 'Y' ]; then
           if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
@@ -407,7 +476,11 @@ services:
           echo \"[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
         fi &&
         echo '' &&
-        echo 'Done!'
+        echo 'Done!' &&
+        if [ \"$$KEEP_ALIVE\" = 'y' ] || [ \"$$KEEP_ALIVE\" = 'Y' ]; then
+          echo '[3/3] KEEP_ALIVE enabled: container will stay running.' &&
+          tail -f /dev/null;
+        fi
       "
 
   # ===========================================================================
