@@ -509,17 +509,6 @@ services:
       - SPARK_DRIVER_MEMORY=4g
       - SPARK_EXECUTOR_MEMORY=4g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
-<<<<<<< HEAD
-      - RUN_GENERATOR=${RUN_GENERATOR:-n} # y = run generator, n = skip
-      - GENERATOR_MODE=${GENERATOR_MODE:-benchmark} # benchmark | legacy
-      - DEVICE_COUNT=${DEVICE_COUNT:-100000} # Number of devices for benchmark
-      - BATCH_SIZE=${BATCH_SIZE:-10000} # Batch size for memory management
-      - NUM_DAYS=${NUM_DAYS:-7} # Number of daily files (7-day rolling window)
-      - START_DATE=${START_DATE:-2026-03-01} # First file date (YYYY-MM-DD)
-      - RUN_PIPELINE=${RUN_PIPELINE:-n} # y = run pipeline, n = skip
-      - PIPELINE_MODE=${PIPELINE_MODE:-benchmark} # benchmark | legacy (must match GENERATOR_MODE)
-      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3} # Run OPTIMIZE after every N batches
-=======
       - RUN_GENERATOR=${RUN_GENERATOR:-y}            # y = run generator, n = skip
       - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy
       - DEVICE_COUNT=${DEVICE_COUNT:-100}            # Number of devices for benchmark
@@ -530,7 +519,6 @@ services:
       - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
       - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}          # Run OPTIMIZE after every N batches
       - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
->>>>>>> e8fd000f87e1ddb8ed5ac63ea92bb24a6d72bf1b
     working_dir: /app
     networks:
       - atlas-network
