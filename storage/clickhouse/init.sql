@@ -79,9 +79,9 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_refined
     max_metric_time String,
     location_date String,                      
     inventory_date String
-) ENGINE = ReplacingMergeTree()
+) ENGINE = ReplacingMergeTree(insertion_time)
 PARTITION BY toYYYYMMDD(metric_time)
-ORDER BY (platform_customer_id, application_customer_id, device_id, metric_time)
+ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, metric_time)
 TTL metric_time + INTERVAL 7 DAY DELETE
 SETTINGS index_granularity = 8192;
 
@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_hourly
     platform_customer_id String,
     application_customer_id String,
     device_id String,
+    metric_id String,
     hour DateTime,
     avg_metric_value Float64,
     max_metric_value Float64,
@@ -105,7 +106,7 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_hourly
     avg_amb_temp Float64
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(hour)
-ORDER BY (platform_customer_id, application_customer_id, device_id, hour);
+ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, hour);
 
 -- Materialized view: aggregates raw MetricValue per hour per device
 CREATE MATERIALIZED VIEW IF NOT EXISTS atlas.telemetry_hourly_mv
@@ -114,6 +115,7 @@ AS SELECT
     platform_customer_id,
     application_customer_id,
     device_id,
+    metric_id,
     toStartOfHour(metric_time) AS hour,
     avg(MetricValue) AS avg_metric_value,
     max(MetricValue) AS max_metric_value,
@@ -121,7 +123,7 @@ AS SELECT
     count() AS record_count,
     avg(amb_temp) AS avg_amb_temp
 FROM atlas.telemetry_refined
-GROUP BY platform_customer_id, application_customer_id, device_id, hour;
+GROUP BY platform_customer_id, application_customer_id, device_id, metric_id, hour;
 
 -- -----------------------------------------------------------------------------
 -- Daily Aggregation Materialized View (Validation against Spark)
@@ -133,6 +135,7 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_daily
     platform_customer_id String,
     application_customer_id String,
     device_id String,
+    metric_id String,
     day Date,
     avg_metric_value Float64,
     max_metric_value Float64,
@@ -141,7 +144,7 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_daily
     avg_amb_temp Float64
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(day)
-ORDER BY (platform_customer_id, application_customer_id, device_id, day)
+ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, day)
 TTL day + INTERVAL 3 YEAR DELETE;
 
 -- Materialized view: 24-hour rollups from raw MetricValue
@@ -151,6 +154,7 @@ AS SELECT
     platform_customer_id,
     application_customer_id,
     device_id,
+    metric_id,
     toDate(metric_time) AS day,
     avg(MetricValue) AS avg_metric_value,
     max(MetricValue) AS max_metric_value,
@@ -158,4 +162,4 @@ AS SELECT
     count() AS record_count,
     avg(amb_temp) AS avg_amb_temp
 FROM atlas.telemetry_refined
-GROUP BY platform_customer_id, application_customer_id, device_id, day;
+GROUP BY platform_customer_id, application_customer_id, device_id, metric_id, day;
