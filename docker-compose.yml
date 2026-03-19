@@ -123,6 +123,30 @@ services:
   # ============================================
   # Kafka Broker 1 (Controller + Broker) - DEFAULT (no profile)
   # ============================================
+  # ===========================================================================
+  # CONTAINER 2: THE BROKER (atlas-broker)
+  # ===========================================================================
+  # Technology: Apache Kafka (KRaft Mode - No Zookeeper)
+  # Role: Real-Time Streaming Buffer
+  #
+  # Responsibilities:
+  #   - Manages raw-server-metrics topic (12 partitions)
+  #   - Manages raw-server-metrics-dlq (Dead Letter Queue, 3 partitions)
+  #   - Acts as shock absorber for 4 Lakh+ device burst traffic
+  #   - Splits flow to Processor (batch) and Analytics (fast path)
+  #
+  # Modes:
+  #   Single broker (default dev): docker-compose up -d broker1
+  #   Full 3-node cluster        : docker-compose --profile full-cluster up -d
+  #
+  # ⚠️  Always run `docker-compose down -v` before switching modes.
+  #     KRaft persists quorum metadata to disk — mismatched volumes will cause
+  #     broker1 to reject the new quorum config even with correct env vars.
+  # ===========================================================================
+
+  # ============================================
+  # Kafka Broker 1 (Controller + Broker) - DEFAULT (no profile)
+  # ============================================
   broker1:
     image: soldevelo/kafka:4.0
     container_name: broker1
@@ -132,35 +156,53 @@ services:
       - "9063:9093"
       - "9064:9094"
     environment:
+      # Node Identity
       - KAFKA_CFG_NODE_ID=1
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+
+      # Cluster ID — must be identical across all 3 brokers
       - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster-3node
+
+      # Quorum voters — defaults to single node, overridden by cluster.bat
+      # single.bat : KAFKA_QUORUM_VOTERS not set → defaults to 1@broker1:9093
+      # cluster.bat: KAFKA_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=${KAFKA_QUORUM_VOTERS:-1@broker1:9093}
+
+      # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9062
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+
+      # Topic Defaults — defaults to single node, overridden by cluster.bat
+      # single.bat : RF=1, MIN_ISR=1
+      # cluster.bat: RF=3, MIN_ISR=2
       - KAFKA_CFG_NUM_PARTITIONS=12
-      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=3
-      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=3
-      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
-      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
-      - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=${KAFKA_MIN_ISR:-1}
+      - KAFKA_CFG_MIN_INSYNC_REPLICAS=${KAFKA_MIN_ISR:-1}
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+
+      # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
-      # Memory limits for JVM
+
+      # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
-      # Increased timeouts for cluster stability
+
+      # KRaft stability timeouts
       - KAFKA_CFG_CONTROLLER_QUORUM_REQUEST_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
-    # Container memory limits
+
     mem_limit: 1g
     mem_reservation: 512m
+    restart: unless-stopped
     volumes:
       - kafka-data-1:/bitnami/kafka
     networks:
@@ -168,13 +210,15 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "kafka-broker-api-versions.sh --bootstrap-server localhost:9062 || exit 1",
+          "CMD",
+          "bash",
+          "-c",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
         ]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 120s
 
   # ============================================
   # Kafka Broker 2 (Controller + Broker) - WITH PROFILE
@@ -183,7 +227,6 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker2
     hostname: broker2
-    # Only starts when --profile full-cluster is used
     profiles:
       - full-cluster
     ports:
@@ -191,15 +234,24 @@ services:
       - "9066:9093"
       - "9067:9094"
     environment:
+      # Node Identity
       - KAFKA_CFG_NODE_ID=2
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+
+      # Cluster ID — must be identical across all 3 brokers
       - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster-3node
+
+      # broker2 only ever runs in full-cluster mode, so always 3-node quorum
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+
+      # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9065
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+
+      # Topic Defaults — always RF=3 in full-cluster mode
       - KAFKA_CFG_NUM_PARTITIONS=12
       - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=3
       - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=3
@@ -207,19 +259,24 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
       - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+
+      # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
-      # Memory limits for JVM
+
+      # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
-      # Increased timeouts for cluster stability
+
+      # KRaft stability timeouts
       - KAFKA_CFG_CONTROLLER_QUORUM_REQUEST_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
-    # Container memory limits
+
     mem_limit: 1g
     mem_reservation: 512m
+    restart: unless-stopped
     volumes:
       - kafka-data-2:/bitnami/kafka
     networks:
@@ -227,13 +284,15 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "kafka-broker-api-versions.sh --bootstrap-server localhost:9065 || exit 1",
+          "CMD",
+          "bash",
+          "-c",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
         ]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 120s
 
   # ============================================
   # Kafka Broker 3 (Controller + Broker) - WITH PROFILE
@@ -242,7 +301,6 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker3
     hostname: broker3
-    # Only starts when --profile full-cluster is used
     profiles:
       - full-cluster
     ports:
@@ -250,15 +308,24 @@ services:
       - "9069:9093"
       - "9070:9094"
     environment:
+      # Node Identity
       - KAFKA_CFG_NODE_ID=3
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+
+      # Cluster ID — must be identical across all 3 brokers
       - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster-3node
+
+      # broker3 only ever runs in full-cluster mode, so always 3-node quorum
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+
+      # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker3:9092,EXTERNAL://localhost:9068
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+
+      # Topic Defaults — always RF=3 in full-cluster mode
       - KAFKA_CFG_NUM_PARTITIONS=12
       - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=3
       - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=3
@@ -266,19 +333,24 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
       - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+
+      # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
-      # Memory limits for JVM
+
+      # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
-      # Increased timeouts for cluster stability
+
+      # KRaft stability timeouts
       - KAFKA_CFG_CONTROLLER_QUORUM_REQUEST_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
-    # Container memory limits
+
     mem_limit: 1g
     mem_reservation: 512m
+    restart: unless-stopped
     volumes:
       - kafka-data-3:/bitnami/kafka
     networks:
@@ -286,13 +358,15 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "kafka-broker-api-versions.sh --bootstrap-server localhost:9068 || exit 1",
+          "CMD",
+          "bash",
+          "-c",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
         ]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 120s
 
   # ===========================================================================
   # CONTAINER 3: THE PROCESSOR (atlas-processor)
