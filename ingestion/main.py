@@ -30,11 +30,14 @@ from core import poller
 from core.redis_store import (
     get_history, get_fresh, get_history_range,
     reading_count, get_all_device_ids, flush_device, ping as redis_ping,
-    get_history_batch, reading_count_batch, push_reading,
+    get_history_batch, reading_count_batch, push_reading, close_redis
 )
 from core.response_builder import build_response
 from core.ipmi_reader import read_device, fetch_inventory
-
+from core.kafka_producer import init_kafka, close_kafka, push_to_kafka, push_history_batch_to_kafka
+from core.history_service import get_combined_history_batch
+from core import poller
+from config.devices import DEVICES, TOTAL_READINGS, ENABLE_POLLER, REDIS_READINGS
 # Import MinIO ping for health check
 try:
     from core.minio_store import ping as minio_ping, ensure_bucket_exists
@@ -51,6 +54,9 @@ logging.basicConfig(
     format = "%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger(__name__)
+
+# Suppress cosmetic urllib3 connection pool warnings during high-concurrency exports
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 # ── app ───────────────────────────────────────────────────────────────────────
 
@@ -78,7 +84,7 @@ app.add_middleware(
 async def startup():
     log.info("=" * 60)
     log.info("Power Monitor API starting up")
-    log.info(f"Registered devices : {list(DEVICES.keys())}")
+    log.info(f"Registered devices : {len(DEVICES)}")
     log.info(f"Redis              : {await redis_ping()}")
     
     # Initialize MinIO bucket if available
@@ -92,17 +98,21 @@ async def startup():
     else:
         log.info("MinIO              : not available (minio package not installed)")
     
-    log.info(f"Poller enabled     : {ENABLE_POLLER}")
+    # Initialize Kafka producer (Redis is initialized on first use)
+    await init_kafka()
+
+    # Start the background poller
     if ENABLE_POLLER:
+        log.info("Starting background poller...")
         poller.start(run_immediately=True)
-    else:
-        log.info("Poller disabled - use POST /devices/{device_id}/poll to manually trigger")
 
 
 @app.on_event("shutdown")
 async def shutdown():
     if ENABLE_POLLER:
         poller.stop()
+    await close_kafka()
+    await close_redis()
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -137,6 +147,12 @@ async def _require_readings(device_id: str):
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
+@app.get("/poller/status", tags=["System"])
+async def get_poller_status():
+    """Retrieve the latest background polling statistics."""
+    from core import poller
+    return poller.LAST_POLL
+
 @app.get("/health", tags=["System"])
 async def health():
     """
@@ -145,19 +161,17 @@ async def health():
     redis_ok = await redis_ping()
     devices_status = {}
 
-    # Fetch all counts in parallel for better performance
-    counts = await reading_count_batch(list(DEVICES.keys()))
-
-    for did in DEVICES:
-        count = counts.get(did, 0)
-        devices_status[did] = {
-            "server_name"       : DEVICES[did]["server_name"],
-            "buffered"          : count,
-            "redis_max"         : REDIS_READINGS,
-            "total_max"         : TOTAL_READINGS,
-            "coverage_pct"      : round(count / TOTAL_READINGS * 100, 1),
-            "redis_ready"      : count >= REDIS_READINGS,
-            "complete"          : count >= TOTAL_READINGS,
+    # Fetch first 10 counts in parallel (sufficient for health check)
+    sample_ids = list(DEVICES.keys())[:10]
+    counts = await reading_count_batch(sample_ids)
+    
+    for device_id in sample_ids:
+        c = counts.get(device_id, 0)
+        devices_status[device_id] = {
+            "buffered": c,
+            "max": TOTAL_READINGS,
+            "coverage_pct": round((c / TOTAL_READINGS) * 100, 1),
+            "complete": c >= TOTAL_READINGS
         }
 
     # Check MinIO status
@@ -180,6 +194,7 @@ async def health():
             "total_readings": TOTAL_READINGS,
         },
         "devices"   : devices_status,
+        "poller"    : getattr(__import__("core.poller", fromlist=["LAST_POLL"]), "LAST_POLL", "error")
     }
 
 
@@ -272,8 +287,8 @@ Example: `/devices/batch?ids=DEV-SERVER-01,DEV-SERVER-02,DEV-SERVER-03`
         else:
             devices_with_readings.append(did)
     
-    # Fetch all history data in PARALLEL using asyncio.gather
-    history_data = await get_history_batch(devices_with_readings, last_n=TOTAL_READINGS)
+    # Fetch all combined history (Redis + MinIO) in PARALLEL
+    history_data = await get_combined_history_batch(devices_with_readings, last_n=TOTAL_READINGS)
     
     # Build all responses in PARALLEL using asyncio.gather
     async def build_one(did: str):
@@ -281,6 +296,9 @@ Example: `/devices/batch?ids=DEV-SERVER-01,DEV-SERVER-02,DEV-SERVER-03`
     
     responses = await asyncio.gather(*[build_one(did) for did in devices_with_readings])
     results = {did: response for did, response in responses}
+    
+    # On-Demand Kafka Push for requested devices
+    await push_history_batch_to_kafka("BATCH_REQUEST", history_data, DEVICES)
     
     return {
         "requested_count": len(device_ids),
@@ -379,14 +397,17 @@ Example: `/devices/range?start=PLAT1-DEV-0001-001&end=PLAT1-DEV-0001-050`
             "devices": result,
         }
     
-    # Include full data
-    history_data = await get_history_batch(matching_ids, last_n=TOTAL_READINGS)
+    # Include full combined data
+    history_data = await get_combined_history_batch(matching_ids, last_n=TOTAL_READINGS)
     
     async def build_one(did: str):
         return (did, await build_response(did, preloaded_readings=history_data.get(did, [])))
     
     responses = await asyncio.gather(*[build_one(did) for did in matching_ids])
     results = {did: response for did, response in responses}
+    
+    # On-Demand Kafka Push for requested range
+    await push_history_batch_to_kafka("RANGE_REQUEST", history_data, DEVICES)
     
     return {
         "start": start,
@@ -526,6 +547,10 @@ async def force_poll(device_id: str):
             )
         )
         count = await push_reading(device_id, reading)
+        
+        # Push the immediate reading to Kafka
+        await push_to_kafka(device_id, reading)
+        
         return {
             "status"     : "ok",
             "device_id"  : device_id,
@@ -610,8 +635,8 @@ async def get_devices_by_acid(acid: str):
             detail=f"No devices found for application_customer_id '{acid}'"
         )
 
-    # Fetch history for all devices in parallel
-    history_data = await get_history_batch(device_ids, last_n=TOTAL_READINGS)
+    # Fetch combined history for all devices in parallel
+    history_data = await get_combined_history_batch(device_ids, last_n=TOTAL_READINGS)
 
     # Build responses in parallel
     async def build_one(did: str):
@@ -621,6 +646,9 @@ async def get_devices_by_acid(acid: str):
 
     results = {did: resp for did, resp in responses}
 
+    # On-Demand Kafka Push for all devices in this ACID
+    await push_history_batch_to_kafka(acid, history_data, DEVICES)
+
     total_points = sum(len(resp["data"]["PowerDetail"]) for resp in results.values())
 
     return {
@@ -629,4 +657,51 @@ async def get_devices_by_acid(acid: str):
         "expected_points": TOTAL_READINGS * len(device_ids),
         "returned_points": total_points,
         "devices": results,
+    }
+
+
+@app.get("/pcid/{pcid}/devices", tags=["Data"])
+async def get_devices_by_pcid(pcid: str):
+    """Return all devices for a platform customer ID."""
+    device_ids = [did for did, m in DEVICES.items() if m.get("platform_customer_id") == pcid]
+    if not device_ids:
+        raise HTTPException(status_code=404, detail=f"No devices for PCID '{pcid}'")
+    
+    history_data = await get_combined_history_batch(device_ids, last_n=TOTAL_READINGS)
+    
+    async def build_one(did: str):
+        return (did, await build_response(did, preloaded_readings=history_data.get(did, [])))
+        
+    responses = await asyncio.gather(*[build_one(did) for did in device_ids])
+    results = {did: resp for did, resp in responses}
+    
+    await push_history_batch_to_kafka(pcid, history_data, DEVICES)
+    return {"platform_customer_id": pcid, "device_count": len(device_ids), "devices": results}
+
+
+@app.get("/pcid/{pcid}/acid/{acid}/devices", tags=["Data"])
+async def get_devices_by_pcid_acid(pcid: str, acid: str):
+    """Return all devices for a hierarchical PCID + ACID path."""
+    device_ids = [
+        did for did, m in DEVICES.items() 
+        if m.get("platform_customer_id") == pcid and m.get("application_customer_id") == acid
+    ]
+    if not device_ids:
+        raise HTTPException(status_code=404, detail=f"No devices for PCID '{pcid}' and ACID '{acid}'")
+    
+    history_data = await get_combined_history_batch(device_ids, last_n=TOTAL_READINGS)
+    
+    async def build_one(did: str):
+        return (did, await build_response(did, preloaded_readings=history_data.get(did, [])))
+        
+    responses = await asyncio.gather(*[build_one(did) for did in device_ids])
+    results = {did: resp for did, resp in responses}
+    
+    await push_history_batch_to_kafka(f"{pcid}_{acid}", history_data, DEVICES)
+    
+    return {
+        "platform_customer_id": pcid,
+        "application_customer_id": acid,
+        "device_count": len(device_ids),
+        "devices": results
     }

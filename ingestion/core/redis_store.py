@@ -46,15 +46,17 @@ log = logging.getLogger(__name__)
 # ── connection pool (async) ───────────────────────────────────────────────────
 
 _pool: redis.ConnectionPool = None
+_client: redis.Redis = None
+_client_lock = asyncio.Lock()
 
 
 async def get_redis_pool() -> redis.ConnectionPool:
     """Get or create the async Redis connection pool."""
     global _pool
     if _pool is None:
-        # For 100k devices with concurrent workers, we need a larger pool
-        # Each worker can have multiple concurrent Redis operations
-        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "2000"))
+        # High-performance pool for 50k+ device burst traffic
+        max_conn = int(os.getenv("REDIS_MAX_CONNECTIONS", "5000"))
+        log.info(f"[redis] Initializing pool (host={REDIS_HOST}, max_conn={max_conn})")
         _pool = redis.ConnectionPool(
             host=REDIS_HOST,
             port=REDIS_PORT,
@@ -67,9 +69,26 @@ async def get_redis_pool() -> redis.ConnectionPool:
 
 
 async def get_redis() -> redis.Redis:
-    """Get an async Redis client from the pool."""
-    pool = await get_redis_pool()
-    return redis.Redis(connection_pool=pool)
+    """Get or create an async Redis client instance (singleton approach)."""
+    global _client
+    if _client is None:
+        async with _client_lock:
+            if _client is None:
+                pool = await get_redis_pool()
+                _client = redis.Redis(connection_pool=pool)
+    return _client
+
+
+async def close_redis():
+    """Close the global Redis client and pool."""
+    global _client, _pool
+    if _client is not None:
+        await _client.close()
+        _client = None
+    if _pool is not None:
+        await _pool.disconnect()
+        _pool = None
+    log.info("[redis] Connection pool closed.")
 
 
 async def ping() -> bool:
@@ -104,11 +123,11 @@ async def push_reading(device_id: str, reading: dict, max_retries: int = 3) -> i
             r = await get_redis()
             key = _key(device_id)
 
-            pipe = r.pipeline()
-            pipe.rpush(key, json.dumps(reading))          # append to right (newest)
-            pipe.ltrim(key, -REDIS_READINGS, -1)          # keep only last 288
-            pipe.expire(key, TTL_SECONDS)                 # reset 24-hour TTL
-            await pipe.execute()
+            async with r.pipeline(transaction=True) as pipe:
+                pipe.rpush(key, json.dumps(reading))          # append to right (newest)
+                pipe.ltrim(key, -REDIS_READINGS, -1)          # keep only last 288
+                pipe.expire(key, TTL_SECONDS)                 # reset 24-hour TTL
+                await pipe.execute()
 
             count = await r.llen(key)
             log.debug(f"[redis] push {device_id} → len={count}")
@@ -246,11 +265,14 @@ async def get_history_batch(device_ids: list[str], last_n: int = TOTAL_READINGS)
     """
     import asyncio
     
-    async def fetch_one(did: str) -> tuple[str, list[dict]]:
-        readings = await get_history(did, last_n=last_n)
-        return (did, readings)
+    semaphore = asyncio.Semaphore(100)
     
-    # Fetch all in parallel
+    async def fetch_one(did: str) -> tuple[str, list[dict]]:
+        async with semaphore:
+            readings = await get_history(did, last_n=last_n)
+            return (did, readings)
+    
+    # Fetch all in parallel but limited by semaphore
     results = await asyncio.gather(*[fetch_one(did) for did in device_ids])
     
     # Convert to dict
@@ -263,9 +285,12 @@ async def reading_count_batch(device_ids: list[str]) -> dict[str, int]:
     """
     import asyncio
     
+    semaphore = asyncio.Semaphore(100)
+    
     async def fetch_one(did: str) -> tuple[str, int]:
-        count = await reading_count(did)
-        return (did, count)
+        async with semaphore:
+            count = await reading_count(did)
+            return (did, count)
     
     results = await asyncio.gather(*[fetch_one(did) for did in device_ids])
     return {did: count for did, count in results}

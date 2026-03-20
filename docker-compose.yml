@@ -79,8 +79,9 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
-  #     - KAFKA_BOOTSTRAP_SERVERS=broker:9092
-  #     - KAFKA_TOPIC=raw-server-metrics
+      - REDIS_MAX_CONNECTIONS=5000
+      - KAFKA_BOOTSTRAP_SERVERS=broker1:9092,broker2:9092,broker3:9092
+      - KAFKA_TOPIC_READINGS=raw-server-metrics
   #     - DEVICE_COUNT=100000
   #     - MIN_CUSTOMER_ID_LENGTH=10
     volumes:
@@ -92,9 +93,9 @@ services:
   #     - ./ingestion/api:/app:ro
   #     - ./schema:/app/schema:ro
   #     - raw-telemetry:/app/data/raw
-  #   networks:
-  #     - atlas-network
-  #   no external dependencies - self-contained
+    networks:
+      - atlas-network
+    # no external dependencies - self-contained
 
 
     healthcheck:
@@ -102,6 +103,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
     command: ["/init-complete.sh"]
 
 
@@ -166,7 +172,7 @@ services:
       # Quorum voters — defaults to single node, overridden by cluster.bat
       # single.bat : KAFKA_QUORUM_VOTERS not set → defaults to 1@broker1:9093
       # cluster.bat: KAFKA_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=${KAFKA_QUORUM_VOTERS:-1@broker1:9093}
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
 
       # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
@@ -179,11 +185,11 @@ services:
       # single.bat : RF=1, MIN_ISR=1
       # cluster.bat: RF=3, MIN_ISR=2
       - KAFKA_CFG_NUM_PARTITIONS=12
-      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
-      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
-      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
-      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=${KAFKA_MIN_ISR:-1}
-      - KAFKA_CFG_MIN_INSYNC_REPLICAS=${KAFKA_MIN_ISR:-1}
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=3
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
+      - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
+      - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
 
       # Performance

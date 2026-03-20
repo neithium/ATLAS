@@ -38,6 +38,7 @@ FRESH_READINGS = 12
 
 # Polling interval for background worker
 POLL_INTERVAL_SECONDS = 300  # 5 minutes
+ENABLE_POLLER = os.getenv("ENABLE_POLLER", "false").lower() == "true"
 
 # ── Redis Configuration ───────────────────────────────────────────────────────
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")

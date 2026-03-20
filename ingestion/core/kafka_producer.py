@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import asyncio
 from datetime import datetime, timezone
@@ -82,15 +83,16 @@ async def push_history_batch_to_kafka(acid: str, history_data: dict, devices_reg
         pcid = meta.get("platform_customer_id", "UNKNOWN")
         server = meta.get("server_name", "UNKNOWN")
         
-        # Zero-Parse Envelope Stitching (Blazing Fast)
-        # Wrap the raw strings in a valid JSON envelope
+        # Convert dicts to JSON strings for stitching
+        serialized_readings = [json.dumps(r) for r in raw_readings]
+        
         envelope = (
             f'{{"device_id":"{device_id}",'
             f'"platform_customer_id":"{pcid}",'
             f'"application_customer_id":"{acid}",'
             f'"server_name":"{server}",'
             f'"exported_at":"{datetime.now(timezone.utc).isoformat()}",'
-            f'"readings":[{",".join(raw_readings)}]}}'
+            f'"readings":[{",".join(serialized_readings)}]}}'
         )
         
         # Push to Kafka buffer (non-blocking)

@@ -23,25 +23,33 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config.devices import DEVICES, POLL_INTERVAL_SECONDS, REDIS_READINGS, TOTAL_READINGS
 from core.ipmi_reader import read_device
-from core.redis_store import push_reading, archive_hourly_to_minio
+from core.redis_store import push_reading, get_redis, archive_hourly_to_minio
 
 log = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
+# Global state to track last polling results (viesible to API)
+LAST_POLL = {
+    "start_time": None,
+    "end_time": None,
+    "next_run": None,
+    "total_devices": 0,
+    "success_count": 0,
+    "error_count": 0,
+    "status": "idle"
+}
+
 # ── Polling Configuration ───────────────────────────────────────────────────
 
 # Number of devices to process in each batch (helps with memory management)
-# For 100k devices, smaller batches reduce memory pressure
-POLL_BATCH_SIZE = int(os.getenv("POLL_BATCH_SIZE", "50"))
+POLL_BATCH_SIZE = int(os.getenv("POLL_BATCH_SIZE", "40"))
 
 # Number of concurrent poll workers (parallel IPMI requests)
-# For 100k devices, we need more workers to complete within reasonable time
-# But too many will overwhelm the Redis connection pool
-POLL_WORKERS = int(os.getenv("POLL_WORKERS", "10"))
+POLL_WORKERS = int(os.getenv("POLL_WORKERS", "40"))
 
 # Delay between batches in seconds (rate limiting)
-POLL_BATCH_DELAY = float(os.getenv("POLL_BATCH_DELAY", "0.05"))
+POLL_BATCH_DELAY = float(os.getenv("POLL_BATCH_DELAY", "0.2"))
 
 # Staggered startup delay (seconds between each device when starting)
 # This avoids thundering herd when starting the poller with 100k devices
@@ -129,25 +137,18 @@ async def poll_all():
     devices = _get_devices_to_poll()
     total_devices = len(devices)
     
-    log.info(f"[poller] Polling {total_devices} device(s) at "
-             f"{datetime.now(timezone.utc).strftime('%H:%M:%SZ')} …")
+    # Update global stats
+    LAST_POLL["start_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    LAST_POLL["total_devices"] = total_devices
+    LAST_POLL["status"] = "polling"
+    LAST_POLL["success_count"] = 0
+    LAST_POLL["error_count"] = 0
     
-    # For small device counts, use simple concurrent polling
-    if not ENABLE_BATCH_MODE or total_devices <= POLL_BATCH_SIZE:
-        # Add staggered startup delay to avoid thundering herd
-        for i, did in enumerate(devices):
-            if i > 0 and POLL_STARTUP_DELAY > 0:
-                await asyncio.sleep(POLL_STARTUP_DELAY)
-            await _poll_single(did)
-        log.info(f"[poller] Completed polling {total_devices} devices")
-        return
+    log.info(f"[poller] Starting background poll for {total_devices} devices...")
     
-    # Batched polling for large device counts
+    # Batched polling setup
     batches = [devices[i:i + POLL_BATCH_SIZE] for i in range(0, total_devices, POLL_BATCH_SIZE)]
     total_batches = len(batches)
-    
-    log.info(f"[poller] Using batch mode: {total_batches} batches, "
-             f"batch_size={POLL_BATCH_SIZE}, workers={POLL_WORKERS}")
     
     # Process batches with limited concurrency
     semaphore = asyncio.Semaphore(POLL_WORKERS)
@@ -155,18 +156,28 @@ async def poll_all():
     async def process_batch_with_semaphore(batch_idx: int):
         async with semaphore:
             batch = batches[batch_idx]
-            # Add staggered startup delay between batches on initial run
+            # Staggered startup
             if batch_idx > 0 and POLL_STARTUP_DELAY > 0:
                 await asyncio.sleep(POLL_STARTUP_DELAY * POLL_BATCH_SIZE)
-            await _poll_batch(batch, worker_id=batch_idx % POLL_WORKERS)
-            # Rate limiting delay between batches
-            if batch_idx < total_batches - 1:
-                await asyncio.sleep(POLL_BATCH_DELAY)
-    
+            
+            results = await _poll_batch(batch, worker_id=batch_idx % POLL_WORKERS)
+            
+            # Update counters
+            batch_success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
+            LAST_POLL["success_count"] += batch_success
+            LAST_POLL["error_count"] += (len(batch) - batch_success)
+
     # Run all batches
     await asyncio.gather(*[process_batch_with_semaphore(i) for i in range(total_batches)])
     
-    log.info(f"[poller] Completed polling {total_devices} devices in {total_batches} batches")
+    LAST_POLL["end_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    LAST_POLL["status"] = "idle"
+    
+    log.info("*" * 60)
+    log.info(f"[poller] *** COMPLETE *** {total_devices} devices processed.")
+    log.info(f"[poller] Success: {LAST_POLL['success_count']} | Errors: {LAST_POLL['error_count']}")
+    log.info(f"[poller] Finished at {LAST_POLL['end_time']}")
+    log.info("*" * 60)
 
 
 async def poll_platform(platform_customer_id: str):
@@ -237,6 +248,10 @@ def start(run_immediately: bool = True):
     - 1-hour MinIO archive job
     """
     async def run_poll():
+        # Update scheduling metadata
+        job = scheduler.get_job("ipmi_poller")
+        if job and job.next_run_time:
+            LAST_POLL["next_run"] = job.next_run_time.strftime('%Y-%m-%dT%H:%M:%SZ')
         await poll_all()
     
     async def run_archive():

@@ -53,32 +53,9 @@ async def build_response(device_id: str, preloaded_readings: list[dict] = None) 
     if preloaded_readings is not None:
         all_readings = preloaded_readings
     else:
-        # Get recent data from Redis
-        redis_readings = await get_history(device_id, last_n=REDIS_READINGS)
+        from core.history_service import get_combined_history
+        all_readings = await get_combined_history(device_id, last_n=TOTAL_READINGS)
         
-        # Get historical data from MinIO
-        try:
-            from core.minio_store import get_history as get_minio_history
-            minio_readings = await get_minio_history(device_id, last_n=TOTAL_READINGS)
-        except ImportError:
-            log.warning("MinIO store not available, using only Redis data")
-            minio_readings = []
-        
-        # Merge: oldest from MinIO → newest from Redis
-        all_readings = minio_readings + redis_readings
-        
-        # Deduplicate by timestamp (some readings might overlap)
-        seen_times = set()
-        merged = []
-        for r in all_readings:
-            t = r.get("Time")
-            if t and t not in seen_times:
-                seen_times.add(t)
-                merged.append(r)
-        
-        # Sort by timestamp and limit to TOTAL_READINGS
-        merged.sort(key=lambda r: r.get("Time", ""))
-        all_readings = merged[:TOTAL_READINGS]
 
     if not all_readings:
         return await _empty_response(device_id, meta)

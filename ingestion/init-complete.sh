@@ -8,7 +8,7 @@ mkdir -p /data/redis /data/minio
 
 # Redis
 echo 'Starting Redis...'
-redis-server --port 6379 --dir /data/redis --appendonly yes --daemonize yes &
+redis-server --port 6379 --dir /data/redis --appendonly yes --daemonize yes --maxclients 20000 &
 
 # Wait Redis
 sleep 3
