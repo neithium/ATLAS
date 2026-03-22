@@ -255,7 +255,7 @@ async def flush_device(device_id: str) -> bool:
     return bool(await r.delete(_key(device_id)))
 
 
-# ── batch operations (parallel) ─────────────────────────────────────────────
+## ── batch operations (parallel) ─────────────────────────────────────────────
 
 async def get_history_batch(device_ids: list[str], last_n: int = TOTAL_READINGS) -> dict[str, list[dict]]:
     """
