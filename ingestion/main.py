@@ -60,6 +60,8 @@ logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 # ── app ───────────────────────────────────────────────────────────────────────
 
+from fastapi.responses import ORJSONResponse
+
 app = FastAPI(
     title       = "Power Monitor API",
     description = (
@@ -68,6 +70,7 @@ app = FastAPI(
         "fresh (1 hr) + historical (23 hr + 6 days) data per device."
     ),
     version = "1.0.0",
+    default_response_class = ORJSONResponse,
 )
 
 app.add_middleware(
@@ -183,11 +186,16 @@ async def health():
         except Exception:
             minio_status = "error"
 
+    # Check Kafka status
+    from core.kafka_producer import _producer
+    kafka_status = "connected" if _producer is not None else "connecting/disconnected"
+
     return {
-        "status"    : "ok" if redis_ok else "degraded",
+        "status"    : "ok" if (redis_ok and _producer is not None) else "degraded",
         "timestamp" : datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "redis"     : "connected" if redis_ok else "unreachable",
         "minio"     : minio_status,
+        "kafka"     : kafka_status,
         "architecture": {
             "redis_readings": REDIS_READINGS,
             "minio_readings": TOTAL_READINGS - REDIS_READINGS,

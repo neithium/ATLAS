@@ -1,137 +1,84 @@
-# Power Monitor API (Updated 2026-03-15)
+# PowerPulse Telemetry Ingestion (Legacy)
 
-IPMI → Redis → MinIO → FastAPI pipeline for 7-day power telemetry.
+This directory contains the original telemetry ingestion pipeline, designed to fetch, process, and serve power/thermal metrics for up to 50,000 devices. It utilizes a 3-tier storage architecture to provide a seamless 7-day rolling window of data.
 
-## Quick Start (All-in-One Docker)
+## 🏗 Architecture Overview
 
-```
-cd ATLAS
-docker compose down --remove-orphans
-docker compose up --build atlas-ingestion
-docker compose logs -f atlas-ingestion
-```
+The system follows a "Poll-Buffer-Persist" pattern:
 
-**Ports:**
+1.  **Poller (IPMI/Mock)**: A background service (`core/poller.py`) fetches metrics every 5 minutes.
+2.  **Hot Buffer (Redis)**: Stores the most recent 24 hours of data for instant access.
+3.  **Cold Storage (MinIO)**: Stores the remaining 6 days of historical data as compressed objects.
+4.  **API (FastAPI)**: Serves a unified 7-day view by merging Redis and MinIO data on the fly.
 
-- **API:** http://localhost:8000/docs (Swagger/OpenAPI)
-- **Nginx:** http://localhost:80 → API 8000
-- **MinIO:** http://localhost:9000 (minioadmin/minioadmin)
-- **MinIO Console:** http://localhost:9001
-
-**Restart (instant):**
-
-```
-docker compose restart atlas-ingestion
+```mermaid
+graph TD
+    A[Physical Server/Mock] -- IPMI --> B[Poller]
+    B --> C[Redis Hot Buffer - 24hr]
+    C -- Daily Sync --> D[MinIO Cold Storage - 6days]
+    E[FastAPI] -- Queries --> C
+    E -- Queries --> D
+    E -- Response --> F[User/Postman]
 ```
 
-**Expected logs:**
+## 🚀 Quick Start
 
-```
-=== Starting All-in-One PowerPulse ===
-Starting Redis... (PING)
-Starting MinIO... (health OK)
-Starting API... Uvicorn INFO on 0.0.0.0:8000
-Starting Nginx...
-All services running - tailing logs
-```
-
-**Stop:**
-
-```
-docker compose down -v
-```
-
-## Generate Test Data (7-day buffer)
-
-```
-cd ATLAS/ingestion
-python fill_7day_data.py   # Fills Redis/MinIO with mock data
-```
-
-## Endpoints
-
-| Method    | Path                           | Description                                |
-| --------- | ------------------------------ | ------------------------------------------ |
-| `GET`     | `/health`                      | System/Redis/MinIO status + buffer %       |
-| `GET`     | `/devices`                     | List all registered devices                |
-| `GET`     | `/devices/{device_id}`         | **Full 7-day JSON** (2016 readings/device) |
-| `GET`     | `/devices/{device_id}/fresh`   | Last 12 readings (1hr)                     |
-| `GET`     | `/devices/{device_id}/latest`  | Single latest reading                      |
-| `GET`     | `/devices/{device_id}/summary` | Aggregated stats (no raw data)             |
-| `**GET**` | **`/acids/{acid}`**            | **Devices + datapoints under ACID**        |
-| `POST`    | `/devices/{device_id}/poll`    | Force IPMI poll now                        |
-| `DEL`     | `/devices/{device_id}/flush`   | Clear Redis buffer                         |
-
-## Test Commands
+### 1. Docker Deployment (All-in-One)
+The easiest way to run the entire stack (API, Redis, MinIO, Nginx) is using the all-in-one configuration:
 
 ```bash
-# Health
-curl http://localhost:8000/health
-
-# List devices
-curl http://localhost:8000/devices | jq '.[0:3]'
-
-# Full data for 1 device
-curl http://localhost:8000/devices/DEV-SERVER-01 | jq '.data.PowerDetail | length'
-
-# **NEW ACID endpoint**
-curl http://localhost:8000/acids/APP-CUST-001 | jq '.device_count, .devices | keys'
-
-# Fresh readings
-curl http://localhost:8000/devices/DEV-SERVER-01/fresh | jq '.PowerDetail | length'
-
-# Force poll (generates new data)
-curl -X POST http://localhost:8000/devices/DEV-SERVER-01/poll
+cd atlas/ingestion
+docker compose -f docker-compose.allinone.yml up --build
 ```
 
-## ACID Endpoint Details
-
-**GET /acids/{acid}**
-
-Filters devices by `application_customer_id`, returns full datapoints parallel.
-
-**Response:**
-
-```json
-{
-  "acid": "APP-CUST-001",
-  "device_count": 25,
-  "devices": {
-    "DEV-SERVER-01": { "data.PowerDetail": [...2016 readings...] },
-    "DEV-SERVER-02": { ... },
-    ...
-  }
-}
+```bash
+cd atlas
+.\single.bat  
+docker compose up broker1 -d
+docker compose up kafka-init -d
+docker compose up atlas-ingestion --build
 ```
 
-## Data Flow
+**Services:**
+- **API (Nginx)**: `http://localhost:80` (Proxies to 8000)
+- **API (Internal)**: `http://localhost:8000/docs`
+- **MinIO Console**: `http://localhost:9001` (user: `minioadmin`, pass: `minioadmin`)
 
-```
-IPMI (BMC) ──5min→ Redis (288 recent) ──┐
-Mock (fill_7day_data.py) ────────────────┤
-                                         │ FastAPI (main.py)
-**POST /acids/{acid}** ──────────────────┘
-         │
-Redis/MinIO ← core/redis_store.push_reading()
-```
+### 2. Generate Initial Data
+If you are running in a fresh environment, generate a 7-day data buffer for testing:
 
-## Troubleshooting
-
-| Issue               | Fix                                           |
-| ------------------- | --------------------------------------------- | ------- | ------------------------ | -------- |
-| Container exits     | `docker compose logs atlas-ingestion`         |
-| No /health response | Wait 60s warmup or `python fill_7day_data.py` |
-| No data for ACID    | Check `curl http://localhost:8000/devices     | jq '.[] | .application_customer_id | unique'` |
-| IPMI errors         | `MOCK_IPMI=true docker compose up`            |
-
-## Architecture
-
-```
-Physical Server BMC ─IPMI→ poller.py (5min) → redis_store.py → MinIO (historical)
-                                              │
-                                              ↓ uvicorn main:app → response_builder.py → JSON
+```bash
+python fill_7day_data.py --devices-only #to generate only devices
+python fill_7day_data.py 
 ```
 
-**Buffer:** Redis (24hr) + MinIO (6days) = 7-day rolling window per device.
+## 📡 API Endpoints
 
-Updated: Docker all-in-one, ACID endpoint, fill data script.
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/health` | `GET` | System health, service status, and buffer utilization. |
+| `/devices` | `GET` | List all 50,000 registered devices. |
+| `/devices/{id}` | `GET` | Full 7-day telemetry payload (JSON). |
+| `/devices/{id}/latest` | `GET` | The absolute latest reading (last 5 mins). |
+| `/devices/{id}/fresh` | `GET` | Last 1 hour of readings (12 data points). |
+| `/acids/{acid}` | `GET` | **Performance Batch**: Fetch all devices for a Customer ID. |
+| `/devices/{id}/poll` | `POST` | Force an immediate out-of-band IPMI poll. |
+
+## 🛠 Project Structure
+
+- `core/`: Core logic modules.
+  - `poller.py`: Background interval management.
+  - `redis_store.py`: Hot buffer CRUD operations.
+  - `minio_store.py`: Historical object management.
+  - `ipmi_reader.py`: BMC communication (or MOCK logic).
+- `config/`: Configuration files (device registries, thresholds).
+- `nginx/`: Configuration for the gateway proxy.
+- `main.py`: FastAPI entry point and route definitions.
+
+## 📝 Performance Notes
+- **Polling Interval**: Fixed at 5 minutes (288 readings/day).
+- **Data Retention**: 7 days rolling. Older data is pruned automatically during the daily MinIO sync.
+- **Concurrency**: The API uses `orjson` and asynchronous storage drivers to handle high-concurrency ACID lookups.
+
+---
+*Last Updated: 2026-03-21*

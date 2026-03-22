@@ -31,16 +31,16 @@ PLATFORM_CONFIGS = [
     {
         "prefix": "PLAT1", 
         "platform_customer_id": "PLATCUST001", 
-        "app_customers": 10,   
-        "devices_per_app": 50, # 500 devices
+        "app_customers": 8,   
+        "devices_per_app": 5000, # 40,000 devices
         "location": "Austin", 
         "state": "TX"
     },
     {
         "prefix": "PLAT2", 
         "platform_customer_id": "PLATCUST002", 
-        "app_customers": 10,   
-        "devices_per_app": 50, # 500 devices
+        "app_customers": 8,   
+        "devices_per_app": 5000, # 40,000 devices
         "location": "Denver", 
         "state": "CO"
     },
@@ -115,18 +115,22 @@ def generate_device_config(device_id: str, platform: dict, app_customer_num: int
     }
 
 
+import hashlib
+
 def generate_mock_reading(device_id: str, base_time: datetime) -> dict:
     """Generate a single mock IPMI reading with realistic values."""
-    device_seed = hash(device_id) % 10000
-    random.seed(device_seed)
+    # Use a stable hash so it generates consistent values across script runs
+    hash_val = int(hashlib.md5(device_id.encode('utf-8')).hexdigest(), 16)
+    device_seed = hash_val % 10000
     
     base_power = 300 + (device_seed % 150)  # 300-450W range
+    cpu_max = 3600 + (device_seed % 600)
     
     return {
         "AmbTemp": round(random.uniform(18.0, 28.0), 1),
         "Average": round(random.uniform(base_power - 50, base_power + 100), 2),
-        "CpuAvgFreq": random.randint(2400, 3600),
-        "CpuMax": random.randint(3600, 4200),
+        "CpuAvgFreq": random.randint(2400, cpu_max),
+        "CpuMax": cpu_max,
         "CpuPwrSavLim": random.choice([0, 1, 2]),
         "CpuUtil": random.randint(5, 85),
         "CpuWatts": random.randint(80, 180),
@@ -136,7 +140,6 @@ def generate_mock_reading(device_id: str, base_time: datetime) -> dict:
         "Time": base_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "is_fresh": False,
     }
-
 
 def generate_readings_for_device(device_id: str, end_time: datetime, total_readings: int) -> list[dict]:
     """Generate a series of readings ending at end_time."""

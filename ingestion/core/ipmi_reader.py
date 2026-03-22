@@ -146,13 +146,18 @@ def _read_mock(device_id: str) -> dict:
     avg_w   = max(50.0, base + random.gauss(0, 8))
     peak_w  = int(avg_w * random.uniform(1.05, 1.20))
     min_w   = int(avg_w * random.uniform(0.80, 0.95))
-    cpu_freq= random.randint(2_000_000, 3_800_000)
+    import hashlib
+    hash_val = int(hashlib.md5(device_id.encode('utf-8')).hexdigest(), 16)
+    dev_seed = hash_val % 10000
+    
+    cpu_max = 3600000 + (dev_seed % 600000)
+    cpu_freq = random.randint(2_000_000, cpu_max)
 
     return _make_reading(
         amb_temp    = round(random.uniform(18.0, 32.0), 1),
         average     = round(avg_w, 2),
         cpu_avg_freq= cpu_freq,
-        cpu_max     = int(cpu_freq * random.uniform(1.0, 1.25)),
+        cpu_max     = cpu_max,
         cpu_pwr_sav = random.randint(150, 300),
         cpu_util    = random.randint(10, 95),
         cpu_watts   = random.randint(80, 280),
