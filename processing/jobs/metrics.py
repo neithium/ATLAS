@@ -1,77 +1,3 @@
-# import json
-# from datetime import datetime
-
-# STREAM_FILE = "/app/data/metrics/stream_metrics.json"
-# BATCH_FILE = "/app/data/metrics/batch_metrics.json"
-
-# # ---------------- LOAD ----------------
-# def load(path):
-#     with open(path) as f:
-#         return [json.loads(line) for line in f]
-
-# stream = load(STREAM_FILE)
-# batch = load(BATCH_FILE)
-
-# # ---------------- SUMMARY ----------------
-# def summarize(data):
-#     durations = [d["duration"] for d in data]
-#     rows = sum(d["rows"] for d in data)
-#     total_time = sum(durations)
-
-#     return {
-#         "rows": rows,
-#         "time": round(total_time, 2),
-#         "throughput": round(rows / total_time, 2) if total_time else 0,
-#         "min": round(min(durations), 3),
-#         "max": round(max(durations), 3),
-#         "avg": round(sum(durations) / len(durations), 3)
-#     }
-
-# s = summarize(stream)
-# b = summarize(batch)
-
-# # ---------------- REPORT ----------------
-# print("\n" + "="*50)
-# print("📊 ATLAS BENCHMARK REPORT")
-# print("="*50)
-
-# print(f"\n🕒 Generated at: {datetime.now()}")
-
-# print("\n⚙️ CONFIGURATION:")
-# print("- Servers: 100")
-# print("- JSON generation: every 30 seconds")
-# print("- Stream window: 3 minutes")
-# print("- Batch interval: 6 minutes")
-
-# print("\n🔵 STREAM PERFORMANCE")
-# print("- Total Rows Processed :", s["rows"])
-# print("- Total Processing Time :", s["time"], "sec")
-# print("- Throughput :", s["throughput"], "rows/sec")
-# print("- Avg Latency :", s["avg"], "sec")
-# print("- Min Latency :", s["min"], "sec")
-# print("- Max Latency :", s["max"], "sec")
-
-# print("\n🟡 BATCH PERFORMANCE")
-# print("- Total Rows Processed :", b["rows"])
-# print("- Total Processing Time :", b["time"], "sec")
-# print("- Throughput :", b["throughput"], "rows/sec")
-# print("- Avg Latency :", b["avg"], "sec")
-# print("- Min Latency :", b["min"], "sec")
-# print("- Max Latency :", b["max"], "sec")
-
-# print("\n🧠 OBSERVATIONS:")
-
-# print("- Streaming achieves low latency suitable for real-time monitoring")
-# print("- Batch processing achieves higher throughput for large-scale aggregation")
-# print("- System shows stable performance with no data loss (checkpointing enabled)")
-# print("- Micro-batch architecture introduces multiple parquet outputs (expected behavior)")
-
-# print("\n💡 CONCLUSION:")
-# print("The system successfully balances real-time responsiveness and batch efficiency,")
-# print("making it suitable for scalable telemetry processing.")
-
-# print("\n" + "="*50)
-
 import json
 from datetime import datetime
 
@@ -113,7 +39,7 @@ report = f"""
 🕒 Generated at: {datetime.now()}
 
 ⚙️ CONFIGURATION:
-- Servers: 100
+- Servers: 1000
 - JSON generation: every 30 seconds
 - Stream window: 3 minutes
 - Batch interval: 6 minutes

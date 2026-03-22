@@ -444,7 +444,7 @@ services:
     user: root
 
     ports:
-      - "4040:4040"
+      - "0:4040"
 
     environment:
       - SPARK_MODE=driver
@@ -460,43 +460,7 @@ services:
 
     networks:
       - atlas-network
-
-    # command: >
-    #   bash -c "
-    #   mkdir -p /app/data/processed/stream &&
-    #   mkdir -p /app/data/processed/batch &&
-    #   mkdir -p /app/checkpoint/stream &&
-    #   spark-submit /app/jobs/streaming_job.py
-    #   "
-    # command: >
-    #   bash -c "
-    #   mkdir -p /app/data/raw &&
-    #   mkdir -p /app/data/processed/stream &&
-    #   mkdir -p /app/data/processed/batch &&
-    #   mkdir -p /app/checkpoint/stream &&
-
-    #   python3 /app/jobs/json_generator.py &
-    #   spark-submit /app/jobs/streaming_job.py &
-    #   spark-submit /app/jobs/batch_job.py &
-
-    #   wait
-    #   "
-    # command: >
-    #   bash -c "
-    #   mkdir -p /app/data/raw &&
-    #   mkdir -p /app/data/processed/stream &&
-    #   mkdir -p /app/data/processed/batch &&
-    #   mkdir -p /app/checkpoint/stream &&
-
-    #   python3 /app/jobs/json_generator.py &
-
-    #   sleep 10
-
-    #   spark-submit /app/jobs/streaming_job.py &
-    #   spark-submit /app/jobs/batch_job.py &
-
-    #   wait
-    #   "
+      
     command: >
       bash -c "
       mkdir -p /app/data/raw &&
