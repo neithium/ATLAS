@@ -1,0 +1,40 @@
+
+==================================================
+📊 ATLAS BENCHMARK REPORT
+==================================================
+
+🕒 Generated at: 2026-03-22 08:18:40.952171
+
+⚙️ CONFIGURATION:
+- Servers: 10
+- JSON generation: every 30 seconds
+- Stream window: 3 minutes
+- Batch interval: 6 minutes
+
+🔵 STREAM PERFORMANCE
+- Total Rows Processed : 1570
+- Total Processing Time : 45.08 sec
+- Throughput : 34.83 rows/sec
+- Avg Latency : 0.727 sec
+- Min Latency : 0.384 sec
+- Max Latency : 4.528 sec
+
+🟡 BATCH PERFORMANCE
+- Total Rows Processed : 6100
+- Total Processing Time : 17.13 sec
+- Throughput : 356.07 rows/sec
+- Avg Latency : 4.283 sec
+- Min Latency : 1.753 sec
+- Max Latency : 11.215 sec
+
+🧠 OBSERVATIONS:
+- Streaming achieves low latency suitable for real-time monitoring
+- Batch processing achieves higher throughput for large-scale aggregation
+- System shows stable performance with no data loss (checkpointing enabled)
+- Micro-batch architecture introduces multiple parquet outputs (expected behavior)
+
+💡 CONCLUSION:
+The system successfully balances real-time responsiveness and batch efficiency,
+making it suitable for scalable telemetry processing.
+
+==================================================

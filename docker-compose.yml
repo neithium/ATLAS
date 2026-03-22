@@ -455,18 +455,63 @@ services:
       - ./processing/jobs:/app/jobs
       - ./schema:/app/schema:ro
       - spark-checkpoint:/app/checkpoint
-      - raw-telemetry:/app/data/raw:ro
+      - raw-telemetry:/app/data/raw
       - delta-refined:/app/data/processed
 
     networks:
       - atlas-network
 
+    # command: >
+    #   bash -c "
+    #   mkdir -p /app/data/processed/stream &&
+    #   mkdir -p /app/data/processed/batch &&
+    #   mkdir -p /app/checkpoint/stream &&
+    #   spark-submit /app/jobs/streaming_job.py
+    #   "
+    # command: >
+    #   bash -c "
+    #   mkdir -p /app/data/raw &&
+    #   mkdir -p /app/data/processed/stream &&
+    #   mkdir -p /app/data/processed/batch &&
+    #   mkdir -p /app/checkpoint/stream &&
+
+    #   python3 /app/jobs/json_generator.py &
+    #   spark-submit /app/jobs/streaming_job.py &
+    #   spark-submit /app/jobs/batch_job.py &
+
+    #   wait
+    #   "
+    # command: >
+    #   bash -c "
+    #   mkdir -p /app/data/raw &&
+    #   mkdir -p /app/data/processed/stream &&
+    #   mkdir -p /app/data/processed/batch &&
+    #   mkdir -p /app/checkpoint/stream &&
+
+    #   python3 /app/jobs/json_generator.py &
+
+    #   sleep 10
+
+    #   spark-submit /app/jobs/streaming_job.py &
+    #   spark-submit /app/jobs/batch_job.py &
+
+    #   wait
+    #   "
     command: >
       bash -c "
+      mkdir -p /app/data/raw &&
       mkdir -p /app/data/processed/stream &&
       mkdir -p /app/data/processed/batch &&
       mkdir -p /app/checkpoint/stream &&
-      spark-submit /app/jobs/streaming_job.py
+
+      python3 /app/jobs/json_generator.py &
+
+      sleep 10
+
+      spark-submit /app/jobs/streaming_job.py &
+      spark-submit /app/jobs/batch_job.py &
+
+      wait
       "
 
   # ===========================================================================
