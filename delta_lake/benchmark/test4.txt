@@ -1,0 +1,516 @@
+ 
+ 
+
+C:\Users\manth\Documents\GitHub\ATLAS>docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=10000 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-05-01 atlas-lakehouse
+time="2026-03-19T15:17:23+05:30" level=warning msg="Found orphan containers ([atlas-atlas-lakehouse-run-d2d52ae24a80 atlas-atlas-lakehouse-run-338c4f745d98 kafka-init broker1 atlas-ingestion atlas-atlas-lakehouse-run-6d0eeeb13205 atlas-atlas-lakehouse-run-ca3cd2570412 atlas-atlas-lakehouse-run-c29ab05a3939 atlas-atlas-lakehouse-run-cfc611f441f6 atlas-atlas-lakehouse-run-34d5601cc0a6 atlas-atlas-lakehouse-run-bc607d02488b]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Lakehouse - Delta Lake Deduplication Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  RUN_GENERATOR=y
+  GENERATOR_MODE=benchmark
+  DEVICE_COUNT=10000
+  BATCH_SIZE=1000
+  NUM_DAYS=7
+  START_DATE=2026-05-01
+  RUN_PIPELINE=y
+  PIPELINE_MODE=benchmark
+  OPTIMIZE_EVERY=20
+  COMPRESSION_CODEC=zstd
+  RUN_VACUUM=n
+  VACUUM_RETENTION_DAYS=14
+  KEEP_ALIVE=y
+
+[1/3] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+
+================================================================================
+  ATLAS DATA GENERATOR
+================================================================================
+
+  Mode: BENCHMARK
+  Compression: ZSTD
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/03/19 09:47:25 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+================================================================================
+ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+================================================================================
+
+Output path:              /raw/benchmark_data
+Total devices:            10,000
+Device batch size:        1,000
+Number of daily files:    7
+Rows per device per file: 2,016 (7 days × 288)
+
+Real-World Simulation:
+- Each file contains 7-day rolling window
+- File for Day N: metric_time spans (Day N-6) to Day N
+- New rows per file: 288/device (1 day)
+- Duplicate rows per file: 1,728/device (6 days)
+
+Expected Results After Deduplication:
+- Total raw input rows:   141,120,000
+- Expected unique rows:   37,440,000
+- Expected duplicates:    103,680,000
+- Expected dedup ratio:   73.5%
+
+File date range: 2026-05-01 → 2026-05-07
+
+================================================================================
+DAILY FILE 1/7: file_date = 2026-05-01
+  → metric_time window: 2026-04-25 to 2026-05-01
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 9.05s | Throughput: 222,746 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 4.16s | Throughput: 484,723 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 3.71s | Throughput: 543,107 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 3.34s | Throughput: 603,573 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 3.34s | Throughput: 603,832 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 3.25s | Throughput: 620,914 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 3.35s | Throughput: 601,461 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 3.54s | Throughput: 569,640 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 3.40s | Throughput: 593,041 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 3.74s | Throughput: 539,158 rows/s
+
+================================================================================
+DAILY FILE 2/7: file_date = 2026-05-02
+  → metric_time window: 2026-04-26 to 2026-05-02
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 2.82s | Throughput: 714,112 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 2.73s | Throughput: 738,426 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 2.75s | Throughput: 732,967 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 2.93s | Throughput: 687,407 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 2.65s | Throughput: 761,338 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 2.52s | Throughput: 799,365 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 2.68s | Throughput: 752,759 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 2.81s | Throughput: 718,600 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 2.68s | Throughput: 750,990 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 2.68s | Throughput: 751,728 rows/s
+
+================================================================================
+DAILY FILE 3/7: file_date = 2026-05-03
+  → metric_time window: 2026-04-27 to 2026-05-03
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 2.65s | Throughput: 761,214 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 2.49s | Throughput: 808,801 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 2.48s | Throughput: 814,375 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 2.45s | Throughput: 824,447 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 2.59s | Throughput: 779,154 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 2.52s | Throughput: 800,272 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 2.52s | Throughput: 798,620 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 2.49s | Throughput: 809,321 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 2.61s | Throughput: 772,067 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 2.64s | Throughput: 764,458 rows/s
+
+================================================================================
+DAILY FILE 4/7: file_date = 2026-05-04
+  → metric_time window: 2026-04-28 to 2026-05-04
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 2.60s | Throughput: 774,527 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 2.86s | Throughput: 704,459 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 2.58s | Throughput: 780,363 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 2.47s | Throughput: 814,723 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 2.47s | Throughput: 815,219 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 2.52s | Throughput: 800,737 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 2.55s | Throughput: 791,848 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 2.49s | Throughput: 810,602 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 2.50s | Throughput: 807,764 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 2.43s | Throughput: 830,267 rows/s
+
+================================================================================
+DAILY FILE 5/7: file_date = 2026-05-05
+  → metric_time window: 2026-04-29 to 2026-05-05
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 2.51s | Throughput: 802,651 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 2.51s | Throughput: 802,361 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 2.44s | Throughput: 825,483 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 2.50s | Throughput: 805,303 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 2.52s | Throughput: 798,480 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 2.47s | Throughput: 816,442 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 2.39s | Throughput: 843,668 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 2.42s | Throughput: 831,532 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 2.52s | Throughput: 800,964 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 2.46s | Throughput: 819,452 rows/s
+
+================================================================================
+DAILY FILE 6/7: file_date = 2026-05-06
+  → metric_time window: 2026-04-30 to 2026-05-06
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 2.40s | Throughput: 841,504 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 2.41s | Throughput: 835,387 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 2.46s | Throughput: 819,029 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 2.46s | Throughput: 819,834 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 2.42s | Throughput: 832,193 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 2.47s | Throughput: 816,326 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 2.45s | Throughput: 822,616 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 2.46s | Throughput: 818,147 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 2.43s | Throughput: 829,455 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 2.39s | Throughput: 844,289 rows/s
+
+================================================================================
+DAILY FILE 7/7: file_date = 2026-05-07
+  → metric_time window: 2026-05-01 to 2026-05-07
+================================================================================
+
+  Batch 1/10: devices 1..1,000
+  Rows written: 2,016,000 | Time: 2.44s | Throughput: 824,770 rows/s
+
+  Batch 2/10: devices 1,001..2,000
+  Rows written: 2,016,000 | Time: 2.42s | Throughput: 833,295 rows/s
+
+  Batch 3/10: devices 2,001..3,000
+  Rows written: 2,016,000 | Time: 2.42s | Throughput: 832,905 rows/s
+
+  Batch 4/10: devices 3,001..4,000
+  Rows written: 2,016,000 | Time: 2.48s | Throughput: 814,165 rows/s
+
+  Batch 5/10: devices 4,001..5,000
+  Rows written: 2,016,000 | Time: 2.57s | Throughput: 783,903 rows/s
+
+  Batch 6/10: devices 5,001..6,000
+  Rows written: 2,016,000 | Time: 2.44s | Throughput: 827,074 rows/s
+
+  Batch 7/10: devices 6,001..7,000
+  Rows written: 2,016,000 | Time: 2.42s | Throughput: 832,704 rows/s
+
+  Batch 8/10: devices 7,001..8,000
+  Rows written: 2,016,000 | Time: 2.48s | Throughput: 812,575 rows/s
+
+  Batch 9/10: devices 8,001..9,000
+  Rows written: 2,016,000 | Time: 2.47s | Throughput: 816,137 rows/s
+
+  Batch 10/10: devices 9,001..10,000
+  Rows written: 2,016,000 | Time: 2.46s | Throughput: 817,963 rows/s
+
+================================================================================
+Benchmark Generation Complete
+================================================================================
+Output path:            /raw/benchmark_data
+Total raw rows:         141,120,000
+Expected unique after dedup: 37,440,000
+Expected dedup ratio:   73.5%
+Total elapsed:          194.81s
+================================================================================
+
+[2/3] Running deduplication pipeline (mode=benchmark)...
+
+================================================================================
+  ATLAS - REFINED LAYER DELTA LAKE PIPELINE
+  High-Performance Deduplication for 400K+ Device Scale
+================================================================================
+
+  Mode: BENCHMARK
+  Architecture:
+  - Triple-Hash Key: (device_id, metric_time, application_customer_id)
+  - 5-Level Partitioning: report_type/date/pcid/acid/device_id
+  - Storage: Parquet with ZSTD compression
+  - Optimization: Z-ORDER by metric_time for query locality
+  - Batch Processing: OPTIMIZE every 20 batches
+  - Fault Tolerance: Checkpointing enabled
+
+  Horizontal Scaling:
+  - Dynamic Allocation: False
+  - Executors: 2
+  - Executor Cores: 2
+  - Executor Memory: 2g
+
+--------------------------------------------------------------------------------
+[STEP 1] Initializing Spark session with Delta Lake...
+--------------------------------------------------------------------------------
+:: loading settings :: url = jar:file:/opt/spark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-8654e1d4-858a-48de-83eb-d1c0da1ed786;1.0
+        confs: [default]
+        found io.delta#delta-spark_2.12;3.1.0 in central
+        found io.delta#delta-storage;3.1.0 in central
+        found org.antlr#antlr4-runtime;4.9.3 in central
+downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (4790ms)
+downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (245ms)
+downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
+        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (679ms)
+:: resolution report :: resolve 5546ms :: artifacts dl 5719ms
+        :: modules in use:
+        io.delta#delta-spark_2.12;3.1.0 from central in [default]
+        io.delta#delta-storage;3.1.0 from central in [default]
+        org.antlr#antlr4-runtime;4.9.3 from central in [default]
+        ---------------------------------------------------------------------
+        |                  |            modules            ||   artifacts   |
+        |       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+        ---------------------------------------------------------------------
+        |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
+        ---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-8654e1d4-858a-48de-83eb-d1c0da1ed786
+        confs: [default]
+        3 artifacts copied, 0 already retrieved (5727kB/14ms)
+26/03/19 09:50:55 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+         ✓ SparkSession created with Delta Lake 3.1.0
+         ✓ Compression: zstd
+         ✓ Parquet vectorized reader enabled
+         ✓ Adaptive Query Execution enabled
+
+--------------------------------------------------------------------------------
+[STEP 2] Discovering file_date batches in benchmark data...
+--------------------------------------------------------------------------------
+         ℹ file_date = date batch was received (each contains 7-day rolling window)
+         ✓ Found 7 daily file batches
+         ✓ File date range: 2026-05-01 → 2026-05-07
+         ✓ File batches to process: 7
+         ℹ Fresh benchmark run detected (resume=False): clearing existing output at /refined
+
+--------------------------------------------------------------------------------
+[STEP 3] Processing file batches with incremental MERGE...
+--------------------------------------------------------------------------------
+         ℹ Each batch = 2016 rows/device (7-day window), only 288 new/device
+
+  ┌─ Batch 1/7: file_date=2026-05-01
+  │  Rows: 20,160,000 | Read: 0.68s
+         Partition structure: /report_type/partition_date/platform_customer_id/application_customer_id/device_id/
+         Compression: zstd
+26/03/19 09:54:18 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
+  │  Action: INIT | Time: 179.08s
+  │  Batch total: 179.76s | Throughput: 112,149 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 2/7: file_date=2026-05-02
+  │  Rows: 20,160,000 | Read: 0.18s
+  │  Action: MERGE | Time: 91.92s
+  │  Batch total: 92.10s | Throughput: 218,895 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 3/7: file_date=2026-05-03
+  │  Rows: 20,160,000 | Read: 0.19s
+  │  Action: MERGE | Time: 82.38s
+  │  Batch total: 82.57s | Throughput: 244,154 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 4/7: file_date=2026-05-04
+  │  Rows: 20,160,000 | Read: 0.17s
+  │  Action: MERGE | Time: 94.72s
+  │  Batch total: 94.89s | Throughput: 212,459 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 5/7: file_date=2026-05-05
+  │  Rows: 20,160,000 | Read: 0.17s
+  │  Action: MERGE | Time: 100.73s
+  │  Batch total: 100.90s | Throughput: 199,811 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 6/7: file_date=2026-05-06
+  │  Rows: 20,160,000 | Read: 0.17s
+  │  Action: MERGE | Time: 107.18s
+  │  Batch total: 107.35s | Throughput: 187,796 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 7/7: file_date=2026-05-07
+  │  Rows: 20,160,000 | Read: 0.22s
+[768.596s][warning][gc,alloc] Executor task launch worker for task 1.0 in stage 148.0 (TID 30935): Retried waiting for GCLocker too often allocating 4194306 words
+26/03/19 10:03:31 WARN TaskMemoryManager: Failed to allocate a page (33554432 bytes), try again.
+  │  Action: MERGE | Time: 115.23s
+  │  Batch total: 115.45s | Throughput: 174,621 rows/s
+  └─ ✓ Batch complete
+
+--------------------------------------------------------------------------------
+[FINAL] Verifying deduplication results...
+--------------------------------------------------------------------------------
+
+  Delta Table Details:
+  - Location: /refined
+  - Format: delta
+  - Partitions: ['report_type', 'partition_date', 'platform_customer_id', 'application_customer_id', 'device_id']
+  - Num Files: 130000
+  - Size (bytes): 608336277
+
+  Recent Operations:
+  - 2026-03-19 10:04:12.509000: MERGE
+  - 2026-03-19 10:02:16.884000: MERGE
+  - 2026-03-19 10:00:30.218000: MERGE
+  - 2026-03-19 09:58:49.064000: MERGE
+  - 2026-03-19 09:57:14.015000: MERGE
+
+================================================================================
+  PIPELINE EXECUTION SUMMARY
+================================================================================
+
+  Mode: BENCHMARK
+
+  Input Statistics:
+  - Total input rows:      141,120,000
+
+  Deduplication Results:
+  - Final table rows:      37,440,000
+  - Duplicates dropped:    103,680,000
+  - Dedup ratio:           73.5%
+  - Partition count:       52
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 7
+  - Total rows processed:    141,120,000
+  - Total elapsed time:      849.91s
+  - Throughput:              166,041.5 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  82.571s
+  - Max:  179.761s
+  - Mean: 110.431s
+  - P50:  100.895s
+  - P95:  160.468s
+  - P99:  175.902s
+
+  MERGE Operation Latency (seconds):
+  - Min:  82.378s
+  - Max:  179.079s
+  - Mean: 110.176s
+  - P50:  100.728s
+  - P95:  159.925s
+  - P99:  175.248s
+
+  Read Latency (seconds):
+  - Min:  0.167s
+  - Max:  0.677s
+  - Mean: 0.253s
+
+  Architecture Verification:
+  ✓ Triple-Hash Key: device_id + metric_time + application_customer_id
+  ✓ 5-Level Partitioning: report_type/partition_date/platform_customer_id/application_customer_id/device_id
+  ✓ Storage Format: Parquet with ZSTD compression
+  ✓ Z-ORDER Clustering: metric_time
+
+================================================================================
+  ATLAS REFINED LAYER PIPELINE COMPLETE
+================================================================================
+
+
+[3/3] Skipping vacuum (RUN_VACUUM=n)
+
+Done!
+KEEP_ALIVE enabled: container will stay running.
