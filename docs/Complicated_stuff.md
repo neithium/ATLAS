@@ -23,7 +23,7 @@
 - imo, beats approach 01 and approach 02.
 
 4. Approach 04:
-- Sanjula reads from Kafka, flattens the data, and uses Spark Structured Streaming to write directly to a Bronze Delta Table (Append-Only) on the shared volume. I read from there.
+- Sanjula reads from Kafka, flattens the data, and uses Spark Structured Streaming to write directly to a .paraquet on the shared volume. I read from there using readStream function.
 - ++ delta transaction log automatically acts as msg queue, my part sees the new data, and writes it directly to refined table.
 - ++ No Airflow scheduler for both separately, no polling scripts.
 - ++ 100% decoupled containers, developer friendly. 
