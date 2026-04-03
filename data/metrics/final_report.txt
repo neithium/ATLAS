@@ -1,0 +1,39 @@
+
+==================================================
+📊 ATLAS BENCHMARK REPORT
+==================================================
+
+🕒 Generated at: 2026-04-03 09:03:32.658062
+
+⚙️ CONFIGURATION:
+- Servers: 1000
+- Data ingestion: every 5 minutes
+- Stream aggregation: 1 hour
+- Batch aggregation: 24 hours
+
+🔵 STREAM PERFORMANCE
+- Total Rows Processed : 31000
+- Total Time           : 389.71 sec
+- Throughput           : 79.55 rows/sec
+- Avg Latency          : 11.462 sec
+- Min Latency          : 5.221 sec
+- Max Latency          : 29.366 sec
+
+🟡 BATCH PERFORMANCE
+- Total Rows Processed : 59790
+- Total Time           : 135.75 sec
+- Throughput           : 440.45 rows/sec
+- Avg Latency          : 33.937 sec
+- Min Latency          : 4.578 sec
+- Max Latency          : 89.614 sec
+
+🧠 OBSERVATIONS:
+- Streaming processes only fresh data for efficiency
+- Batch computes stable daily aggregates
+- Partitioned storage improves scalability
+- System mimics real production workloads
+
+💡 CONCLUSION:
+The pipeline is scalable, efficient, and production-aligned.
+
+==================================================

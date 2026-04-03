@@ -151,10 +151,10 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker1
     hostname: broker1
-    ports:
-      - "9062:9092"
-      - "9063:9093"
-      - "9064:9094"
+    # ports:
+    #   - "9062:9092"
+    #   - "9063:9093"
+    #   - "9064:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=1
@@ -229,10 +229,10 @@ services:
     hostname: broker2
     profiles:
       - full-cluster
-    ports:
-      - "9065:9092"
-      - "9066:9093"
-      - "9067:9094"
+    # ports:
+    #   - "9065:9092"
+    #   - "9066:9093"
+    #   - "9067:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=2
@@ -303,10 +303,10 @@ services:
     hostname: broker3
     profiles:
       - full-cluster
-    ports:
-      - "9068:9092"
-      - "9069:9093"
-      - "9070:9094"
+    # ports:
+    #   - "9068:9092"
+    #   - "9069:9093"
+    #   - "9070:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=3
@@ -443,8 +443,8 @@ services:
 
     user: root
 
-    ports:
-      - "0:4040"
+    # ports:
+    #   - "0:4040"
 
     environment:
       - SPARK_MODE=driver

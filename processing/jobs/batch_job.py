@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, explode, to_timestamp, to_date, current_timestamp, date_format
+from pyspark.sql.functions import col, explode, to_date, current_timestamp
 from pyspark.sql.types import *
 import time, json, os
 
@@ -14,6 +14,7 @@ os.makedirs("/app/data/metrics", exist_ok=True)
 
 print("🟡 BATCH STARTED")
 
+# ---------------- SCHEMA ----------------
 schema = StructType([
     StructField("application_customer_id", StringType()),
     StructField("device_count", IntegerType()),
@@ -39,10 +40,16 @@ schema = StructType([
 processed_days = set()
 run_id = 0
 
+# ---------------- LOOP ----------------
 while True:
     try:
         df = spark.read.schema(schema).json(INPUT)
 
+        if df.rdd.isEmpty():
+            time.sleep(60)
+            continue
+
+        # -------- FLATTEN --------
         devices = df.selectExpr("explode(devices) as (k,v)").select("v.*")
 
         flat = devices.select(
@@ -56,33 +63,52 @@ while True:
             col("pd.AmbTemp").alias("temp")
         )
 
-        days = [r[0] for r in flat.select("event_date").distinct().collect()]
+        # -------- GET ALL DAYS --------
+        all_days = [r[0] for r in flat.select("event_date").distinct().collect()]
 
-        for day in days:
-            if day in processed_days:
-                continue
+        if not all_days:
+            time.sleep(60)
+            continue
+
+        # -------- FIND MAX DAY (LATEST DAY) --------
+        max_day = max(all_days)
+
+        # -------- PROCESS ONLY COMPLETED DAYS --------
+        days_to_process = [
+            day for day in all_days
+            if day < max_day and day not in processed_days
+        ]
+
+        for day in sorted(days_to_process):
 
             print(f"🔥 Processing Day: {day}")
-
             start = time.time()
 
             daily_df = flat.filter(col("event_date") == day)
 
-            result = daily_df.groupBy("device_id").avg("power", "cpu", "temp")
+            # -------- AGGREGATION (FIXED) --------
+            result = (
+                daily_df.groupBy("device_id", "event_date")
+                .avg("power", "cpu", "temp")
+                .withColumn("batch_time", current_timestamp())
+            )
 
-            result = result.withColumn("batch_time", current_timestamp())
-            result = result.withColumn("batch_date", date_format("batch_time", "yyyy-MM-dd"))
-
-            result.write.mode("append").partitionBy("batch_date").parquet(OUTPUT)
+            # -------- WRITE (EVENT-TIME PARTITIONED) --------
+            result.write.mode("append") \
+                .partitionBy("event_date") \
+                .parquet(OUTPUT)
 
             duration = time.time() - start
+            rows = daily_df.count()
 
+            # -------- METRICS --------
             with open(METRICS, "a") as f:
                 f.write(json.dumps({
                     "run_id": run_id,
-                    "rows": daily_df.count(),
+                    "event_date": str(day),
+                    "rows": rows,
                     "duration": duration,
-                    "throughput": daily_df.count() / duration if duration else 0
+                    "throughput": rows / duration if duration else 0
                 }) + "\n")
 
             print(f"✅ Batch {run_id} done")
@@ -90,6 +116,7 @@ while True:
             processed_days.add(day)
             run_id += 1
 
+        # -------- WAIT --------
         time.sleep(60)
 
     except Exception as e:
