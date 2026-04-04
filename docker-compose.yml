@@ -519,7 +519,7 @@ services:
       - ./schema:/app/schema:ro
     environment:
       - SPARK_MODE=client
-      - SPARK_DRIVER_MEMORY=4g
+      - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=4g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
       - RUN_GENERATOR=${RUN_GENERATOR:-y}            # y = run generator, n = skip
@@ -530,17 +530,19 @@ services:
       - START_DATE=${START_DATE:-2026-03-01}         # First file date (YYYY-MM-DD)
       - RUN_PIPELINE=${RUN_PIPELINE:-y}              # y = run pipeline, n = skip
       - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
-      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}          # Run OPTIMIZE after every N batches
+      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-5}          # Run OPTIMIZE after every N batches
       - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
       # Storage optimization settings
       - COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}      # zstd | snappy | gzip
       - RUN_VACUUM=${RUN_VACUUM:-n}                        # y = run vacuum after pipeline
       - VACUUM_RETENTION_DAYS=${VACUUM_RETENTION_DAYS:-14} # Days to retain Delta log files
       # Horizontal scaling (dynamic allocation)
-      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-false}
-      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-2}
-      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-1}
+      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-false}  # Enable dynamic allocation (true/false)
+      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-1}
+      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES:-6}
+      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-2}
       - SPARK_MAX_EXECUTORS=${SPARK_MAX_EXECUTORS:-8}
+    
     working_dir: /app
     networks:
       - atlas-network

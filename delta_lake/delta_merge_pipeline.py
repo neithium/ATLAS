@@ -37,7 +37,7 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import StringType
 from delta import DeltaTable
-from delta.tables import DeltaMergeBuilder
+from delta.tables import DeltaMergeBuilder  
 from py4j.protocol import Py4JJavaError
 
 
@@ -54,7 +54,7 @@ class PipelineConfig:
     CHECKPOINT_PATH = "/refined/_checkpoints"
     
     # Mode: legacy | benchmark | dataframe
-    MODE = "legacy"
+    MODE = " benchmark"
     
     # Triple-Hash Composite Primary Key columns
     PRIMARY_KEY_COLUMNS = ["device_id", "metric_time", "application_customer_id"]
@@ -85,17 +85,17 @@ class PipelineConfig:
     VACUUM_ENABLED = True  # Auto-vacuum after pipeline completion
     
     # Benchmark mode settings
-    OPTIMIZE_EVERY_N_BATCHES = 3  # Run OPTIMIZE after every N date batches
+    OPTIMIZE_EVERY_N_BATCHES = 5  # Run OPTIMIZE after every N date batches
     ENABLE_CHECKPOINTING = True
     
     # Horizontal Scaling Configuration
-    SPARK_EXECUTOR_INSTANCES = int(os.getenv("SPARK_EXECUTOR_INSTANCES", "2"))
-    SPARK_EXECUTOR_CORES = int(os.getenv("SPARK_EXECUTOR_CORES", "2"))
-    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "2g")
+    SPARK_EXECUTOR_INSTANCES = int(os.getenv("SPARK_EXECUTOR_INSTANCES", "1"))
+    SPARK_EXECUTOR_CORES = int(os.getenv("SPARK_EXECUTOR_CORES", "6"))
+    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "4g")
     SPARK_DYNAMIC_ALLOCATION = os.getenv("SPARK_DYNAMIC_ALLOCATION", "false").lower() == "true"
-    SPARK_MIN_EXECUTORS = int(os.getenv("SPARK_MIN_EXECUTORS", "1"))
+    SPARK_MIN_EXECUTORS = int(os.getenv("SPARK_MIN_EXECUTORS", "2"))
     SPARK_MAX_EXECUTORS = int(os.getenv("SPARK_MAX_EXECUTORS", "8"))
-    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "200"))
+    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "12"))
 
 
 # =============================================================================
