@@ -694,3 +694,16 @@ docker compose down -v
 
  
 - docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=10 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse   
+
+
+# Legacy mode (2-file demo)
+docker compose run --rm -e GENERATOR_MODE=legacy -e PIPELINE_MODE=legacy atlas-lakehouse
+
+# Benchmark mode with vacuum
+docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y atlas-lakehouse
+
+# Streaming mode (rate source for testing)
+docker compose --profile streaming up
+
+# Streaming with data producer
+docker compose --profile streaming --profile producer up
