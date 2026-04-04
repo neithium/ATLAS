@@ -38,6 +38,8 @@ volumes:
   # Shared volumes for Lakehouse module
   raw-volume:
   refined-volume:
+  # Streaming checkpoint volume
+  streaming-checkpoint:
   # Kafka volumes for 3-node cluster
   kafka-data-1:
   kafka-data-2:
@@ -151,10 +153,10 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker1
     hostname: broker1
-    ports:
-      - "9062:9092"
-      - "9063:9093"
-      - "9064:9094"
+    # ports:
+    #   - "9062:9092"
+    #   - "9063:9093"
+    #   - "9064:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=1
@@ -229,10 +231,10 @@ services:
     hostname: broker2
     profiles:
       - full-cluster
-    ports:
-      - "9065:9092"
-      - "9066:9093"
-      - "9067:9094"
+    # ports:
+    #   - "9065:9092"
+    #   - "9066:9093"
+    #   - "9067:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=2
@@ -303,10 +305,10 @@ services:
     hostname: broker3
     profiles:
       - full-cluster
-    ports:
-      - "9068:9092"
-      - "9069:9093"
-      - "9070:9094"
+    # ports:
+    #   - "9068:9092"
+    #   - "9069:9093"
+    #   - "9070:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=3
@@ -443,8 +445,8 @@ services:
 
     user: root
 
-    ports:
-      - "0:4040"
+    # ports:
+    #   - "0:4040"
 
     environment:
       - SPARK_MODE=driver
@@ -511,11 +513,13 @@ services:
       # Mount scripts for live editing
       - ./delta_lake/generate_data.py:/app/generate_data.py
       - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
+      - ./delta_lake/streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
+      - ./delta_lake/streaming_data_producer.py:/app/streaming_data_producer.py
       # Schema reference
       - ./schema:/app/schema:ro
     environment:
       - SPARK_MODE=client
-      - SPARK_DRIVER_MEMORY=4g
+      - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=4g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
       - RUN_GENERATOR=${RUN_GENERATOR:-y}            # y = run generator, n = skip
@@ -526,8 +530,19 @@ services:
       - START_DATE=${START_DATE:-2026-03-01}         # First file date (YYYY-MM-DD)
       - RUN_PIPELINE=${RUN_PIPELINE:-y}              # y = run pipeline, n = skip
       - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
-      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}          # Run OPTIMIZE after every N batches
+      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-5}          # Run OPTIMIZE after every N batches
       - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
+      # Storage optimization settings
+      - COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}      # zstd | snappy | gzip
+      - RUN_VACUUM=${RUN_VACUUM:-n}                        # y = run vacuum after pipeline
+      - VACUUM_RETENTION_DAYS=${VACUUM_RETENTION_DAYS:-14} # Days to retain Delta log files
+      # Horizontal scaling (dynamic allocation)
+      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-false}  # Enable dynamic allocation (true/false)
+      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-1}
+      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES:-6}
+      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-2}
+      - SPARK_MAX_EXECUTORS=${SPARK_MAX_EXECUTORS:-8}
+    
     working_dir: /app
     networks:
       - atlas-network
@@ -547,30 +562,40 @@ services:
         echo \"  RUN_PIPELINE=$$RUN_PIPELINE\" &&
         echo \"  PIPELINE_MODE=$$PIPELINE_MODE\" &&
         echo \"  OPTIMIZE_EVERY=$$OPTIMIZE_EVERY\" &&
+        echo \"  COMPRESSION_CODEC=$$COMPRESSION_CODEC\" &&
+        echo \"  RUN_VACUUM=$$RUN_VACUUM\" &&
+        echo \"  VACUUM_RETENTION_DAYS=$$VACUUM_RETENTION_DAYS\" &&
         echo \"  KEEP_ALIVE=$$KEEP_ALIVE\" &&
         echo '' &&
         if [ \"$$RUN_GENERATOR\" = 'y' ] || [ \"$$RUN_GENERATOR\" = 'Y' ]; then
           if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
-            echo '[1/2] Generating legacy merge-demo input under /raw ...' &&
+            echo '[1/3] Generating legacy merge-demo input under /raw ...' &&
             python3 generate_data.py --mode legacy --output /raw;
           else
-            echo '[1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...' &&
+            echo '[1/3] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...' &&
             python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE --num-days $$NUM_DAYS --start-date $$START_DATE;
           fi;
         else
-          echo \"[1/2] Skipping generator (RUN_GENERATOR=$$RUN_GENERATOR)\";
+          echo \"[1/3] Skipping generator (RUN_GENERATOR=$$RUN_GENERATOR)\";
         fi &&
         echo '' &&
         if [ \"$$RUN_PIPELINE\" = 'y' ] || [ \"$$RUN_PIPELINE\" = 'Y' ]; then
-          echo \"[2/2] Running deduplication pipeline (mode=$$PIPELINE_MODE)...\" &&
+          echo \"[2/3] Running deduplication pipeline (mode=$$PIPELINE_MODE)...\" &&
           python3 delta_merge_pipeline.py --input /raw --output /refined --mode $$PIPELINE_MODE --optimize-every $$OPTIMIZE_EVERY;
         else
-          echo \"[2/2] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
+          echo \"[2/3] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
+        fi &&
+        echo '' &&
+        if [ \"$$RUN_VACUUM\" = 'y' ] || [ \"$$RUN_VACUUM\" = 'Y' ]; then
+          echo '[3/3] Running VACUUM to clean old Delta log files...' &&
+          python3 delta_merge_pipeline.py --output /refined --vacuum --vacuum-retention-days $$VACUUM_RETENTION_DAYS;
+        else
+          echo \"[3/3] Skipping vacuum (RUN_VACUUM=$$RUN_VACUUM)\";
         fi &&
         echo '' &&
         echo 'Done!' &&
         if [ \"$$KEEP_ALIVE\" = 'y' ] || [ \"$$KEEP_ALIVE\" = 'Y' ]; then
-          echo '[3/3] KEEP_ALIVE enabled: container will stay running.' &&
+          echo 'KEEP_ALIVE enabled: container will stay running.' &&
           tail -f /dev/null;
         fi
       "
@@ -701,3 +726,120 @@ services:
       "
     profiles:
       - jupyter
+
+  # ===========================================================================
+  # STREAMING SERVICES (atlas-streaming, atlas-data-producer)
+  # ===========================================================================
+  # Technology: Spark Structured Streaming + Delta Lake
+  # Role: Real-time telemetry deduplication via foreachBatch MERGE
+  #
+  # Responsibilities:
+  #   - Consumes streaming data from Kafka/Socket/Rate source
+  #   - Runs foreachBatch MERGE for real-time deduplication
+  #   - Writes to same Delta table as batch pipeline
+  #   - Maintains exactly-once semantics via checkpointing
+  # ===========================================================================
+
+  # Streaming Merge Pipeline
+  atlas-streaming:
+    build:
+      context: ./delta_lake
+      dockerfile: Dockerfile
+      network: host
+    container_name: atlas-streaming
+    hostname: streaming
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    volumes:
+      - raw-volume:/raw
+      - refined-volume:/refined
+      - ./delta_lake/data:/app/data
+      - ./delta_lake/streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
+      - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
+      - ./schema:/app/schema:ro
+    environment:
+      - SPARK_MODE=client
+      - SPARK_DRIVER_MEMORY=4g
+      - SPARK_EXECUTOR_MEMORY=4g
+      # Streaming configuration
+      - STREAMING_SOURCE=${STREAMING_SOURCE:-rate}      # rate | kafka | socket
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-broker:9092}
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-raw-server-metrics}
+      - SOCKET_HOST=${SOCKET_HOST:-data-producer}
+      - SOCKET_PORT=${SOCKET_PORT:-9999}
+      - TRIGGER_INTERVAL=${TRIGGER_INTERVAL:-30 seconds}
+      - CHECKPOINT_DIR=${CHECKPOINT_DIR:-/refined/_streaming_checkpoints}
+      # Storage optimization
+      - COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}
+      - RUN_VACUUM=${RUN_VACUUM:-n}
+      - VACUUM_RETENTION_DAYS=${VACUUM_RETENTION_DAYS:-14}
+    working_dir: /app
+    networks:
+      - atlas-network
+    profiles:
+      - streaming
+    command: >
+      bash -c "
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '  ATLAS Streaming - Real-time Delta Lake MERGE' &&
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '' &&
+        echo 'Configuration:' &&
+        echo \"  STREAMING_SOURCE=$$STREAMING_SOURCE\" &&
+        echo \"  TRIGGER_INTERVAL=$$TRIGGER_INTERVAL\" &&
+        echo \"  COMPRESSION_CODEC=$$COMPRESSION_CODEC\" &&
+        echo '' &&
+        python3 streaming_merge_pipeline.py \
+          --source $$STREAMING_SOURCE \
+          --output /refined \
+          --trigger \"$$TRIGGER_INTERVAL\" \
+          --checkpoint $$CHECKPOINT_DIR
+      "
+
+  # Streaming Data Producer (for testing)
+  atlas-data-producer:
+    build:
+      context: ./delta_lake
+      dockerfile: Dockerfile
+      network: host
+    container_name: atlas-data-producer
+    hostname: data-producer
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "9999:9999"   # Socket port for streaming
+    volumes:
+      - raw-volume:/raw
+      - ./delta_lake/streaming_data_producer.py:/app/streaming_data_producer.py
+      - ./schema:/app/schema:ro
+    environment:
+      - PRODUCER_MODE=${PRODUCER_MODE:-socket}          # socket | kafka | file
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-broker:9092}
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-raw-server-metrics}
+      - SOCKET_HOST=0.0.0.0
+      - SOCKET_PORT=9999
+      - RECORDS_PER_SECOND=${RECORDS_PER_SECOND:-100}
+      - DEVICE_COUNT=${DEVICE_COUNT:-100}
+    working_dir: /app
+    networks:
+      - atlas-network
+    profiles:
+      - producer
+    command: >
+      bash -c "
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '  ATLAS Data Producer - Streaming Test Data' &&
+        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
+        echo '' &&
+        echo 'Configuration:' &&
+        echo \"  PRODUCER_MODE=$$PRODUCER_MODE\" &&
+        echo \"  RECORDS_PER_SECOND=$$RECORDS_PER_SECOND\" &&
+        echo \"  DEVICE_COUNT=$$DEVICE_COUNT\" &&
+        echo '' &&
+        python3 streaming_data_producer.py \
+          --mode $$PRODUCER_MODE \
+          --devices $$DEVICE_COUNT \
+          --rate $$RECORDS_PER_SECOND
+      "

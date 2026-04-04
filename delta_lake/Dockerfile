@@ -1,5 +1,5 @@
 # ATLAS Delta Lake Module - Dockerfile
-# Spark environment for Delta Lake deduplication
+# Spark environment for Delta Lake batch deduplication
 
 FROM apache/spark:3.5.0-python3
 
@@ -7,7 +7,9 @@ FROM apache/spark:3.5.0-python3
 USER root
 
 # Install Python dependencies with retry and timeout settings
-RUN pip install  --timeout 120 --retries 5 \
+# - delta-spark: Delta Lake support
+# - pyarrow: Columnar data processing
+RUN pip install --timeout 120 --retries 5 \
     delta-spark==3.1.0 \
     pyarrow>=14.0.0
 
@@ -24,5 +26,12 @@ COPY delta_merge_pipeline.py /app/
 # Set environment variables for PySpark
 ENV PYSPARK_PYTHON=python3
 
+# Environment variables for Spark configuration
+ENV SPARK_DRIVER_MEMORY=2g
+ENV SPARK_EXECUTOR_MEMORY=2g
+
+# Default compression codec (zstd for better compression ratio)
+ENV COMPRESSION_CODEC=zstd
+
 # Default command - display help
-CMD ["echo", "Use: docker-compose run spark python generate_data.py && docker-compose run spark python delta_merge_pipeline.py"]
+CMD ["echo", "Use: docker-compose run spark to run batch deduplication pipeline"]
