@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS data_load_watermarks (
 );
 
 -- -----------------------------------------------------------------------------
+-- Dead Letter Queue (DLQ) Table
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS dlq (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    payload TEXT,
+    error_message TEXT,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------------------------------------------
 -- Grant permissions
 -- -----------------------------------------------------------------------------
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO atlas;
