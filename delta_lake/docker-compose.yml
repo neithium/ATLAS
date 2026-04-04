@@ -1,6 +1,5 @@
 # ATLAS Delta Lake Module - Docker Compose
-# Spark container for Delta Lake deduplication testing
-# Supports both batch and streaming modes with horizontal scaling
+# Spark container for Delta Lake batch deduplication
 
 services:
   # =============================================================================
@@ -23,32 +22,30 @@ services:
       # Mount scripts for live editing (optional)
       - ./generate_data.py:/app/generate_data.py
       - ./delta_merge_pipeline.py:/app/delta_merge_pipeline.py
-      - ./streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
-      - ./streaming_data_producer.py:/app/streaming_data_producer.py
     environment:
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
-      - SPARK_EXECUTOR_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=4g
       # Control flags (set via: docker compose run -e RUN_GENERATOR=y spark)
-      - RUN_GENERATOR=${RUN_GENERATOR:-n}      # y = run generator, n = skip
+      - RUN_GENERATOR=${RUN_GENERATOR:-y}      # y = run generator, n = skip
       - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy | dataframe
-      - DEVICE_COUNT=${DEVICE_COUNT:-100000}   # Number of devices for benchmark
-      - BATCH_SIZE=${BATCH_SIZE:-10000}        # Batch size for memory management
+      - DEVICE_COUNT=${DEVICE_COUNT:-100}   # Number of devices for benchmark
+      - BATCH_SIZE=${BATCH_SIZE:-1000}        # Batch size for memory management
       - NUM_DAYS=${NUM_DAYS:-7}                # Number of daily files (7-day rolling window)
       - START_DATE=${START_DATE:-2026-03-01}   # First file date (YYYY-MM-DD)
-      - RUN_PIPELINE=${RUN_PIPELINE:-n}        # y = run pipeline, n = skip
+      - RUN_PIPELINE=${RUN_PIPELINE:-y}        # y = run pipeline, n = skip
       - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}  # benchmark | legacy | dataframe
-      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-3}    # Run OPTIMIZE after every N batches
+      - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-5}    # Run OPTIMIZE after every N batches
       # Compression codec (zstd provides ~30% better compression than snappy)
       - COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}
       # Vacuum settings (14-day retention)
       - RUN_VACUUM=${RUN_VACUUM:-n}            # y = run vacuum after pipeline
       - VACUUM_RETENTION_DAYS=${VACUUM_RETENTION_DAYS:-14}
       # Horizontal scaling
-      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-false}
-      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-2}
-      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES:-2}
-      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-1}
+      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-false}  # Enable dynamic allocation (true/false)
+      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-1}
+      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES:-6}
+      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-2}
       - SPARK_MAX_EXECUTORS=${SPARK_MAX_EXECUTORS:-8}
     working_dir: /app
     # Command checks environment variables (no interactive prompts)
@@ -101,118 +98,7 @@ services:
         echo 'Done!'
       "
 
-  # =============================================================================
-  # STREAMING PROCESSING SERVICE
-  # =============================================================================
-  spark-streaming:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      network: host
-    container_name: atlas-delta-streaming
-    dns:
-      - 8.8.8.8 
-      - 8.8.4.4
-    volumes:
-      - raw_volume:/raw
-      - refined_volume:/refined
-      - ./streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
-      - ./streaming_data_producer.py:/app/streaming_data_producer.py
-    environment:
-      - SPARK_DRIVER_MEMORY=2g
-      - SPARK_EXECUTOR_MEMORY=2g
-      # Streaming source configuration
-      - STREAMING_SOURCE=${STREAMING_SOURCE:-rate}  # kafka | rate | socket
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-atlas.telemetry.flattened}
-      # Streaming settings
-      - TRIGGER_INTERVAL=${TRIGGER_INTERVAL:-30 seconds}
-      - MAX_OFFSETS_PER_TRIGGER=${MAX_OFFSETS_PER_TRIGGER:-100000}
-      - REFINED_PATH=/refined
-      - STREAMING_CHECKPOINT_PATH=/refined/_streaming_checkpoints
-      # Horizontal scaling for streaming
-      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-true}
-      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-2}
-      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES:-2}
-      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-1}
-      - SPARK_MAX_EXECUTORS=${SPARK_MAX_EXECUTORS:-8}
-      # Maintenance settings
-      - OPTIMIZE_ENABLED=${OPTIMIZE_ENABLED:-true}
-      - OPTIMIZE_INTERVAL_MINUTES=${OPTIMIZE_INTERVAL_MINUTES:-60}
-    working_dir: /app
-    command: >
-      bash -c "
-        echo '============================================' &&
-        echo '  ATLAS - Streaming Merge Pipeline' &&
-        echo '============================================' &&
-        echo '' &&
-        echo 'Configuration:' &&
-        echo \"  STREAMING_SOURCE=$$STREAMING_SOURCE\" &&
-        echo \"  TRIGGER_INTERVAL=$$TRIGGER_INTERVAL\" &&
-        echo \"  REFINED_PATH=$$REFINED_PATH\" &&
-        echo '' &&
-        python3 streaming_merge_pipeline.py --source $$STREAMING_SOURCE --output $$REFINED_PATH --trigger \"$$TRIGGER_INTERVAL\"
-      "
-    profiles:
-      - streaming  # Only start with: docker compose --profile streaming up
-
-  # =============================================================================
-  # STREAMING DATA PRODUCER SERVICE
-  # =============================================================================
-  data-producer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: atlas-data-producer
-    volumes:
-      - raw_volume:/raw
-      - ./streaming_data_producer.py:/app/streaming_data_producer.py
-    environment:
-      - PRODUCER_MODE=${PRODUCER_MODE:-socket}  # kafka | socket | file
-      - SOCKET_HOST=0.0.0.0
-      - SOCKET_PORT=9999
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-atlas.telemetry.flattened}
-      - TOTAL_DEVICES=${TOTAL_DEVICES:-1000}
-      - RECORDS_PER_SECOND=${RECORDS_PER_SECOND:-1000}
-    ports:
-      - "9999:9999"
-    working_dir: /app
-    command: >
-      bash -c "
-        echo '============================================' &&
-        echo '  ATLAS - Streaming Data Producer' &&
-        echo '============================================' &&
-        python3 streaming_data_producer.py --mode $$PRODUCER_MODE --devices $$TOTAL_DEVICES --rate $$RECORDS_PER_SECOND
-      "
-    profiles:
-      - producer  # Only start with: docker compose --profile producer up
-
-  # =============================================================================
-  # JUPYTER NOTEBOOK SERVICE
-  # =============================================================================
-  jupyter:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: atlas-delta-jupyter
-    ports:
-      - "8888:8888"
-    volumes:
-      - raw_volume:/raw
-      - refined_volume:/refined
-      - ./:/app/notebooks
-    environment:
-      - SPARK_DRIVER_MEMORY=2g
-    working_dir: /app
-    command: >
-      bash -c "
-        pip install jupyter &&
-        jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
-      "
-    profiles:
-      - jupyter  # Only start with: docker compose --profile jupyter up
-
+  
 # =============================================================================
 # VOLUMES
 # =============================================================================

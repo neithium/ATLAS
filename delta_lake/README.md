@@ -1,13 +1,12 @@
 # Delta Lake - ATLAS Deduplication Module
 
-This module handles **ACID-compliant deduplication** for the ATLAS telemetry pipeline using Delta Lake MERGE operations, supporting both **batch** and **streaming** processing modes.
+This module handles **ACID-compliant deduplication** for the ATLAS telemetry pipeline using Delta Lake MERGE operations for **batch** processing.
 
 ## Overview
 
 The Delta Lake module is responsible for:
 - **Delta Lake MERGE** (upsert) operations with Triple-Hash composite primary keys
 - **Batch deduplication** of overlapping 7-day rolling window telemetry data
-- **Streaming deduplication** via Spark Structured Streaming with foreachBatch
 - **ACID transactions** ensuring data consistency during concurrent writes
 - **Storage optimization** with Zstd compression and automatic VACUUM
 
@@ -20,7 +19,7 @@ The Delta Lake module is responsible for:
 | **Zstd Compression** | ~30% better compression ratio than Snappy |
 | **14-Day Vacuum** | Automatic cleanup of old Delta log files |
 | **Horizontal Scaling** | Dynamic allocation support for auto-scaling executors |
-| **Streaming Support** | Real-time deduplication via Structured Streaming |
+
 
 ## Integration with ATLAS Pipeline
 
@@ -31,18 +30,16 @@ This module sits between the **Processing Layer** and the downstream **ClickHous
                     │   Kafka / API Ingestion      │
                     └──────────────────────────────┘
                               │
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-┌─────────────────────────┐     ┌─────────────────────────┐
-│    BATCH PROCESSING     │     │  STREAMING PROCESSING   │
-│  (delta_merge_pipeline) │     │ (streaming_merge_pipeline)│
-├─────────────────────────┤     ├─────────────────────────┤
-│ - File-based input      │     │ - Kafka/Socket source   │
-│ - DataFrame API         │     │ - foreachBatch MERGE    │
-│ - Periodic OPTIMIZE     │     │ - Continuous processing │
-└─────────────────────────┘     └─────────────────────────┘
-              │                               │
-              └───────────────┬───────────────┘
+                              ▼
+              ┌─────────────────────────────┐
+              │    BATCH PROCESSING         │
+              │  (delta_merge_pipeline)     │
+              ├─────────────────────────────┤
+              │ - File-based input          │
+              │ - DataFrame API             │
+              │ - Periodic OPTIMIZE         │
+              └─────────────────────────────┘
+                              │
                               ▼
               ┌─────────────────────────────────┐
               │      UNIFIED DELTA TABLE        │
@@ -61,10 +58,8 @@ This module sits between the **Processing Layer** and the downstream **ClickHous
 ```
 delta_lake/
 ├── delta_merge_pipeline.py      # Batch deduplication pipeline
-├── streaming_merge_pipeline.py  # Streaming deduplication pipeline
 ├── generate_data.py             # Batch data generator (file & DataFrame modes)
-├── streaming_data_producer.py   # Streaming data producer (Kafka/Socket/File)
-├── docker-compose.yml           # Container setup for all services
+├── docker-compose.yml           # Container setup for batch service
 ├── Dockerfile                   # Spark + Delta Lake environment
 ├── data/
 │   ├── raw/                     # Input parquet files (flattened)
@@ -110,22 +105,6 @@ docker compose run \
   spark
 ```
 
-### Streaming Processing
-
-```bash
-# Start streaming pipeline with rate source (testing)
-docker compose --profile streaming up
-
-# Start data producer (socket mode for testing)
-docker compose --profile producer up
-
-# Start Kafka-based streaming (production)
-docker compose run \
-  -e STREAMING_SOURCE=kafka \
-  -e KAFKA_BOOTSTRAP_SERVERS=kafka:9092 \
-  spark-streaming
-```
-
 ### DataFrame API (Programmatic)
 
 ```python
@@ -164,37 +143,6 @@ print(f"Processed {result['row_count']} rows")
 | `benchmark` | Process partitioned benchmark data with incremental MERGE |
 | `dataframe` | API mode for programmatic DataFrame input |
 
-```bash
-# Run with vacuum and horizontal scaling
-python delta_merge_pipeline.py \
-  --input /raw \
-  --output /refined \
-  --mode benchmark \
-  --vacuum \
-  --vacuum-retention-days 14 \
-  --dynamic-allocation \
-  --executors 4
-```
-
-### Streaming Pipeline (`streaming_merge_pipeline.py`)
-
-| Source | Description |
-|--------|-------------|
-| `rate` | Built-in rate source for testing (no external deps) |
-| `kafka` | Kafka topic for production streaming |
-| `socket` | TCP socket for simple testing |
-
-```bash
-# Run streaming with Kafka source
-python streaming_merge_pipeline.py \
-  --source kafka \
-  --output /refined \
-  --trigger "30 seconds"
-
-# Maintenance only (vacuum/optimize)
-python streaming_merge_pipeline.py --vacuum --optimize
-```
-
 ## Configuration Options
 
 ### Environment Variables
@@ -207,8 +155,7 @@ python streaming_merge_pipeline.py --vacuum --optimize
 | `SPARK_EXECUTOR_INSTANCES` | `2` | Number of Spark executors |
 | `SPARK_MIN_EXECUTORS` | `1` | Min executors (dynamic mode) |
 | `SPARK_MAX_EXECUTORS` | `8` | Max executors (dynamic mode) |
-| `STREAMING_SOURCE` | `rate` | Streaming source type |
-| `TRIGGER_INTERVAL` | `30 seconds` | Streaming trigger interval |
+
 
 ## Compression: Why Zstd?
 
@@ -228,7 +175,6 @@ For 400K+ device telemetry data, **Zstd** provides the best balance:
 After execution, Delta Lake files are stored in `data/refined/`:
 - `_delta_log/` - Transaction log (JSON)
 - `*.parquet` - Data files (Zstd compressed)
-- `_streaming_checkpoints/` - Streaming checkpoint state
 
 ## Architecture
 
@@ -279,9 +225,6 @@ docker compose down
 
 # Remove generated test data
 rm -rf ./data/raw/* ./data/refined/*
-
-# Remove streaming checkpoints
-rm -rf ./data/refined/_streaming_checkpoints/
 ```
 
 ## Related Documentation
