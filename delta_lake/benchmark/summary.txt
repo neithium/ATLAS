@@ -1,0 +1,222 @@
+ 
+=============================================================================================================================================================
+
+1. test1.txt:  ( from main branch - )
+
+params: 1000 device, 1000 file/batch, 7 days, Optimise every 3 batch + final OPTIMIZE , checkpointing enabled, zorder by metric_time, without vaccum, snappy compression
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 7
+  - Total rows processed:    14,112,000
+  - Total elapsed time:      1065.60s
+  - Throughput:              13,243.3 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  10.006s
+  - Max:  34.152s
+  - Mean: 15.311s
+  - P50:  12.097s
+  - P95:  28.115s
+  - P99:  32.945s
+
+  MERGE Operation Latency (seconds):
+  - Min:  9.895s
+  - Max:  33.710s
+  - Mean: 15.112s
+  - P50:  11.940s
+  - P95:  27.759s
+  - P99:  32.520s
+
+  Read Latency (seconds):
+  - Min:  0.111s
+  - Max:  0.441s
+  - Mean: 0.199s
+
+================================================================================================================================================================
+
+2. testx.txt ( from main branch - )
+
+params: 10  device, 100  file/batch, 7 days, Optimise every 3 batch   , checkpointing enabled, zorder by metric_time, snappy compression 
+
+      Overall Performance:
+      - Total batches processed: 7
+      - Total rows processed:    141,120
+      - Total elapsed time:      139.02s
+      - Throughput:              1,015.1 rows/sec
+    
+      Batch Latency (seconds):
+      - Min:  1.854s
+      - Max:  52.575s
+      - Mean: 13.066s
+      - P50:  6.172s
+      - P95:  41.900s
+      - P99:  50.440s
+    
+      MERGE Operation Latency (seconds):
+      - Min:  1.732s
+      - Max:  52.048s
+      - Mean: 12.605s
+      - P50:  5.676s
+      - P95:  41.243s
+      - P99:  49.887s
+    
+      Read Latency (seconds):
+      - Min:  0.122s
+      - Max:  0.961s
+      - Mean: 0.459s
+================================================================================================================================================================
+
+
+3.test3.txt ( from main branch - )
+
+params: 10000  device, 1000  file/batch, 7 days, Optimise every 20 batch (final optimise disabled)  , checkpointing enabled, zorder by metric_time, snappy compression 
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 7
+  - Total rows processed:    141,120,000
+  - Total elapsed time:      784.96s
+  - Throughput:              179,780.4 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  78.819s
+  - Max:  162.040s
+  - Mean: 102.713s
+  - P50:  100.047s
+  - P95:  145.564s
+  - P99:  158.745s
+
+  MERGE Operation Latency (seconds):
+  - Min:  78.626s
+  - Max:  161.569s
+  - Mean: 102.500s
+  - P50:  99.848s
+  - P95:  145.187s
+  - P99:  158.293s
+
+  Read Latency (seconds):
+  - Min:  0.154s
+  - Max:  0.470s
+  - Mean: 0.213s
+
+================================================================================================================================================================
+
+4.test4.txt: (from anorak001-major-patch branch , improved logic (ZSTD, vaccum mode, more debug statements)
+
+
+params:   10000  device, 1000  file/batch, 7 days, Optimise every 20 batch (final optimise disabled)  , checkpointing enabled, zorder by metric_time, ZSTD compression 
+i/p rows: 141,120,000
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 7
+  - Total rows processed:    141,120,000
+  - Total elapsed time:      849.91s
+  - Throughput:              166,041.5 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  82.571s
+  - Max:  179.761s
+  - Mean: 110.431s
+  - P50:  100.895s
+  - P95:  160.468s
+  - P99:  175.902s
+
+  MERGE Operation Latency (seconds):
+  - Min:  82.378s
+  - Max:  179.079s
+  - Mean: 110.176s
+  - P50:  100.728s
+  - P95:  159.925s
+  - P99:  175.248s
+
+  Read Latency (seconds):
+  - Min:  0.167s
+  - Max:  0.677s
+  - Mean: 0.253s
+ 
+
+================================================================================================================================================================
+
+5.test5.txt ( from anorak001-major-patch branch )
+
+
+params:   50 device, 1000 file/batch, 25 days, Optimise every 20 batch (final optimise disabled)  , checkpointing enabled, zorder by metric_time, ZSTD compression , with vaccum of 8 days
+i/p rows: 2,520,000
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 25
+  - Total rows processed:    2,520,000
+  - Total elapsed time:      174.34s
+  - Throughput:              14,454.9 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  2.309s
+  - Max:  13.191s
+  - Mean: 3.043s
+  - P50:  2.463s
+  - P95:  3.911s
+  - P99:  10.999s
+
+  MERGE Operation Latency (seconds):
+  - Min:  2.205s
+  - Max:  12.784s
+  - Mean: 2.904s
+  - P50:  2.333s
+  - P95:  3.707s
+  - P99:  10.635s
+
+  Read Latency (seconds):
+  - Min:  0.103s
+  - Max:  0.407s
+  - Mean: 0.139s
+================================================================================================================================================================
+
+
+6.test6.txt (
+
+params:   50 device, 1000 file/batch, 25 days, Optimise every 5 batch plus final optimise enabled  , checkpointing enabled, zorder by metric_time, ZSTD compression , with vaccum of 8 days
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 2
+  - Total rows processed:    4,032
+  - Total elapsed time:      36.98s
+  - Throughput:              109.0 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  3.355s
+  - Max:  11.291s
+  - Mean: 7.323s
+  - P50:  7.323s
+  - P95:  10.894s
+  - P99:  11.212s
+
+  MERGE Operation Latency (seconds):
+  - Min:  0.000s
+  - Max:  3.219s
+  - Mean: 1.609s
+  - P50:  1.609s
+  - P95:  3.058s
+  - P99:  3.186s
+
+  Read Latency (seconds):
+  - Min:  0.136s
+  - Max:  3.371s
+  - Mean: 1.754s
+
+
