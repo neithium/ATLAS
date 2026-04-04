@@ -1,5 +1,5 @@
 # ATLAS Delta Lake Module - Dockerfile
-# Spark environment for Delta Lake deduplication (batch and streaming)
+# Spark environment for Delta Lake batch deduplication
 
 FROM apache/spark:3.5.0-python3
 
@@ -9,11 +9,9 @@ USER root
 # Install Python dependencies with retry and timeout settings
 # - delta-spark: Delta Lake support
 # - pyarrow: Columnar data processing
-# - kafka-python: Kafka producer for streaming
 RUN pip install --timeout 120 --retries 5 \
     delta-spark==3.1.0 \
-    pyarrow>=14.0.0 \
-    kafka-python>=2.0.2
+    pyarrow>=14.0.0
 
 # Create app directory structure
 RUN mkdir -p /app/data/raw /app/data/refined
@@ -24,8 +22,6 @@ WORKDIR /app
 # Copy application scripts
 COPY generate_data.py /app/
 COPY delta_merge_pipeline.py /app/
-COPY streaming_merge_pipeline.py /app/
-COPY streaming_data_producer.py /app/
 
 # Set environment variables for PySpark
 ENV PYSPARK_PYTHON=python3
@@ -38,4 +34,4 @@ ENV SPARK_EXECUTOR_MEMORY=2g
 ENV COMPRESSION_CODEC=zstd
 
 # Default command - display help
-CMD ["echo", "Use: docker-compose run spark to run batch pipeline, or docker compose --profile streaming up for streaming"]
+CMD ["echo", "Use: docker-compose run spark to run batch deduplication pipeline"]

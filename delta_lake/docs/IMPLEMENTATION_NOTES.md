@@ -35,7 +35,7 @@ The goal was to update the existing `delta_merge_pipeline.py` to implement:
 | **Storage Optimization** | Parquet format + OPTIMIZE with Z-ORDER clustering |
 | **Scalability** | Support 100K-400K devices with fault tolerance |
 | **Latency Tracking** | Measure P50/P95/P99 percentiles for batch operations |
-| **Benchmark Mode** | Real-time batch streaming simulation instead of 2-file demo |
+| **Benchmark Mode** | Production-scale testing with N daily files for 7-day rolling window patterns |
 
 ---
 
@@ -295,7 +295,7 @@ docker compose run -e RUN_GENERATOR=y -e GENERATOR_MODE=legacy -e RUN_PIPELINE=y
 
 ### 4.2 Benchmark Mode
 
-For production-scale testing with N daily files simulating real batch streaming.
+For production-scale testing with N daily files using 7-day rolling window patterns.
 
 ```bash
 docker compose run -e RUN_GENERATOR=y -e DEVICE_COUNT=100000 -e NUM_DAYS=7 -e RUN_PIPELINE=y spark
@@ -653,15 +653,13 @@ docker compose down -v
    delta_table.vacuum(retentionHours=168)  # 7 days
    ```
 
-4. **Streaming Integration:** Add Spark Structured Streaming support for true real-time processing
+4. **Metrics Dashboard:** Export pipeline metrics to Prometheus/Grafana for monitoring
 
-5. **Metrics Dashboard:** Export pipeline metrics to Prometheus/Grafana for monitoring
+5. **Horizontal Scaling:** Test with Spark cluster mode for distributed processing
 
-6. **Horizontal Scaling:** Test with Spark cluster mode for distributed processing
+6. **Compression Tuning:** Evaluate ZSTD vs Snappy for better compression ratios
 
-7. **Compression Tuning:** Evaluate ZSTD vs Snappy for better compression ratios
-
-8. **Bloom Filters:** Enable bloom filters on primary key columns for faster lookups
+7. **Bloom Filters:** Enable bloom filters on primary key columns for faster lookups
 
 ---
 
@@ -674,7 +672,7 @@ docker compose down -v
 - **Added** `LatencyTracker` class with P50/P95/P99 percentile tracking
 - **Added** `CheckpointManager` class for fault-tolerant resumable pipelines
 - **Added** environment variables: `NUM_DAYS`, `START_DATE`, `OPTIMIZE_EVERY`
-- **Added** dual mode support: legacy (2-file demo) and benchmark (N-file streaming)
+- **Added** dual mode support: legacy (2-file demo) and benchmark (N-file daily rolling windows)
 - **Verified** 73.5% deduplication ratio with 7 daily files (matches expected math)
 
 ### March 8, 2026
@@ -700,10 +698,4 @@ docker compose down -v
 docker compose run --rm -e GENERATOR_MODE=legacy -e PIPELINE_MODE=legacy atlas-lakehouse
 
 # Benchmark mode with vacuum
-docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y atlas-lakehouse
-
-# Streaming mode (rate source for testing)
-docker compose --profile streaming up
-
-# Streaming with data producer
-docker compose --profile streaming --profile producer up
+docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y spark

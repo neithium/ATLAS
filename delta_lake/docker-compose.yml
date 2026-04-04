@@ -1,6 +1,5 @@
 # ATLAS Delta Lake Module - Docker Compose
-# Spark container for Delta Lake deduplication testing
-# Supports both batch and streaming modes with horizontal scaling
+# Spark container for Delta Lake batch deduplication
 
 services:
   # =============================================================================
@@ -23,8 +22,6 @@ services:
       # Mount scripts for live editing (optional)
       - ./generate_data.py:/app/generate_data.py
       - ./delta_merge_pipeline.py:/app/delta_merge_pipeline.py
-      - ./streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
-      - ./streaming_data_producer.py:/app/streaming_data_producer.py
     environment:
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
@@ -100,93 +97,6 @@ services:
         echo '' &&
         echo 'Done!'
       "
-
-  # =============================================================================
-  # STREAMING PROCESSING SERVICE
-  # =============================================================================
-  spark-streaming:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      network: host
-    container_name: atlas-delta-streaming
-    dns:
-      - 8.8.8.8 
-      - 8.8.4.4
-    volumes:
-      - raw_volume:/raw
-      - refined_volume:/refined
-      - ./streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
-      - ./streaming_data_producer.py:/app/streaming_data_producer.py
-    environment:
-      - SPARK_DRIVER_MEMORY=2g
-      - SPARK_EXECUTOR_MEMORY=2g
-      # Streaming source configuration
-      - STREAMING_SOURCE=${STREAMING_SOURCE:-rate}  # kafka | rate | socket
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-atlas.telemetry.flattened}
-      # Streaming settings
-      - TRIGGER_INTERVAL=${TRIGGER_INTERVAL:-30 seconds}
-      - MAX_OFFSETS_PER_TRIGGER=${MAX_OFFSETS_PER_TRIGGER:-100000}
-      - REFINED_PATH=/refined
-      - STREAMING_CHECKPOINT_PATH=/refined/_streaming_checkpoints
-      # Horizontal scaling for streaming
-      - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-true}
-      - SPARK_EXECUTOR_INSTANCES=${SPARK_EXECUTOR_INSTANCES:-2}
-      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES:-2}
-      - SPARK_MIN_EXECUTORS=${SPARK_MIN_EXECUTORS:-1}
-      - SPARK_MAX_EXECUTORS=${SPARK_MAX_EXECUTORS:-8}
-      # Maintenance settings
-      - OPTIMIZE_ENABLED=${OPTIMIZE_ENABLED:-true}
-      - OPTIMIZE_INTERVAL_MINUTES=${OPTIMIZE_INTERVAL_MINUTES:-60}
-    working_dir: /app
-    command: >
-      bash -c "
-        echo '============================================' &&
-        echo '  ATLAS - Streaming Merge Pipeline' &&
-        echo '============================================' &&
-        echo '' &&
-        echo 'Configuration:' &&
-        echo \"  STREAMING_SOURCE=$$STREAMING_SOURCE\" &&
-        echo \"  TRIGGER_INTERVAL=$$TRIGGER_INTERVAL\" &&
-        echo \"  REFINED_PATH=$$REFINED_PATH\" &&
-        echo '' &&
-        python3 streaming_merge_pipeline.py --source $$STREAMING_SOURCE --output $$REFINED_PATH --trigger \"$$TRIGGER_INTERVAL\"
-      "
-    profiles:
-      - streaming  # Only start with: docker compose --profile streaming up
-
-  # =============================================================================
-  # STREAMING DATA PRODUCER SERVICE
-  # =============================================================================
-  data-producer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: atlas-data-producer
-    volumes:
-      - raw_volume:/raw
-      - ./streaming_data_producer.py:/app/streaming_data_producer.py
-    environment:
-      - PRODUCER_MODE=${PRODUCER_MODE:-socket}  # kafka | socket | file
-      - SOCKET_HOST=0.0.0.0
-      - SOCKET_PORT=9999
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-atlas.telemetry.flattened}
-      - TOTAL_DEVICES=${TOTAL_DEVICES:-1000}
-      - RECORDS_PER_SECOND=${RECORDS_PER_SECOND:-1000}
-    ports:
-      - "9999:9999"
-    working_dir: /app
-    command: >
-      bash -c "
-        echo '============================================' &&
-        echo '  ATLAS - Streaming Data Producer' &&
-        echo '============================================' &&
-        python3 streaming_data_producer.py --mode $$PRODUCER_MODE --devices $$TOTAL_DEVICES --rate $$RECORDS_PER_SECOND
-      "
-    profiles:
-      - producer  # Only start with: docker compose --profile producer up
 
   # =============================================================================
   # JUPYTER NOTEBOOK SERVICE
