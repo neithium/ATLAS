@@ -94,9 +94,10 @@ while True:
             )
 
             # -------- WRITE (EVENT-TIME PARTITIONED) --------
-            result.write.mode("append") \
-                .partitionBy("event_date") \
-                .parquet(OUTPUT)
+            # result.write.mode("append") \
+            #     .partitionBy("event_date") \
+            #     .parquet(OUTPUT)
+            result.write.mode("append").parquet(OUTPUT)
 
             duration = time.time() - start
             rows = daily_df.count()
