@@ -146,13 +146,18 @@ def _read_mock(device_id: str) -> dict:
     avg_w   = max(50.0, base + random.gauss(0, 8))
     peak_w  = int(avg_w * random.uniform(1.05, 1.20))
     min_w   = int(avg_w * random.uniform(0.80, 0.95))
-    cpu_freq= random.randint(2_000_000, 3_800_000)
+    import hashlib
+    hash_val = int(hashlib.md5(device_id.encode('utf-8')).hexdigest(), 16)
+    dev_seed = hash_val % 10000
+    
+    cpu_max = 3600000 + (dev_seed % 600000)
+    cpu_freq = random.randint(2_000_000, cpu_max)
 
     return _make_reading(
         amb_temp    = round(random.uniform(18.0, 32.0), 1),
         average     = round(avg_w, 2),
         cpu_avg_freq= cpu_freq,
-        cpu_max     = int(cpu_freq * random.uniform(1.0, 1.25)),
+        cpu_max     = cpu_max,
         cpu_pwr_sav = random.randint(150, 300),
         cpu_util    = random.randint(10, 95),
         cpu_watts   = random.randint(80, 280),
@@ -352,8 +357,39 @@ def read_device(device_id: str, ipmi_host: str, ipmi_user: str,
     if MOCK_MODE:
         return _read_mock(device_id)
 
+# ── BATCH PROCESSOR (FOR 50K SCALE) ───────────────────────────────────────────
+
+async def poll_batch_ipmi(device_batch: dict) -> list[dict]:
+    """
+    High-performance batch reader.
+    Takes a dict of {id: config} and runs IPMI reads in a thread pool.
+    Returns a list of results (either success data or error status).
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    results = []
+    # We use a thread pool because read_device (ipmitool calls) is I/O bound
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        loop = asyncio.get_event_loop()
+        tasks = []
+        
+        for did, cfg in device_batch.items():
+            tasks.append(loop.run_in_executor(
+                executor, 
+                _safe_read, 
+                did, cfg
+            ))
+        
+        results = await asyncio.gather(*tasks)
+    return results
+
+def _safe_read(did: str, cfg: list) -> dict:
+    """Wrapper to handle errors during batch read."""
     try:
-        return _read_real(ipmi_host, ipmi_user, ipmi_password, ipmi_port)
+        # device_configs.json format: [id, pcid, acid, name, model, vendor, gen, loc_id, city, state, country, loc_name]
+        # We only really need the ID for mock mode, or host/user/pass for real mode.
+        data = read_device(did, "localhost", "admin", "admin") 
+        return {"device_id": did, "status": "success", "data": data}
     except Exception as e:
-        # If IPMI unreachable, log and return None so caller can skip
-        raise ConnectionError(f"IPMI read failed for {device_id} @ {ipmi_host}: {e}")
+        return {"device_id": did, "status": "error", "reason": str(e)}

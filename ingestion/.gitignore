@@ -7,3 +7,4 @@ venv/
 .env
 simu2/
 TODO.md
+/experiment-v2/
