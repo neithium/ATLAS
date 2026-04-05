@@ -22,6 +22,8 @@ services:
       # Mount scripts for live editing (optional)
       - ./generate_data.py:/app/generate_data.py
       - ./delta_merge_pipeline.py:/app/delta_merge_pipeline.py
+      - ./livewire_streaming.py:/app/livewire_streaming.py
+      - ./livewire_schema_validator.py:/app/livewire_schema_validator.py
     environment:
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
@@ -41,6 +43,7 @@ services:
         NUM_DAYS=${NUM_DAYS:-7}
         START_DATE=${START_DATE:-2026-03-01}
         RUN_PIPELINE=${RUN_PIPELINE:-y}
+        PIPELINE_MODE=${PIPELINE_MODE:-benchmark}
         OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-5}
         COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}
         RUN_VACUUM=${RUN_VACUUM:-n}
@@ -66,6 +69,8 @@ services:
         echo "  COMPRESSION_CODEC=$COMPRESSION_CODEC"
         echo "  RUN_VACUUM=$RUN_VACUUM"
         echo ''
+        
+        # Step 1: Generate data (benchmark mode only)
         if [ "$RUN_GENERATOR" = 'y' ] || [ "$RUN_GENERATOR" = 'Y' ]; then
           echo '[1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...'
           python3 generate_data.py --mode benchmark --output /raw --devices $DEVICE_COUNT --batch-size $BATCH_SIZE --num-days $NUM_DAYS --start-date $START_DATE --compression $COMPRESSION_CODEC
@@ -73,9 +78,21 @@ services:
           echo "[1/2] Skipping generator (RUN_GENERATOR=$RUN_GENERATOR)"
         fi
         echo ''
+        
+        # Step 2: Run deduplication pipeline
         if [ "$RUN_PIPELINE" = 'y' ] || [ "$RUN_PIPELINE" = 'Y' ]; then
-          echo "[2/2] Running deduplication pipeline (benchmark mode)..."
-          python3 delta_merge_pipeline.py --input /raw --output /refined --optimize-every $OPTIMIZE_EVERY --executors $SPARK_EXECUTOR_INSTANCES --executor-cores $SPARK_EXECUTOR_CORES
+          echo "[2/2] Running deduplication pipeline ($PIPELINE_MODE mode)..."
+          
+          if [ "$PIPELINE_MODE" = 'benchmark' ]; then
+            echo "      Mode: Batch processing with MERGE deduplication"
+            python3 delta_merge_pipeline.py --input /raw --output /refined --mode benchmark --optimize-every $OPTIMIZE_EVERY --executors $SPARK_EXECUTOR_INSTANCES --executor-cores $SPARK_EXECUTOR_CORES
+          elif [ "$PIPELINE_MODE" = 'livewire' ]; then
+            echo "      Mode: Real-time streaming with Structured Streaming"
+            python3 delta_merge_pipeline.py --input /app/data/processed/stream --output /refined --mode livewire
+          else
+            echo "      ERROR: Unknown PIPELINE_MODE=$PIPELINE_MODE (must be 'benchmark' or 'livewire')"
+            exit 1
+          fi
         else
           echo "[2/2] Skipping pipeline (RUN_PIPELINE=$RUN_PIPELINE)"
         fi

@@ -228,6 +228,53 @@ batch_df = batch_df.drop("file_date")  # Not needed in refined layer
 
 ---
 
+### Problem 8: Livewire Mode Integration & Streaming Pipeline Setup
+
+**Issue:** Livewire mode (real-time streaming from upstream processor) was not properly integrated with the existing benchmark pipeline. Testing revealed multiple infrastructure issues:
+
+1. **Missing Python modules in Docker image** - `livewire_streaming.py` and `livewire_schema_validator.py` were not included in the Dockerfile
+2. **Schema validation errors** - Livewire streaming encountered schema parsing failures when reading from processor output
+3. **Data flow mismatch** - Atlas-processor outputs to `delta-refined:/app/data/processed/stream`, but the docker-compose environment variable passing wasn't propagating `PIPELINE_MODE=livewire` correctly
+4. **Stream directory population** - Processor was generating files, but livewire mode had no validation that files were actually arriving
+
+**Root Cause Analysis:**
+
+The Livewire implementation (`livewire_streaming.py`) was added but not properly deployed:
+- Docker image build was missing the new Python scripts in the COPY instructions
+- Environment variable passing from `docker-compose run -e PIPELINE_MODE=livewire` wasn't working due to shell defaults overriding the passed values
+- No schema alignment between processor output (flattened Parquet from `atlas-processor`) and refined layer expectations
+
+**Partial Solution Attempted:**
+
+1. **Test 1 - Benchmark Mode:** ✅ SUCCESS
+   ```bash
+   docker-compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e DEVICE_COUNT=10 \
+     -e BATCH_SIZE=1000 -e NUM_DAYS=7 spark
+   ```
+   - Benchmark pipeline executes correctly
+   - Data generation: 141,120 rows → 37,440 unique (73.5% dedup ratio)
+   - Latency: ~1.87s-9.35s per batch (P50-P99)
+
+2. **Test 2 - Livewire Mode:** ⚠️ INCOMPLETE
+   - Docker image rebuild completed successfully
+   - Environment variable passing still requires investigation
+   - Stream directory validation pending
+
+**Files Affected:**
+- [Dockerfile](Dockerfile) - Missing COPY statements for livewire scripts
+- [delta_merge_pipeline.py](delta_merge_pipeline.py) - Error handling for livewire mode
+- [docker-compose.yml](docker-compose.yml) - Environment variable propagation
+- [livewire_streaming.py](livewire_streaming.py) - Schema validation logic
+- [livewire_schema_validator.py](livewire_schema_validator.py) - Schema mismatch detection
+
+**Learning:** Real-time streaming integration requires:
+- Explicit schema contracts between upstream and downstream systems
+- Comprehensive Docker image builds (don't forget new files!)
+- End-to-end testing of environment variable propagation through docker-compose
+- Validation that data files are actually reaching the expected location
+
+---
+
 ## 3. Final Architecture
 
 ### 3.1 Composite Primary Key (Triple-Hash)
@@ -650,6 +697,126 @@ docker compose down -v
 - **Updated** README.md to focus on batch-only deduplication pipeline
 - **Updated** Dockerfile to remove Kafka dependencies (no streaming)
 
+### April 5, 2026
+
+**Focus:** Livewire Mode Testing & Streaming Pipeline Integration
+
+#### **1. Benchmark Mode Verification** ✅ SUCCESS
+
+- **Verified** benchmark pipeline still functions correctly after all refactoring
+- **Generated** 141,120 rows across 7 daily files (10 devices × 2,016 rows/file)
+- **Deduplicated** to 37,440 unique rows (73.5% dedup ratio matches expected)
+- **Latency Metrics:**
+  - Batch P50/P95/P99: 1.87s / 7.78s / 9.35s
+  - MERGE P50/P95/P99: 1.73s / 7.33s / 8.84s
+  - Read P50/P95/P99: 0.12s / 0.43s / 0.51s
+
+#### **2. Livewire Mode Integration Work** ⚠️ IN PROGRESS
+
+**Problems Identified:**
+
+1. **Missing Docker Image Files**
+   - Dockerfile COPY statements excluded `livewire_streaming.py` and `livewire_schema_validator.py`
+   - Caused `ModuleNotFoundError` when starting livewire mode
+   - Fixed: Added missing COPY instructions to Dockerfile
+   - Action: Rebuilt delta_lake-spark image with all required files
+
+2. **Environment Variable Passing Issue**
+   - `docker-compose run -e PIPELINE_MODE=livewire` not overriding shell defaults
+   - Root cause: Shell script syntax `${PIPELINE_MODE:-benchmark}` sets default before -e flag is processed
+   - Impact: Benchmark mode runs instead of livewire mode
+   - Status: Identified workaround - need explicit shell variable override
+
+3. **Schema Validation Gaps** 🔴 PENDING
+   - Atlas-processor outputs 35 flattened columns to `/app/data/processed/stream`
+   - Livewire_schema_validator.py must validate and align schemas before MERGE
+   - Missing column mapping for case sensitivity and type conversions
+   - Required: Handle null-filling for optional columns
+
+4. **Stream Directory Data Flow** 🔴 PENDING
+   - Must verify `atlas-processor` is actively writing to stream directory
+   - Need file discovery validation (file timestamps, count, age)
+   - Schema validation that processor output matches refined layer expectations
+   - Required: Monitor checkpoint state in `/app/checkpoint/stream`
+
+#### **3. Testing Plan for Streaming Pipeline** (TO BE EXECUTED)
+
+**Phase 1: Processor Output Validation**
+- [ ] Verify atlas-processor container is running and generating files
+- [ ] Check `/app/data/processed/stream` directory contents (file count, timestamps)
+- [ ] Sample processor output and validate full 35-column schema
+- [ ] Verify metric_time progression and timestamp formats
+
+**Phase 2: Environment & Deployment**
+- [ ] Fix PIPELINE_MODE environment variable passing to livewire mode
+- [ ] Test root docker-compose.yml atlas-lakehouse container with -e flags
+- [ ] Validate conditional execution path for livewire mode
+
+**Phase 3: Schema Alignment**
+- [ ] Run livewire_schema_validator.py against processor sample data
+- [ ] Test column name mapping (processor → refined layer)
+- [ ] Validate type conversions (String → Double where applicable)
+- [ ] Verify null-filling for optional fields
+
+**Phase 4: Structured Streaming Execution**
+- [ ] Start livewire mode and monitor 60-second micro-batch windows
+- [ ] Validate file discovery and processing order
+- [ ] Check checkpoint state progression in `/app/checkpoint/stream`
+- [ ] Monitor metrics output (rows processed per batch, latency)
+
+**Phase 5: End-to-End Data Flow**
+- [ ] Validate pipeline: Processor → Stream dir → Lakehouse livewire → Refined Delta table
+- [ ] Verify deduplication with Triple-Hash key: (device_id, metric_time, application_customer_id)
+- [ ] Confirm 5-level partitioning: report_type/partition_date/platform_customer_id/application_customer_id/device_id
+- [ ] Check actual dedup ratio against expected (73.5% for 7-day rolling window)
+
+**Phase 6: Error Handling & Recovery**
+- [ ] Simulate processor write failures and validate checkpoint recovery
+- [ ] Test --resume flag for pipeline recovery
+- [ ] Validate schema evolution handling (new fields from upstream)
+- [ ] Verify Dead Letter Queue (DLQ) handling for bad records
+
+**Phase 7: Performance Baseline**
+- [ ] Measure micro-batch latency with real processor data (target: < 5s per 60s batch)
+- [ ] Track throughput (rows/sec) and compare with benchmark mode
+- [ ] Profile memory usage during streaming operations
+- [ ] Identify bottlenecks in schema validation vs. MERGE execution
+
+**Success Criteria:**
+- ✓ Livewire mode consistently processes 60-second micro-batches
+- ✓ Deduplication ratio matches expected (73.5% for 7-day window)
+- ✓ Schema validation prevents bad records from reaching refined table
+- ✓ Micro-batch latency < 5 seconds (excluding I/O wait)
+- ✓ Checkpoint recovery after simulated failures
+- ✓ All 35 columns properly mapped and typed
+
+#### **4. Files Modified** (April 5 Session)
+
+- **delta_merge_pipeline.py** - Added error handling for livewire schema validation
+- **Dockerfile** - Added COPY statements for livewire_streaming.py and livewire_schema_validator.py
+- **docker-compose.yml** - Investigated environment variable propagation issues
+- **docs/IMPLEMENTATION_NOTES.md** - This file, documenting Problem 8 and testing plan
+
+#### **5. Implementation Blockers & Dependencies**
+
+**Blockers:**
+1. **Processor Coordination:** atlas-processor must be running and actively writing to delta-refined volume
+2. **Volume Sharing:** Verify delta-refined volume is properly mounted between processor and lakehouse containers
+3. **Schema Contract:** Finalize exact and expected column order/naming between processor and refined layer
+
+**Dependencies:**
+- Atlas-processor must have 26K+ files in `/app/data/processed/stream`
+- root docker-compose.yml must have networks configured for atlas-processor ↔ atlas-lakehouse communication
+- Volume delta-refined must be writable and readable by both containers
+
+#### **6. Next Immediate Actions**
+
+1. Verify atlas-processor is actively writing (check delta-refined volume file count and timestamps)
+2. Sample processor output Parquet and compare schema to refined layer expectations
+3. Deploy fixed Dockerfile image with livewire scripts included
+4. Run livewire mode with PIPELINE_MODE override and monitor first micro-batch
+5. Collect latency metrics and validate dedup ratio on real streaming data
+
 ### March 10, 2026
 
 - **Fixed** data generator to simulate 7-day rolling window pattern
@@ -679,7 +846,7 @@ Here is the revised, highly detailed engineering log restricted *strictly* to to
 
 ***
 
-### **Engineering Log: April 4, 2026**
+### **  April 4, 2026**
 **Focus:** Extreme Scale Load Testing (1 Lakh Devices) & Hardware Ceiling RCA
 
 #### **1. Environment Configuration (Vertical Scaling)**

@@ -22,6 +22,13 @@ WORKDIR /app
 # Copy application scripts
 COPY generate_data.py /app/
 COPY delta_merge_pipeline.py /app/
+COPY livewire_streaming.py /app/
+COPY livewire_schema_validator.py /app/
+COPY streaming_data_producer.py /app/
+COPY streaming_merge_pipeline.py /app/
+
+# Create data directories
+RUN mkdir -p /app/data/processed/stream /app/data/processed/batch
 
 # Set environment variables for PySpark
 ENV PYSPARK_PYTHON=python3

@@ -25,6 +25,7 @@ import json
 import os
 import shutil
 import statistics
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,13 @@ from pyspark.sql.types import StringType
 from delta import DeltaTable
 from delta.tables import DeltaMergeBuilder  
 from py4j.protocol import Py4JJavaError
+
+# Import livewire streaming mode (optional - gracefully handle if not present)
+try:
+    from livewire_streaming import run_livewire_streaming, LivewireConfig
+    LIVEWIRE_AVAILABLE = True
+except ImportError:
+    LIVEWIRE_AVAILABLE = False
 
 
 # =============================================================================
@@ -996,8 +1004,8 @@ def parse_args():
                         help='Input raw parquet directory')
     parser.add_argument('--output', type=str, default=PipelineConfig.REFINED_PATH, 
                         help='Output refined delta directory')
-    parser.add_argument('--mode', type=str, choices=['benchmark'], default='benchmark',
-                        help='Pipeline mode: benchmark (partitioned data with incremental MERGE)')
+    parser.add_argument('--mode', type=str, choices=['benchmark', 'livewire'], default='benchmark',
+                        help='Pipeline mode: benchmark (partitioned data) or livewire (streaming)')
     parser.add_argument('--resume', action='store_true', 
                         help='Resume from last checkpoint (benchmark mode only)')
     parser.add_argument('--reset', action='store_true',
@@ -1051,6 +1059,61 @@ def main():
     print("  ATLAS - REFINED LAYER DELTA LAKE PIPELINE")
     print("  High-Performance Deduplication for 400K+ Device Scale")
     print("=" * 80)
+    
+    if args.mode == "livewire":
+        print(f"\n  Mode: LIVEWIRE (Real-Time Streaming Integration)")
+        print("  Architecture:")
+        print("  - Source: /app/data/processed/stream (upstream Parquet files)")
+        print("  - Triple-Hash Key: (device_id, metric_time, application_customer_id)")
+        print("  - 5-Level Partitioning: report_type/date/pcid/acid/device_id")
+        print(f"  - Storage: Parquet with {PipelineConfig.COMPRESSION_CODEC.upper()} compression")
+        print("  - Optimization: Z-ORDER by metric_time for query locality")
+        print("  - Streaming: Micro-batch MERGE with Structured Streaming")
+        print("  - Schema Validation: Automatic alignment with Refined Layer contract")
+        print("  - Fault Tolerance: Checkpointing for exactly-once delivery")
+        
+        # Check if livewire module is available
+        if not LIVEWIRE_AVAILABLE:
+            print("\n  ✗ ERROR: livewire_streaming module not found!")
+            print("    Make sure livewire_streaming.py is in the same directory.")
+            sys.exit(1)
+        
+        # Initialize Spark session
+        print("\n" + "-" * 80)
+        print("[STEP 1] Initializing Spark session with Delta Lake...")
+        print("-" * 80)
+        
+        spark = create_spark_session()
+        print("         ✓ SparkSession created with Delta Lake 3.1.0")
+        print(f"         ✓ Compression: {PipelineConfig.COMPRESSION_CODEC}")
+        print("         ✓ Parquet vectorized reader enabled")
+        print("         ✓ Adaptive Query Execution enabled")
+        if args.dynamic_allocation:
+            print("         ✓ Dynamic allocation enabled")
+        
+        # Run livewire streaming
+        print("\n" + "-" * 80)
+        print("[STEP 2] Starting livewire streaming mode...")
+        print("-" * 80)
+        
+        # Update livewire config from args
+        LivewireConfig.REFINED_OUTPUT_PATH = args.output
+        LivewireConfig.CHECKPOINT_PATH = f"{args.output}/_streaming_checkpoints/livewire"
+        
+        try:
+            run_livewire_streaming(spark)
+        except KeyboardInterrupt:
+            print("\n  ℹ Streaming stopped by user")
+        except Exception as e:
+            print(f"\n  ✗ Streaming error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            spark.stop()
+        
+        return
+    
+    # BENCHMARK MODE
     print(f"\n  Mode: BENCHMARK (Partitioned Incremental MERGE)")
     print("  Architecture:")
     print("  - Triple-Hash Key: (device_id, metric_time, application_customer_id)")
