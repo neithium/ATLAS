@@ -37,7 +37,7 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import StringType
 from delta import DeltaTable
-from delta.tables import DeltaMergeBuilder
+from delta.tables import DeltaMergeBuilder  
 from py4j.protocol import Py4JJavaError
 
 
@@ -53,8 +53,8 @@ class PipelineConfig:
     REFINED_PATH = "/refined"
     CHECKPOINT_PATH = "/refined/_checkpoints"
     
-    # Mode: legacy | benchmark
-    MODE = "legacy"
+    # Mode: legacy | benchmark | dataframe
+    MODE = " benchmark"
     
     # Triple-Hash Composite Primary Key columns
     PRIMARY_KEY_COLUMNS = ["device_id", "metric_time", "application_customer_id"]
@@ -75,9 +75,27 @@ class PipelineConfig:
     TARGET_FILE_SIZE_MB = 128
     MAX_RECORDS_PER_FILE = 1_000_000
     
+    # Compression: Zstd provides ~30% better compression than Snappy
+    # Ideal for large-scale telemetry where storage costs matter
+    COMPRESSION_CODEC = "zstd"
+    
+    # Vacuum settings (removes old Delta log files)
+    VACUUM_RETENTION_DAYS = 14
+    VACUUM_RETENTION_HOURS = VACUUM_RETENTION_DAYS * 24
+    VACUUM_ENABLED = True  # Auto-vacuum after pipeline completion
+    
     # Benchmark mode settings
-    OPTIMIZE_EVERY_N_BATCHES = 3  # Run OPTIMIZE after every N date batches
+    OPTIMIZE_EVERY_N_BATCHES = 5  # Run OPTIMIZE after every N date batches
     ENABLE_CHECKPOINTING = True
+    
+    # Horizontal Scaling Configuration
+    SPARK_EXECUTOR_INSTANCES = int(os.getenv("SPARK_EXECUTOR_INSTANCES", "1"))
+    SPARK_EXECUTOR_CORES = int(os.getenv("SPARK_EXECUTOR_CORES", "6"))
+    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "4g")
+    SPARK_DYNAMIC_ALLOCATION = os.getenv("SPARK_DYNAMIC_ALLOCATION", "false").lower() == "true"
+    SPARK_MIN_EXECUTORS = int(os.getenv("SPARK_MIN_EXECUTORS", "2"))
+    SPARK_MAX_EXECUTORS = int(os.getenv("SPARK_MAX_EXECUTORS", "8"))
+    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "12"))
 
 
 # =============================================================================
@@ -199,42 +217,73 @@ class CheckpointManager:
 # SPARK SESSION FACTORY
 # =============================================================================
 
-def create_spark_session() -> SparkSession:
+def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge") -> SparkSession:
     """
     Create SparkSession with Delta Lake support optimized for ATLAS pipeline.
     
     Configurations:
     - Delta Lake 3.1.0 for Spark 3.5.x compatibility
-    - Parquet as underlying storage format (Delta default)
+    - Zstd compression (30% better ratio than Snappy)
     - Auto schema merge for evolving schemas
     - Adaptive query execution for dynamic optimization
+    - Horizontal scaling with dynamic allocation support
     - Columnar read optimizations enabled
     """
-    spark = (
+    builder = (
         SparkSession.builder
-        .appName("ATLAS-RefinedLayer-DeltaMerge")
-        .master("local[*]")
+        .appName(app_name)
         # Delta Lake core extensions
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.1.0")
         # Schema evolution
         .config("spark.databricks.delta.schema.autoMerge.enabled", "true")
-        # Parquet storage optimizations (Delta uses Parquet internally)
-        .config("spark.sql.parquet.compression.codec", "snappy")
+        # Zstd compression (better ratio than Snappy for large datasets)
+        .config("spark.sql.parquet.compression.codec", PipelineConfig.COMPRESSION_CODEC)
         .config("spark.sql.parquet.enableVectorizedReader", "true")
         .config("spark.sql.parquet.filterPushdown", "true")
         # Adaptive Query Execution for partition pruning efficiency
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        .config("spark.sql.adaptive.skewJoin.enabled", "true")
         # Delta optimizations for large-scale writes
         .config("spark.databricks.delta.optimizeWrite.enabled", "true")
         .config("spark.databricks.delta.autoCompact.enabled", "false")  # Manual OPTIMIZE
         .config("spark.databricks.delta.properties.defaults.targetFileSize", 
                 str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
-        .getOrCreate()
+        # Shuffle partitions for parallelism
+        .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
     )
     
+    # Horizontal scaling: Dynamic allocation or fixed executors
+    if PipelineConfig.SPARK_DYNAMIC_ALLOCATION:
+        builder = (
+            builder
+            .config("spark.dynamicAllocation.enabled", "true")
+            .config("spark.dynamicAllocation.minExecutors", str(PipelineConfig.SPARK_MIN_EXECUTORS))
+            .config("spark.dynamicAllocation.maxExecutors", str(PipelineConfig.SPARK_MAX_EXECUTORS))
+            .config("spark.dynamicAllocation.initialExecutors", str(PipelineConfig.SPARK_EXECUTOR_INSTANCES))
+            .config("spark.dynamicAllocation.executorIdleTimeout", "60s")
+            .config("spark.dynamicAllocation.schedulerBacklogTimeout", "5s")
+            .config("spark.shuffle.service.enabled", "true")
+        )
+    else:
+        builder = builder.config("spark.executor.instances", str(PipelineConfig.SPARK_EXECUTOR_INSTANCES))
+    
+    # Executor configuration
+    builder = (
+        builder
+        .config("spark.executor.cores", str(PipelineConfig.SPARK_EXECUTOR_CORES))
+        .config("spark.executor.memory", PipelineConfig.SPARK_EXECUTOR_MEMORY)
+    )
+    
+    # Master configuration - use environment variable or default to local[*]
+    if os.getenv("SPARK_MASTER"):
+        builder = builder.master(os.getenv("SPARK_MASTER"))
+    else:
+        builder = builder.master("local[*]")
+    
+    spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     return spark
 
@@ -298,8 +347,9 @@ def initialize_delta_table(
     path: str,
     partition_cols: list
 ) -> None:
-    """Initialize Delta table with 5-level partitioning and Parquet storage."""
+    """Initialize Delta table with 5-level partitioning and Zstd compression."""
     print(f"         Partition structure: /{'/'.join(partition_cols)}/")
+    print(f"         Compression: {PipelineConfig.COMPRESSION_CODEC}")
     
     (
         df.write
@@ -307,7 +357,7 @@ def initialize_delta_table(
         .mode("overwrite")
         .option("overwriteSchema", "true")
         .partitionBy(*partition_cols)
-        .option("parquet.compression", "snappy")
+        .option("parquet.compression", PipelineConfig.COMPRESSION_CODEC)
         .option("parquet.block.size", str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
         .save(path)
     )
@@ -337,11 +387,25 @@ def execute_merge_deduplication(
     """
     Execute Delta MERGE for deduplication using Triple-Hash composite key.
     
-    MERGE Logic:
-    - WHEN MATCHED: Do nothing (record exists, ignore duplicate)
-    - WHEN NOT MATCHED: Insert all columns (new unique record)
+    MERGE Logic Between Consecutive Days:
+    - Target: Accumulated data from day 0 to day i-1
+    - Source: New data from day i (contains 7-day rolling window)
+    - ON: (device_id, metric_time, application_customer_id)
+    - WHEN MATCHED: Do nothing (row already exists, is a duplicate)
+    - WHEN NOT MATCHED: Insert (new row from today)
+    
+    Deduplication Math:
+    - Source has 2016 rows/device (7-day window)
+    - 1728 rows match with target (days i-6 to i-1 overlap)
+    - 288 rows don't match (new data from day i)
+    - Expected: ~85.7% duplicates dropped per batch
     """
+    # Count source rows before merge
+    source_count = source_df.count()
+    
+    # Count target rows before merge
     delta_table = DeltaTable.forPath(spark, target_path)
+    target_count = spark.read.format("delta").load(target_path).count()
     
     merge_condition = """
         target.device_id = source.device_id 
@@ -372,13 +436,38 @@ def execute_merge_deduplication(
             delta_table = DeltaTable.forPath(spark, target_path)
             time.sleep(1)
     
-    history_df = delta_table.history(1)
+    # Count target rows after merge
+    delta_table_after = DeltaTable.forPath(spark, target_path)
+    target_count_after = spark.read.format("delta").load(target_path).count()
+    
+    # Calculate merge metrics
+    rows_inserted = target_count_after - target_count
+    rows_matched = source_count - rows_inserted
+    match_ratio = (rows_matched / source_count * 100) if source_count > 0 else 0
+    insert_ratio = (rows_inserted / source_count * 100) if source_count > 0 else 0
+    
+    history_df = delta_table_after.history(1)
     history_row = history_df.collect()[0]
+    
+    # Print detailed merge results
+    print(f"         ✓ MERGE Results (Day i vs Days 0..i-1):")
+    print(f"           - Source rows (day i): {source_count:,}")
+    print(f"           - Target rows before: {target_count:,}")
+    print(f"           - Matched/Duplicates: {rows_matched:,} ({match_ratio:.1f}%)")
+    print(f"           - Inserted/New: {rows_inserted:,} ({insert_ratio:.1f}%)")
+    print(f"           - Target rows after: {target_count_after:,}")
     
     return {
         "operation": history_row["operation"],
         "operationMetrics": history_row["operationMetrics"],
-        "timestamp": history_row["timestamp"]
+        "timestamp": history_row["timestamp"],
+        "source_count": source_count,
+        "target_count_before": target_count,
+        "target_count_after": target_count_after,
+        "rows_matched": rows_matched,
+        "rows_inserted": rows_inserted,
+        "match_ratio_pct": match_ratio,
+        "insert_ratio_pct": insert_ratio
     }
 
 
@@ -401,15 +490,106 @@ def optimize_delta_table(spark: SparkSession, path: str, zorder_col: str) -> dic
     return {"status": "no_files_to_optimize"}
 
 
-def vacuum_old_files(spark: SparkSession, path: str, retention_hours: int = 168) -> None:
-    """Vacuum old Delta log files beyond retention period."""
+def vacuum_old_files(spark: SparkSession, path: str, retention_hours: int = None) -> Dict:
+    """
+    Vacuum Delta table to remove old files beyond retention period.
+    
+    Default retention: 14 days (336 hours) - configurable via PipelineConfig.VACUUM_RETENTION_DAYS
+    
+    This removes:
+    - Old Parquet files no longer referenced by the table
+    - Transaction log entries older than retention period
+    
+    WARNING: After vacuum, time travel to versions older than retention is not possible.
+    
+    Args:
+        spark: SparkSession
+        path: Delta table path
+        retention_hours: Override retention period (default: 14 days = 336 hours)
+    
+    Returns:
+        Dict with vacuum metrics
+    """
+    retention_hours = retention_hours or PipelineConfig.VACUUM_RETENTION_HOURS
+    
     delta_table = DeltaTable.forPath(spark, path)
+    
+    # Disable retention check for cleanup (use with caution in production)
+    spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+    
+    print(f"         Running VACUUM with {retention_hours}h ({retention_hours // 24}d) retention...")
+    vacuum_start = time.perf_counter()
+    
     delta_table.vacuum(retention_hours)
+    
+    vacuum_elapsed = time.perf_counter() - vacuum_start
+    
+    # Re-enable check
+    spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "true")
+    
+    return {
+        "retention_hours": retention_hours,
+        "retention_days": retention_hours // 24,
+        "vacuum_time_sec": round(vacuum_elapsed, 3),
+        "status": "completed"
+    }
 
 
 # =============================================================================
 # VERIFICATION & REPORTING
 # =============================================================================
+
+def verify_rolling_window_deduplication(
+    total_input_rows: int,
+    final_count: int,
+    num_days: int,
+    total_devices: int
+) -> dict:
+    """
+    Validate that the rolling window deduplication matches expected math.
+    
+    Expected Pattern (7-day rolling window):
+    - Day 1: 2016 rows/device → all unique
+    - Days 2+: 2016 rows/device → 1728 duplicates + 288 new
+    
+    Expected Final Count:
+    - Per device: 2016 + (num_days-1) × 288
+    - Total: devices × [2016 + (num_days-1) × 288]
+    
+    Expected Dedup Ratio:
+    - Duplicates: (num_days-1) × 1728 × devices
+    - Total raw: 2016 × num_days × devices
+    - Ratio: duplicates / total_raw × 100%
+    """
+    rows_per_device_per_day = 2016
+    new_rows_per_day = 288
+    duplicate_rows_per_day_after_first = 1728
+    
+    # Calculate expected values
+    expected_unique_per_device = rows_per_device_per_day + (num_days - 1) * new_rows_per_day
+    expected_final_count = expected_unique_per_device * total_devices
+    expected_total_input = rows_per_device_per_day * num_days * total_devices
+    expected_duplicates = expected_total_input - expected_final_count
+    expected_dedup_ratio = (expected_duplicates / expected_total_input * 100) if expected_total_input > 0 else 0
+    
+    # Calculate actual values
+    actual_dedup_ratio = ((total_input_rows - final_count) / total_input_rows * 100) if total_input_rows > 0 else 0
+    
+    # Validate
+    count_match = abs(final_count - expected_final_count) < total_devices  # Allow 1 device tolerance for rounding
+    ratio_match = abs(actual_dedup_ratio - expected_dedup_ratio) < 1.0  # Allow 1% tolerance
+    
+    return {
+        "expected_unique_per_device": expected_unique_per_device,
+        "expected_final_count": expected_final_count,
+        "actual_final_count": final_count,
+        "count_matches": count_match,
+        "expected_dedup_ratio": expected_dedup_ratio,
+        "actual_dedup_ratio": actual_dedup_ratio,
+        "ratio_matches": ratio_match,
+        "is_valid": count_match and ratio_match
+    }
+
 
 def verify_deduplication(spark: SparkSession, path: str, total_input: int) -> dict:
     """Verify deduplication results and generate metrics report."""
@@ -693,15 +873,16 @@ def run_benchmark_pipeline(
             table_initialized = True
             print(f"  │  Action: INIT | Time: {merge_elapsed:.2f}s")
         else:
-            # Subsequent batches: MERGE
+            # Subsequent batches: MERGE between day i and accumulated days 0..i-1
+            print(f"  │  Merging day i against accumulated days 0..i-1...")
             merge_start = time.perf_counter()
-            execute_merge_deduplication(
+            merge_result = execute_merge_deduplication(
                 spark=spark,
                 target_path=PipelineConfig.REFINED_PATH,
                 source_df=prepared_df
             )
             merge_elapsed = time.perf_counter() - merge_start
-            print(f"  │  Action: MERGE | Time: {merge_elapsed:.2f}s")
+            print(f"  │  MERGE Time: {merge_elapsed:.2f}s")
         
         batch_elapsed = time.perf_counter() - batch_start
         throughput = row_count / batch_elapsed if batch_elapsed > 0 else 0
@@ -735,7 +916,147 @@ def run_benchmark_pipeline(
         optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
         print(f"  ✓ Final OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s")
     
-    return {"total_rows": total_rows_processed}
+    return {
+        "total_rows": total_rows_processed,
+        "num_days": len(file_dates_to_process),
+        "all_file_dates": file_dates_to_process
+    }
+
+
+# =============================================================================
+# DATAFRAME MODE PIPELINE
+# =============================================================================
+
+def run_dataframe_pipeline(
+    spark: SparkSession,
+    input_df: DataFrame,
+    tracker: LatencyTracker,
+    table_exists: bool = False
+) -> dict:
+    """
+    Run pipeline with DataFrame input (for programmatic integration).
+    
+    This mode accepts a pre-loaded DataFrame instead of reading from files,
+    enabling direct integration with upstream Spark processing jobs.
+    
+    Args:
+        spark: SparkSession
+        input_df: Pre-loaded DataFrame with flattened telemetry data
+        tracker: LatencyTracker for metrics
+        table_exists: Whether Delta table already exists
+    
+    Returns:
+        dict with processing results
+    """
+    print("\n" + "-" * 80)
+    print("[STEP 2] Processing input DataFrame...")
+    print("-" * 80)
+    
+    batch_start = time.perf_counter()
+    
+    # Prepare partition columns
+    prepared_df = prepare_partition_columns(input_df)
+    row_count = prepared_df.count()
+    read_elapsed = time.perf_counter() - batch_start
+    
+    print(f"         ✓ Input rows: {row_count:,}")
+    print(f"         ✓ Prepare time: {read_elapsed:.2f}s")
+    
+    merge_elapsed = 0
+    
+    if not table_exists:
+        # Initialize Delta table
+        print("\n" + "-" * 80)
+        print("[STEP 3] Creating Delta table with 5-level partitioning...")
+        print("-" * 80)
+        
+        init_start = time.perf_counter()
+        initialize_delta_table(
+            spark=spark,
+            df=prepared_df,
+            path=PipelineConfig.REFINED_PATH,
+            partition_cols=PipelineConfig.PARTITION_COLUMNS
+        )
+        merge_elapsed = time.perf_counter() - init_start
+        
+        print(f"         ✓ Delta table created at {PipelineConfig.REFINED_PATH}")
+    else:
+        # MERGE into existing table
+        print("\n" + "-" * 80)
+        print("[STEP 3] Executing Delta MERGE deduplication...")
+        print("-" * 80)
+        print("         Triple-Hash Key: (device_id, metric_time, application_customer_id)")
+        print("         Logic: WHEN MATCHED → Ignore | WHEN NOT MATCHED → Insert")
+        
+        merge_start = time.perf_counter()
+        merge_metrics = execute_merge_deduplication(
+            spark=spark,
+            target_path=PipelineConfig.REFINED_PATH,
+            source_df=prepared_df
+        )
+        merge_elapsed = time.perf_counter() - merge_start
+        
+        print(f"         ✓ MERGE completed in {merge_elapsed:.2f}s")
+        print(f"         ✓ Operation: {merge_metrics['operation']}")
+    
+    batch_elapsed = time.perf_counter() - batch_start
+    tracker.record_batch(batch_elapsed, merge_elapsed, read_elapsed, row_count)
+    
+    return {"row_count": row_count}
+
+
+def process_dataframe(
+    df: DataFrame,
+    output_path: str = None,
+    run_optimize: bool = True,
+    run_vacuum: bool = True
+) -> dict:
+    """
+    Public API for processing a DataFrame through the merge pipeline.
+    
+    This is the main entry point for programmatic DataFrame processing,
+    enabling integration with upstream batch jobs.
+    
+    Args:
+        df: Input DataFrame with flattened telemetry data
+        output_path: Delta table output path (default: /refined)
+        run_optimize: Whether to run OPTIMIZE after processing
+        run_vacuum: Whether to run VACUUM after processing
+    
+    Returns:
+        dict with processing metrics
+    
+    Example:
+        from delta_merge_pipeline import process_dataframe
+        
+        # Get DataFrame from upstream processing
+        result = process_dataframe(upstream_df, output_path="/refined")
+        print(f"Processed {result['row_count']} rows")
+    """
+    output_path = output_path or PipelineConfig.REFINED_PATH
+    PipelineConfig.REFINED_PATH = output_path
+    
+    spark = df.sparkSession
+    tracker = LatencyTracker()
+    tracker.start_pipeline()
+    
+    # Check if table exists
+    table_exists = delta_table_exists(spark, output_path)
+    
+    # Process
+    result = run_dataframe_pipeline(spark, df, tracker, table_exists)
+    
+    # Optional OPTIMIZE
+    if run_optimize:
+        print("\n  Running OPTIMIZE...")
+        optimize_delta_table(spark, output_path, PipelineConfig.ZORDER_COLUMN)
+    
+    # Optional VACUUM
+    if run_vacuum and PipelineConfig.VACUUM_ENABLED:
+        print("\n  Running VACUUM...")
+        vacuum_old_files(spark, output_path)
+    
+    return result
 
 
 # =============================================================================
@@ -749,14 +1070,28 @@ def parse_args():
                         help='Input raw parquet directory')
     parser.add_argument('--output', type=str, default=PipelineConfig.REFINED_PATH, 
                         help='Output refined delta directory')
-    parser.add_argument('--mode', type=str, choices=['legacy', 'benchmark'], default='legacy',
-                        help='Pipeline mode: legacy (2 files) or benchmark (partitioned data)')
+    parser.add_argument('--mode', type=str, choices=['legacy', 'benchmark', 'dataframe'], default='legacy',
+                        help='Pipeline mode: legacy (2 files), benchmark (partitioned data), or dataframe (API mode)')
     parser.add_argument('--resume', action='store_true', 
                         help='Resume from last checkpoint (benchmark mode only)')
     parser.add_argument('--reset', action='store_true',
                         help='Reset checkpoints and start fresh')
     parser.add_argument('--optimize-every', type=int, default=3,
                         help='Run OPTIMIZE after every N batches (benchmark mode)')
+    parser.add_argument('--vacuum', action='store_true',
+                        help='Run VACUUM after pipeline completion')
+    parser.add_argument('--vacuum-retention-days', type=int, default=14,
+                        help='Retention days for VACUUM (default: 14)')
+    parser.add_argument('--no-optimize', action='store_true',
+                        help='Skip final OPTIMIZE')
+    parser.add_argument('--dynamic-allocation', action='store_true',
+                        help='Enable Spark dynamic allocation for horizontal scaling')
+    parser.add_argument('--executors', type=int, default=2,
+                        help='Number of Spark executors')
+    parser.add_argument('--executor-cores', type=int, default=2,
+                        help='Cores per executor')
+    parser.add_argument('--executor-memory', type=str, default='2g',
+                        help='Memory per executor')
     return parser.parse_args()
 
 
@@ -767,6 +1102,7 @@ def main():
     Modes:
     - legacy: Process 2 static files (file1_baseline + file2_overlap)
     - benchmark: Process partitioned benchmark data with incremental MERGE
+    - dataframe: API mode for programmatic DataFrame input
     """
     args = parse_args()
     
@@ -776,6 +1112,15 @@ def main():
     PipelineConfig.MODE = args.mode
     PipelineConfig.OPTIMIZE_EVERY_N_BATCHES = args.optimize_every
     PipelineConfig.CHECKPOINT_PATH = f"{args.output}/_checkpoints"
+    PipelineConfig.VACUUM_RETENTION_DAYS = args.vacuum_retention_days
+    PipelineConfig.VACUUM_RETENTION_HOURS = args.vacuum_retention_days * 24
+    PipelineConfig.VACUUM_ENABLED = args.vacuum
+    
+    # Horizontal scaling config
+    PipelineConfig.SPARK_DYNAMIC_ALLOCATION = args.dynamic_allocation
+    PipelineConfig.SPARK_EXECUTOR_INSTANCES = args.executors
+    PipelineConfig.SPARK_EXECUTOR_CORES = args.executor_cores
+    PipelineConfig.SPARK_EXECUTOR_MEMORY = args.executor_memory
     
     print("\n" + "=" * 80)
     print("  ATLAS - REFINED LAYER DELTA LAKE PIPELINE")
@@ -785,12 +1130,23 @@ def main():
     print("  Architecture:")
     print("  - Triple-Hash Key: (device_id, metric_time, application_customer_id)")
     print("  - 5-Level Partitioning: report_type/date/pcid/acid/device_id")
-    print("  - Storage: Parquet columnar format with Snappy compression")
+    print(f"  - Storage: Parquet with {PipelineConfig.COMPRESSION_CODEC.upper()} compression")
     print("  - Optimization: Z-ORDER by metric_time for query locality")
     
     if args.mode == "benchmark":
         print(f"  - Batch Processing: OPTIMIZE every {args.optimize_every} batches")
         print(f"  - Fault Tolerance: Checkpointing {'enabled' if PipelineConfig.ENABLE_CHECKPOINTING else 'disabled'}")
+    
+    print(f"\n  Horizontal Scaling:")
+    print(f"  - Dynamic Allocation: {args.dynamic_allocation}")
+    print(f"  - Executors: {args.executors}")
+    print(f"  - Executor Cores: {args.executor_cores}")
+    print(f"  - Executor Memory: {args.executor_memory}")
+    
+    if args.vacuum:
+        print(f"\n  Storage Maintenance:")
+        print(f"  - VACUUM Enabled: Yes")
+        print(f"  - Retention: {args.vacuum_retention_days} days")
     
     # Initialize components
     print("\n" + "-" * 80)
@@ -807,19 +1163,37 @@ def main():
     
     spark = create_spark_session()
     print("         ✓ SparkSession created with Delta Lake 3.1.0")
+    print(f"         ✓ Compression: {PipelineConfig.COMPRESSION_CODEC}")
     print("         ✓ Parquet vectorized reader enabled")
     print("         ✓ Adaptive Query Execution enabled")
+    if args.dynamic_allocation:
+        print("         ✓ Dynamic allocation enabled")
     
     # Run appropriate pipeline
     if args.mode == "legacy":
         result = run_legacy_pipeline(spark, tracker)
         total_input = result.get("file1_count", 0) + result.get("file2_count", 0)
-    else:
+        num_days = 2
+    elif args.mode == "benchmark":
         result = run_benchmark_pipeline(spark, tracker, checkpoint_mgr, resume=args.resume)
         if "error" in result:
             spark.stop()
             return
         total_input = result.get("total_rows", 0)
+        num_days = result.get("num_days", 0)
+    else:  # dataframe mode
+        print("         ℹ DataFrame mode - use process_dataframe() API")
+        print("         ℹ Example: from delta_merge_pipeline import process_dataframe")
+        spark.stop()
+        return
+    
+    # Run VACUUM if enabled
+    if args.vacuum:
+        print("\n" + "-" * 80)
+        print(f"[MAINTENANCE] Running VACUUM with {args.vacuum_retention_days}-day retention...")
+        print("-" * 80)
+        vacuum_result = vacuum_old_files(spark, PipelineConfig.REFINED_PATH)
+        print(f"         ✓ VACUUM completed in {vacuum_result['vacuum_time_sec']}s")
     
     # Final verification
     print("\n" + "-" * 80)
@@ -827,6 +1201,36 @@ def main():
     print("-" * 80)
     
     verification = verify_deduplication(spark, PipelineConfig.REFINED_PATH, total_input)
+    
+    # Validate rolling window deduplication math (for benchmark mode)
+    if args.mode == "benchmark" and num_days > 1:
+        # Estimate device count from row counts
+        # total_input = 2016 * num_days * total_devices
+        estimated_devices = total_input // (2016 * num_days) if (2016 * num_days) > 0 else 1
+        
+        rolling_validation = verify_rolling_window_deduplication(
+            total_input_rows=total_input,
+            final_count=verification['final_count'],
+            num_days=num_days,
+            total_devices=estimated_devices
+        )
+        
+        print("\n" + "-" * 80)
+        print("[VALIDATION] Rolling Window Deduplication Math Check")
+        print("-" * 80)
+        print(f"  Expected pattern (7-day rolling window):")
+        print(f"  - Day 1: {2016:,} rows/device (all unique)")
+        print(f"  - Days 2+: {2016:,} rows/device (1728 duplicates + 288 new)")
+        print(f"\n  Expected vs Actual:")
+        print(f"  - Expected unique/device: {rolling_validation['expected_unique_per_device']:,}")
+        print(f"  - Expected final count:   {rolling_validation['expected_final_count']:,}")
+        print(f"  - Actual final count:     {rolling_validation['actual_final_count']:,}")
+        print(f"  - Count match: {'✓ YES' if rolling_validation['count_matches'] else '✗ NO (tolerance exceeded)'}")
+        print(f"\n  - Expected dedup ratio:   {rolling_validation['expected_dedup_ratio']:.2f}%")
+        print(f"  - Actual dedup ratio:     {rolling_validation['actual_dedup_ratio']:.2f}%")
+        print(f"  - Ratio match: {'✓ YES' if rolling_validation['ratio_matches'] else '✗ NO (tolerance exceeded)'}")
+        print(f"\n  Overall validation: {'✓ PASS' if rolling_validation['is_valid'] else '✗ FAIL - possible merge issue!'}")
+    
     print_table_info(spark, PipelineConfig.REFINED_PATH)
     
     # Print results
@@ -835,6 +1239,23 @@ def main():
     print("=" * 80)
     
     print(f"\n  Mode: {args.mode.upper()}")
+    print(f"\n  Rolling Window Deduplication (7-Day Pattern):")
+    print(f"  ╔═══════════════════════════════════════════════════════════════╗")
+    print(f"  ║  BATCH-BY-BATCH MERGE BETWEEN CONSECUTIVE DAYS               ║")
+    print(f"  ╠═══════════════════════════════════════════════════════════════╣")
+    print(f"  ║  Day 1:  2016 rows/device  → All UNIQUE (baseline)           ║")
+    print(f"  ║  Day 2:  2016 rows/device  → 1728 MATCH + 288 INSERT         ║")
+    print(f"  ║  Day 3:  2016 rows/device  → 1728 MATCH + 288 INSERT         ║")
+    print(f"  ║  ...     ...                ...                              ║")
+    print(f"  ║  DayN:   2016 rows/device  → 1728 MATCH + 288 INSERT         ║")
+    print(f"  ╠═══════════════════════════════════════════════════════════════╣")
+    print(f"  ║  Cumulative Deduplication Across All Batches:                ║")
+    print(f"  ║  - Total raw input:        {verification['total_input']:>12,} rows")
+    print(f"  ║  - Final deduplicated:     {verification['final_count']:>12,} rows")
+    print(f"  ║  - Total duplicates:       {verification['duplicates_dropped']:>12,} rows")
+    print(f"  ║  - Dedup ratio:            {verification['deduplication_ratio']:>12.1f}%")
+    print(f"  ╚═══════════════════════════════════════════════════════════════╝")
+    
     print(f"\n  Input Statistics:")
     print(f"  - Total input rows:      {verification['total_input']:,}")
     
@@ -850,8 +1271,10 @@ def main():
     print(f"\n  Architecture Verification:")
     print(f"  ✓ Triple-Hash Key: device_id + metric_time + application_customer_id")
     print(f"  ✓ 5-Level Partitioning: {'/'.join(PipelineConfig.PARTITION_COLUMNS)}")
-    print(f"  ✓ Storage Format: Parquet (Delta Lake native)")
+    print(f"  ✓ Storage Format: Parquet with {PipelineConfig.COMPRESSION_CODEC.upper()} compression")
     print(f"  ✓ Z-ORDER Clustering: {PipelineConfig.ZORDER_COLUMN}")
+    if args.vacuum:
+        print(f"  ✓ VACUUM: {args.vacuum_retention_days}-day retention")
     
     print("\n" + "=" * 80)
     print("  ATLAS REFINED LAYER PIPELINE COMPLETE")

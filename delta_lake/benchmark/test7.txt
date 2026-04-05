@@ -1,0 +1,494 @@
+
+# test done on 4th april 23.30 , after final peak benchmarking, done for 100 devices, for 7 days, with optimise,zstd, 14d vaccum, all signs positive.
+
+
+(.venv) PS C:\Users\manth\Documents\GitHub\ATLAS\delta_lake> docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y spark
+============================================
+  ATLAS - Delta Lake Deduplication Module
+============================================
+
+Configuration:
+  RUN_GENERATOR=y
+  GENERATOR_MODE=benchmark
+  DEVICE_COUNT=100
+  BATCH_SIZE=1000
+  NUM_DAYS=7
+  START_DATE=2026-03-01
+  RUN_PIPELINE=y
+  PIPELINE_MODE=benchmark
+  OPTIMIZE_EVERY=5
+  COMPRESSION_CODEC=zstd
+  RUN_VACUUM=y
+
+[1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+
+================================================================================
+  ATLAS DATA GENERATOR
+================================================================================
+
+  Mode: BENCHMARK
+  Compression: ZSTD
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/04/04 18:07:06 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+================================================================================
+ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+================================================================================
+
+Output path:              /raw/benchmark_data
+Total devices:            100
+Device batch size:        1,000
+Number of daily files:    7
+Rows per device per file: 2,016 (7 days × 288)
+
+Real-World Simulation:
+- Each file contains 7-day rolling window
+- File for Day N: metric_time spans (Day N-6) to Day N
+- New rows per file: 288/device (1 day)
+- Duplicate rows per file: 1,728/device (6 days)
+
+Expected Results After Deduplication:
+- Total raw input rows:   1,411,200
+- Expected unique rows:   374,400
+- Expected duplicates:    1,036,800
+- Expected dedup ratio:   73.5%
+
+File date range: 2026-03-01 → 2026-03-07
+
+================================================================================
+DAILY FILE 1/7: file_date = 2026-03-01
+  → metric_time window: 2026-02-23 to 2026-03-01
+================================================================================
+
+  Batch 1/1: devices 1..100
+Traceback (most recent call last):
+  File "generate_data.py", line 623, in <module>
+    main()
+  File "generate_data.py", line 569, in main
+    generate_benchmark_data(
+  File "generate_data.py", line 344, in generate_benchmark_data
+    batch_df = build_daily_file_df(
+  File "generate_data.py", line 250, in build_daily_file_df
+    with_values_df.select(
+  File "/usr/local/lib/python3.8/dist-packages/pyspark/sql/dataframe.py", line 3128, in __getattr__
+    raise AttributeError(
+AttributeError: 'DataFrame' object has no attribute 'sortBy'
+                                                             docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y sparkub\ATLAS\delta_lake> 
+============================================
+  ATLAS - Delta Lake Deduplication Module
+============================================
+
+Configuration:
+  RUN_GENERATOR=y
+  GENERATOR_MODE=benchmark
+  DEVICE_COUNT=100
+  BATCH_SIZE=1000
+  NUM_DAYS=7
+  START_DATE=2026-03-01
+  RUN_PIPELINE=y
+  PIPELINE_MODE=benchmark
+  OPTIMIZE_EVERY=5
+  COMPRESSION_CODEC=zstd
+  RUN_VACUUM=y
+
+[1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+
+================================================================================
+  ATLAS DATA GENERATOR
+================================================================================
+
+  Mode: BENCHMARK
+  Compression: ZSTD
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/04/04 18:07:38 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+================================================================================
+ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+================================================================================
+
+Output path:              /raw/benchmark_data
+Total devices:            100
+Device batch size:        1,000
+Number of daily files:    7
+Rows per device per file: 2,016 (7 days × 288)
+
+Real-World Simulation:
+- Each file contains 7-day rolling window
+- File for Day N: metric_time spans (Day N-6) to Day N
+- New rows per file: 288/device (1 day)
+- Duplicate rows per file: 1,728/device (6 days)
+
+Expected Results After Deduplication:
+- Total raw input rows:   1,411,200
+- Expected unique rows:   374,400
+- Expected duplicates:    1,036,800
+- Expected dedup ratio:   73.5%
+
+File date range: 2026-03-01 → 2026-03-07
+
+================================================================================
+DAILY FILE 1/7: file_date = 2026-03-01
+  → metric_time window: 2026-02-23 to 2026-03-01
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 7.27s | Throughput: 27,729 rows/s               
+
+================================================================================
+DAILY FILE 2/7: file_date = 2026-03-02
+  → metric_time window: 2026-02-24 to 2026-03-02
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 1.67s | Throughput: 120,377 rows/s
+
+================================================================================
+DAILY FILE 3/7: file_date = 2026-03-03
+  → metric_time window: 2026-02-25 to 2026-03-03
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 1.26s | Throughput: 160,594 rows/s
+
+================================================================================
+DAILY FILE 4/7: file_date = 2026-03-04
+  → metric_time window: 2026-02-26 to 2026-03-04
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 1.05s | Throughput: 191,610 rows/s
+
+================================================================================
+DAILY FILE 5/7: file_date = 2026-03-05
+  → metric_time window: 2026-02-27 to 2026-03-05
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 1.07s | Throughput: 188,334 rows/s
+
+================================================================================
+DAILY FILE 6/7: file_date = 2026-03-06
+  → metric_time window: 2026-02-28 to 2026-03-06
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 0.98s | Throughput: 206,520 rows/s
+
+================================================================================
+DAILY FILE 7/7: file_date = 2026-03-07
+  → metric_time window: 2026-03-01 to 2026-03-07
+================================================================================
+
+  Batch 1/1: devices 1..100
+  Rows written: 201,600 | Time: 1.05s | Throughput: 191,199 rows/s
+
+================================================================================
+Benchmark Generation Complete
+================================================================================
+Output path:            /raw/benchmark_data
+Total raw rows:         1,411,200
+Expected unique after dedup: 374,400
+Expected dedup ratio:   73.5%
+Total elapsed:          17.17s
+================================================================================
+
+[2/2] Running deduplication pipeline (mode=benchmark)...
+
+================================================================================
+  ATLAS - REFINED LAYER DELTA LAKE PIPELINE
+  High-Performance Deduplication for 400K+ Device Scale
+================================================================================
+
+  Mode: BENCHMARK
+  Architecture:
+  - Triple-Hash Key: (device_id, metric_time, application_customer_id)
+  - 5-Level Partitioning: report_type/date/pcid/acid/device_id
+  - Storage: Parquet with ZSTD compression
+  - Optimization: Z-ORDER by metric_time for query locality
+  - Batch Processing: OPTIMIZE every 5 batches
+  - Fault Tolerance: Checkpointing enabled
+
+  Horizontal Scaling:
+  - Dynamic Allocation: False
+  - Executors: 1
+  - Executor Cores: 6
+  - Executor Memory: 2g
+
+  Storage Maintenance:
+  - VACUUM Enabled: Yes
+  - Retention: 14 days
+
+--------------------------------------------------------------------------------
+[STEP 1] Initializing Spark session with Delta Lake...
+--------------------------------------------------------------------------------
+:: loading settings :: url = jar:file:/opt/spark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-2980d044-27f9-4130-a2d2-01e935fd1e9a;1.0
+        confs: [default]
+        found io.delta#delta-spark_2.12;3.1.0 in central
+        found io.delta#delta-storage;3.1.0 in central
+        found org.antlr#antlr4-runtime;4.9.3 in central
+downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (866ms)
+downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (123ms)
+downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
+        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (151ms)
+:: resolution report :: resolve 3293ms :: artifacts dl 1147ms
+        :: modules in use:
+        io.delta#delta-spark_2.12;3.1.0 from central in [default]
+        io.delta#delta-storage;3.1.0 from central in [default]
+        org.antlr#antlr4-runtime;4.9.3 from central in [default]
+        ---------------------------------------------------------------------
+        |                  |            modules            ||   artifacts   |
+        |       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+        ---------------------------------------------------------------------
+        |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
+        ---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-2980d044-27f9-4130-a2d2-01e935fd1e9a
+        confs: [default]
+        3 artifacts copied, 0 already retrieved (5727kB/23ms)
+26/04/04 18:08:04 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+         ✓ SparkSession created with Delta Lake 3.1.0
+         ✓ Compression: zstd
+         ✓ Parquet vectorized reader enabled
+         ✓ Adaptive Query Execution enabled
+
+--------------------------------------------------------------------------------
+[STEP 2] Discovering file_date batches in benchmark data...
+--------------------------------------------------------------------------------
+         ℹ file_date = date batch was received (each contains 7-day rolling window)
+         ✓ Found 7 daily file batches                                           
+         ✓ File date range: 2026-03-01 → 2026-03-07
+         ✓ File batches to process: 7
+         ℹ Fresh benchmark run detected (resume=False): clearing existing output at /refined
+
+--------------------------------------------------------------------------------
+[STEP 3] Processing file batches with incremental MERGE...
+--------------------------------------------------------------------------------
+         ℹ Each batch = 2016 rows/device (7-day window), only 288 new/device
+
+  ┌─ Batch 1/7: file_date=2026-03-01
+  │  Rows: 201,600 | Read: 0.81s
+         Partition structure: /report_type/partition_date/platform_customer_id/application_customer_id/device_id/
+         Compression: zstd
+26/04/04 18:08:38 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
+  │  Action: INIT | Time: 26.35s                                                
+  │  Batch total: 27.15s | Throughput: 7,424 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 2/7: file_date=2026-03-02
+  │  Rows: 201,600 | Read: 0.32s
+  │  Merging day i against accumulated days 0..i-1...
+         ✓ MERGE Results (Day i vs Days 0..i-1):                                
+           - Source rows (day i): 201,600
+           - Target rows before: 201,600
+           - Matched/Duplicates: 172,800 (85.7%)
+           - Inserted/New: 28,800 (14.3%)
+           - Target rows after: 230,400
+  │  MERGE Time: 8.20s
+  │  Batch total: 8.52s | Throughput: 23,674 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 3/7: file_date=2026-03-03
+  │  Rows: 201,600 | Read: 0.25s
+  │  Merging day i against accumulated days 0..i-1...
+         ✓ MERGE Results (Day i vs Days 0..i-1):                                
+           - Source rows (day i): 201,600
+           - Target rows before: 230,400
+           - Matched/Duplicates: 172,800 (85.7%)
+           - Inserted/New: 28,800 (14.3%)
+           - Target rows after: 259,200
+  │  MERGE Time: 5.76s
+  │  Batch total: 6.01s | Throughput: 33,563 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 4/7: file_date=2026-03-04
+  │  Rows: 201,600 | Read: 0.20s
+  │  Merging day i against accumulated days 0..i-1...
+         ✓ MERGE Results (Day i vs Days 0..i-1):                                
+           - Source rows (day i): 201,600
+           - Target rows before: 259,200
+           - Matched/Duplicates: 172,800 (85.7%)
+           - Inserted/New: 28,800 (14.3%)
+           - Target rows after: 288,000
+  │  MERGE Time: 5.94s
+  │  Batch total: 6.13s | Throughput: 32,867 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 5/7: file_date=2026-03-05
+  │  Rows: 201,600 | Read: 0.19s
+  │  Merging day i against accumulated days 0..i-1...
+         ✓ MERGE Results (Day i vs Days 0..i-1):                                
+           - Source rows (day i): 201,600
+           - Target rows before: 288,000
+           - Matched/Duplicates: 172,800 (85.7%)
+           - Inserted/New: 28,800 (14.3%)
+           - Target rows after: 316,800
+  │  MERGE Time: 5.28s
+  │  Batch total: 5.48s | Throughput: 36,805 rows/s
+  │  Running OPTIMIZE (every 5 batches)...
+  │  OPTIMIZE completed in 57.56s                                               
+  └─ ✓ Batch complete
+
+  ┌─ Batch 6/7: file_date=2026-03-06
+  │  Rows: 201,600 | Read: 0.19s
+  │  Merging day i against accumulated days 0..i-1...
+         ✓ MERGE Results (Day i vs Days 0..i-1):                                
+           - Source rows (day i): 201,600
+           - Target rows before: 316,800
+           - Matched/Duplicates: 172,800 (85.7%)
+           - Inserted/New: 28,800 (14.3%)
+           - Target rows after: 345,600
+  │  MERGE Time: 5.64s
+  │  Batch total: 5.83s | Throughput: 34,551 rows/s
+  └─ ✓ Batch complete
+
+  ┌─ Batch 7/7: file_date=2026-03-07
+  │  Rows: 201,600 | Read: 0.15s
+  │  Merging day i against accumulated days 0..i-1...
+         ✓ MERGE Results (Day i vs Days 0..i-1):                                
+           - Source rows (day i): 201,600
+           - Target rows before: 345,600
+           - Matched/Duplicates: 172,800 (85.7%)
+           - Inserted/New: 28,800 (14.3%)
+           - Target rows after: 374,400
+  │  MERGE Time: 4.82s
+  │  Batch total: 4.98s | Throughput: 40,517 rows/s
+  └─ ✓ Batch complete
+
+  Running final OPTIMIZE...
+  ✓ Final OPTIMIZE completed in 53.90s                                          
+
+--------------------------------------------------------------------------------
+[MAINTENANCE] Running VACUUM with 14-day retention...
+--------------------------------------------------------------------------------
+         Running VACUUM with 336h (14d) retention...
+Deleted 0 files and directories in a total of 1877 directories.                 
+         ✓ VACUUM completed in 15.119s
+
+--------------------------------------------------------------------------------
+[FINAL] Verifying deduplication results...
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+[VALIDATION] Rolling Window Deduplication Math Check
+--------------------------------------------------------------------------------
+  Expected pattern (7-day rolling window):
+  - Day 1: 2,016 rows/device (all unique)
+  - Days 2+: 2,016 rows/device (1728 duplicates + 288 new)
+
+  Expected vs Actual:
+  - Expected unique/device: 3,744
+  - Expected final count:   374,400
+  - Actual final count:     374,400
+  - Count match: ✓ YES
+
+  - Expected dedup ratio:   73.47%
+  - Actual dedup ratio:     73.47%
+  - Ratio match: ✓ YES
+
+  Overall validation: ✓ PASS
+
+  Delta Table Details:
+  - Location: /refined
+  - Format: delta
+  - Partitions: ['report_type', 'partition_date', 'platform_customer_id', 'application_customer_id', 'device_id']
+  - Num Files: 1300
+  - Size (bytes): 5992340
+
+  Recent Operations:
+  - 2026-04-04 18:11:22.748000: VACUUM END
+  - 2026-04-04 18:11:21.088000: VACUUM START
+  - 2026-04-04 18:11:07.771000: OPTIMIZE
+  - 2026-04-04 18:10:14.041000: MERGE
+  - 2026-04-04 18:10:09.208000: MERGE
+
+================================================================================
+  PIPELINE EXECUTION SUMMARY
+================================================================================
+
+  Mode: BENCHMARK
+
+  Rolling Window Deduplication (7-Day Pattern):
+  ╔═══════════════════════════════════════════════════════════════╗
+  ║  BATCH-BY-BATCH MERGE BETWEEN CONSECUTIVE DAYS               ║
+  ╠═══════════════════════════════════════════════════════════════╣
+  ║  Day 1:  2016 rows/device  → All UNIQUE (baseline)           ║
+  ║  Day 2:  2016 rows/device  → 1728 MATCH + 288 INSERT         ║
+  ║  Day 3:  2016 rows/device  → 1728 MATCH + 288 INSERT         ║
+  ║  ...     ...                ...                              ║
+  ║  DayN:   2016 rows/device  → 1728 MATCH + 288 INSERT         ║
+  ╠═══════════════════════════════════════════════════════════════╣
+  ║  Cumulative Deduplication Across All Batches:                ║
+  ║  - Total raw input:           1,411,200 rows
+  ║  - Final deduplicated:          374,400 rows
+  ║  - Total duplicates:          1,036,800 rows
+  ║  - Dedup ratio:                    73.5%
+  ╚═══════════════════════════════════════════════════════════════╝
+
+  Input Statistics:
+  - Total input rows:      1,411,200
+
+  Deduplication Results:
+  - Final table rows:      374,400
+  - Duplicates dropped:    1,036,800
+  - Dedup ratio:           73.5%
+  - Partition count:       52
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+
+  Overall Performance:
+  - Total batches processed: 7
+  - Total rows processed:    1,411,200
+  - Total elapsed time:      209.61s
+  - Throughput:              6,732.5 rows/sec
+
+  Batch Latency (seconds):
+  - Min:  4.976s
+  - Max:  27.155s
+  - Mean: 9.157s
+  - P50:  6.007s
+  - P95:  21.563s
+  - P99:  26.036s
+
+  MERGE Operation Latency (seconds):
+  - Min:  4.824s
+  - Max:  26.347s
+  - Mean: 8.856s
+  - P50:  5.758s
+  - P95:  20.902s
+  - P99:  25.258s
+
+  Read Latency (seconds):
+  - Min:  0.151s
+  - Max:  0.807s
+  - Mean: 0.301s
+
+  Architecture Verification:
+  ✓ Triple-Hash Key: device_id + metric_time + application_customer_id
+  ✓ 5-Level Partitioning: report_type/partition_date/platform_customer_id/application_customer_id/device_id
+  ✓ Storage Format: Parquet with ZSTD compression
+  ✓ Z-ORDER Clustering: metric_time
+  ✓ VACUUM: 14-day retention
+
+================================================================================
+  ATLAS REFINED LAYER PIPELINE COMPLETE
+================================================================================
+
+ 
+
+
+
+
+
+
+
+
+

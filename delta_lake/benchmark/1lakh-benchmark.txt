@@ -1,0 +1,773 @@
+Microsoft Windows [Version 10.0.26200.8039]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\manth\Documents\GitHub\ATLAS>      - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
+
+C:\Users\manth\Documents\GitHub\ATLAS>      - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
+
+C:\Users\manth\Documents\GitHub\ATLAS>docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=100000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-08-01 -e OPTIMIZE_EVERY=1 -e COMPRESSION_CODEC=zstd -e RUN_VACUUM=n atlas-lakehouse
+time="2026-04-04T22:31:21+05:30" level=warning msg="Found orphan containers ([atlas-atlas-lakehouse-run-7079cfd3f279]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Lakehouse - Delta Lake Deduplication Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  RUN_GENERATOR=y
+  GENERATOR_MODE=benchmark
+  DEVICE_COUNT=100000
+  BATCH_SIZE=10000
+  NUM_DAYS=1
+  START_DATE=2026-08-01
+  RUN_PIPELINE=y
+  PIPELINE_MODE=benchmark
+  OPTIMIZE_EVERY=1
+  COMPRESSION_CODEC=zstd
+  RUN_VACUUM=n
+  VACUUM_RETENTION_DAYS=14
+  KEEP_ALIVE=y
+
+[1/3] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+
+================================================================================
+  ATLAS DATA GENERATOR
+================================================================================
+
+  Mode: BENCHMARK
+  Compression: ZSTD
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/04/04 17:01:25 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+================================================================================
+ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+================================================================================
+
+Output path:              /raw/benchmark_data
+Total devices:            100,000
+Device batch size:        10,000
+Number of daily files:    1
+Rows per device per file: 2,016 (7 days × 288)
+
+Real-World Simulation:
+- Each file contains 7-day rolling window
+- File for Day N: metric_time spans (Day N-6) to Day N
+- New rows per file: 288/device (1 day)
+- Duplicate rows per file: 1,728/device (6 days)
+
+Expected Results After Deduplication:
+- Total raw input rows:   201,600,000
+- Expected unique rows:   201,600,000
+- Expected duplicates:    0
+- Expected dedup ratio:   0.0%
+
+File date range: 2026-08-01 → 2026-08-01
+
+================================================================================
+DAILY FILE 1/1: file_date = 2026-08-01
+  → metric_time window: 2026-07-26 to 2026-08-01
+================================================================================
+
+  Batch 1/10: devices 1..10,000
+  Rows written: 20,160,000 | Time: 59.99s | Throughput: 336,047 rows/s
+
+  Batch 2/10: devices 10,001..20,000
+                                                                              Rows written: 20,160,000 | Time: 41.61s | Throughput: 484,450 rows/s
+
+  Batch 3/10: devices 20,001..30,000
+[Stage 12:>                                                       (0 + 12) /[Stage 12:==============>                                          (3 + 9) /[Stage 12:===================>                                     (4 + 8) /[Stage 14:===========================================>              (3 + 1)                                                                      Rows written: 20,160,000 | Time: 41.24s | Throughput: 488,817 rows/s
+
+  Batch 4/10: devices 30,001..40,000
+[Stage 17:>                                                       (0 + 12) /[Stage 17:====>                                                   (1 + 11) /[Stage 19:===========================================>              (3 + 1)                                                                               Rows written: 20,160,000 | Time: 38.99s | Throughput: 517,060 rows/s
+
+  Batch 5/10: devices 40,001..50,000
+[Stage 22:>                                                       (0 + 12) /[Stage 22:=========>                                              (2 + 10) /[Stage 24:===========================================>              (3 + 1)                                                                               Rows written: 20,160,000 | Time: 38.81s | Throughput: 519,413 rows/s
+
+  Batch 6/10: devices 50,001..60,000
+[Stage 27:>                                                       (0 + 12) /[Stage 29:===========================================>              (3 + 1)                                                                          Rows written: 20,160,000 | Time: 38.23s | Throughput: 527,322 rows/s
+
+  Batch 7/10: devices 60,001..70,000
+[Stage 32:>                                                       (0 + 12) /[Stage 32:====>                                                   (1 + 11) /[Stage 34:===========================================>              (3 + 1)                                                                               Rows written: 20,160,000 | Time: 37.90s | Throughput: 531,896 rows/s
+
+  Batch 8/10: devices 70,001..80,000
+[Stage 37:>                                                       (0 + 12) /[Stage 37:=======================>                                 (5 + 7) /[Stage 39:===========================================>              (3 + 1)                                                                               Rows written: 20,160,000 | Time: 38.04s | Throughput: 529,995 rows/s
+
+  Batch 9/10: devices 80,001..90,000
+[Stage 42:>                                                       (0 + 12) /[Stage 42:=======================>                                 (5 + 7) /[Stage 44:===========================================>              (3 + 1)                                                                               Rows written: 20,160,000 | Time: 39.39s | Throughput: 511,769 rows/s
+
+  Batch 10/10: devices 90,001..100,000
+[Stage 47:>                                                       (0 + 12) /[Stage 47:=======================>                                 (5 + 7) /[Stage 49:===========================================>              (3 + 1)                                                                               Rows written: 20,160,000 | Time: 37.56s | Throughput: 536,787 rows/s
+
+================================================================================
+Benchmark Generation Complete
+================================================================================
+Output path:            /raw/benchmark_data
+Total raw rows:         201,600,000
+Expected unique after dedup: 201,600,000
+Expected dedup ratio:   0.0%
+Total elapsed:          414.97s
+================================================================================
+
+[2/3] Running deduplication pipeline (mode=benchmark)...
+
+================================================================================
+  ATLAS - REFINED LAYER DELTA LAKE PIPELINE
+  High-Performance Deduplication for 400K+ Device Scale
+================================================================================
+
+  Mode: BENCHMARK
+  Architecture:
+  - Triple-Hash Key: (device_id, metric_time, application_customer_id)
+  - 5-Level Partitioning: report_type/date/pcid/acid/device_id
+  - Storage: Parquet with ZSTD compression
+  - Optimization: Z-ORDER by metric_time for query locality
+  - Batch Processing: OPTIMIZE every 1 batches
+  - Fault Tolerance: Checkpointing enabled
+
+  Horizontal Scaling:
+  - Dynamic Allocation: False
+  - Executors: 2
+  - Executor Cores: 2
+  - Executor Memory: 2g
+
+--------------------------------------------------------------------------------
+[STEP 1] Initializing Spark session with Delta Lake...
+--------------------------------------------------------------------------------
+:: loading settings :: url = jar:file:/opt/spark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-7cd2dac7-a3ad-43ed-b7ed-214c98df71f0;1.0
+        confs: [default]
+        found io.delta#delta-spark_2.12;3.1.0 in central
+        found io.delta#delta-storage;3.1.0 in central
+        found org.antlr#antlr4-runtime;4.9.3 in central
+downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (6976ms)
+downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (187ms)
+downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
+        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (515ms)
+:: resolution report :: resolve 5176ms :: artifacts dl 7684ms
+        :: modules in use:
+        io.delta#delta-spark_2.12;3.1.0 from central in [default]
+        io.delta#delta-storage;3.1.0 from central in [default]
+        org.antlr#antlr4-runtime;4.9.3 from central in [default]
+        ---------------------------------------------------------------------
+        |                  |            modules            ||   artifacts   |
+        |       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+        ---------------------------------------------------------------------
+        |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
+        ---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-7cd2dac7-a3ad-43ed-b7ed-214c98df71f0
+        confs: [default]
+        3 artifacts copied, 0 already retrieved (5727kB/23ms)
+26/04/04 17:08:39 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+         ✓ SparkSession created with Delta Lake 3.1.0
+         ✓ Compression: zstd
+         ✓ Parquet vectorized reader enabled
+         ✓ Adaptive Query Execution enabled
+
+--------------------------------------------------------------------------------
+[STEP 2] Discovering file_date batches in benchmark data...
+--------------------------------------------------------------------------------
+         ℹ file_date = date batch was received (each contains 7-day rolling window)
+[Stage 0:>                                                          (0 + 1)                                                                             [Stage 1:=========>                                               (2 + 10) / ✓ Found 1 daily file batches
+         ✓ File date range: 2026-08-01 → 2026-08-01
+         ✓ File batches to process: 1
+         ℹ Fresh benchmark run detected (resume=False): clearing existing output at /refined
+
+--------------------------------------------------------------------------------
+[STEP 3] Processing file batches with incremental MERGE...
+--------------------------------------------------------------------------------
+         ℹ Each batch = 2016 rows/device (7-day window), only 288 new/device
+
+  ┌─ Batch 1/1: file_date=2026-08-01
+  │  Rows: 201,600,000 | Read: 0.64s
+         Partition structure: /report_type/partition_date/platform_customer_id/application_customer_id/device_id/
+         Compression: zstd
+26/04/04 17:50:00 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
+Exception in thread "refresh progress" java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:50:45 WARN BlockManager: Block rdd_51_8 could not be removed as it was not found on disk or in memory
+26/04/04 17:50:45 WARN BlockManager: Block rdd_51_5 could not be removed as it was not found on disk or in memory
+26/04/04 17:50:45 WARN BlockManager: Block rdd_51_4 could not be removed as it was not found on disk or in memory
+26/04/04 17:50:48 ERROR Executor: Exception in task 4.0 in stage 19.0 (TID 2070)
+java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:50:48 ERROR Executor: Exception in task 8.0 in stage 19.0 (TID 2074)
+java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+26/04/04 17:50:48 ERROR Executor: Exception in task 5.0 in stage 19.0 (TID 2071)
+java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.util.LinkedList.linkLast(Unknown Source)
+        at java.base/java.util.LinkedList.add(Unknown Source)
+        at org.apache.spark.sql.execution.BufferedRowIterator.append(BufferedRowIterator.java:73)
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage2.processNext(Unknown Source)
+        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:43)
+        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:43)
+        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:460)
+        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:460)
+        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:460)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+26/04/04 17:50:49 ERROR SparkUncaughtExceptionHandler: Uncaught exception in thread Thread[Executor task launch worker for task 8.0 in stage 19.0 (TID 2074),5,main]
+java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+26/04/04 17:50:49 ERROR SparkUncaughtExceptionHandler: Uncaught exception in thread Thread[Executor task launch worker for task 5.0 in stage 19.0 (TID 2071),5,main]
+java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.util.LinkedList.linkLast(Unknown Source)
+        at java.base/java.util.LinkedList.add(Unknown Source)
+        at org.apache.spark.sql.execution.BufferedRowIterator.append(BufferedRowIterator.java:73)
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$GeneratedIteratorForCodegenStage2.processNext(Unknown Source)
+        at org.apache.spark.sql.execution.BufferedRowIterator.hasNext(BufferedRowIterator.java:43)
+        at org.apache.spark.sql.execution.WholeStageCodegenEvaluatorFactory$WholeStageCodegenPartitionEvaluator$$anon$1.hasNext(WholeStageCodegenEvaluatorFactory.scala:43)
+        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:460)
+        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:460)
+        at scala.collection.Iterator$$anon$10.hasNext(Iterator.scala:460)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+26/04/04 17:50:50 ERROR SparkUncaughtExceptionHandler: Uncaught exception in thread Thread[Executor task launch worker for task 4.0 in stage 19.0 (TID 2070),5,main]
+java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:51:09 WARN BlockManager: Block rdd_51_1 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:09 ERROR Executor: Exception in task 1.0 in stage 19.0 (TID 2067)
+java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:51:09 ERROR SparkUncaughtExceptionHandler: [Container in shutdown] Uncaught exception in thread Thread[Executor task launch worker for task 1.0in stage 19.0 (TID 2067),5,main]
+java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:51:09 ERROR Inbox: Ignoring error
+java.util.concurrent.RejectedExecutionException: Task org.apache.spark.executor.Executor$TaskRunner@5873eb37 rejected from java.util.concurrent.ThreadPoolExecutor@66294838[Shutting down, pool size = 9, active threads = 9, queued tasks = 0, completed tasks = 2069]
+        at java.base/java.util.concurrent.ThreadPoolExecutor$AbortPolicy.rejectedExecution(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.reject(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.execute(Unknown Source)
+        at org.apache.spark.executor.Executor.launchTask(Executor.scala:363)
+        at org.apache.spark.scheduler.local.LocalEndpoint.$anonfun$reviveOffers$1(LocalSchedulerBackend.scala:93)
+        at org.apache.spark.scheduler.local.LocalEndpoint.$anonfun$reviveOffers$1$adapted(LocalSchedulerBackend.scala:91)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at scala.collection.IterableLike.foreach(IterableLike.scala:74)
+        at scala.collection.IterableLike.foreach$(IterableLike.scala:73)
+        at scala.collection.AbstractIterable.foreach(Iterable.scala:56)
+        at org.apache.spark.scheduler.local.LocalEndpoint.reviveOffers(LocalSchedulerBackend.scala:91)
+        at org.apache.spark.scheduler.local.LocalEndpoint$$anonfun$receive$1.applyOrElse(LocalSchedulerBackend.scala:74)
+        at org.apache.spark.rpc.netty.Inbox.$anonfun$process$1(Inbox.scala:115)
+        at org.apache.spark.rpc.netty.Inbox.safelyCall(Inbox.scala:213)
+        at org.apache.spark.rpc.netty.Inbox.process(Inbox.scala:100)
+        at org.apache.spark.rpc.netty.MessageLoop.org$apache$spark$rpc$netty$MessageLoop$$receiveLoop(MessageLoop.scala:75)
+        at org.apache.spark.rpc.netty.MessageLoop$$anon$1.run(MessageLoop.scala:41)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/04/04 17:51:10 WARN TaskSetManager: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+26/04/04 17:51:10 ERROR TaskSetManager: Task 8 in stage 19.0 failed 1 times; aborting job
+26/04/04 17:51:29 WARN BlockManager: Block rdd_51_2 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:29 ERROR Executor: Exception in task 2.0 in stage 19.0 (TID 2068)
+java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:51:29 ERROR SparkUncaughtExceptionHandler: [Container in shutdown] Uncaught exception in thread Thread[Executor task launch worker for task 2.0in stage 19.0 (TID 2068),5,main]
+java.lang.OutOfMemoryError: Java heap space
+26/04/04 17:51:29 WARN ShutdownHookManager: ShutdownHook '' timeout, java.util.concurrent.TimeoutException
+java.util.concurrent.TimeoutException
+        at java.base/java.util.concurrent.FutureTask.get(Unknown Source)
+        at org.apache.hadoop.util.ShutdownHookManager.executeShutdown(ShutdownHookManager.java:124)
+        at org.apache.hadoop.util.ShutdownHookManager$1.run(ShutdownHookManager.java:95)
+26/04/04 17:51:29 WARN TaskSetManager: Lost task 4.0 in stage 19.0 (TID 2070) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_3 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_11 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_6 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_9 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_7 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_3 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_6 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_7 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_0 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Putting block rdd_51_10 failed due to exception org.apache.spark.TaskKilledException.
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_10 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_9 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_0 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN BlockManager: Block rdd_51_11 could not be removed as it was not found on disk or in memory
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 11.0 in stage 19.0 (TID 2077) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due tostage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 10.0 in stage 19.0 (TID 2076) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due tostage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 7.0 in stage 19.0 (TID 2073) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due to stage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 6.0 in stage 19.0 (TID 2072) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due to stage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 0.0 in stage 19.0 (TID 2066) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due to stage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 3.0 in stage 19.0 (TID 2069) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due to stage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+26/04/04 17:51:30 WARN TaskSetManager: Lost task 9.0 in stage 19.0 (TID 2075) (lakehouse executor driver): TaskKilled (Stage cancelled: Job aborted due to stage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:)
+Traceback (most recent call last):
+  File "delta_merge_pipeline.py", line 1143, in <module>
+    print(f"  - Executor Cores: {args.executor_cores}")
+  File "delta_merge_pipeline.py", line 1081, in main
+    parser.add_argument('--vacuum', action='store_true',
+  File "delta_merge_pipeline.py", line 775, in run_benchmark_pipeline
+
+  File "delta_merge_pipeline.py", line 355, in initialize_delta_table
+    df.write
+  File "/usr/local/lib/python3.8/dist-packages/pyspark/sql/readwriter.py", line 1463, in save
+    self._jwrite.save(path)
+  File "/usr/local/lib/python3.8/dist-packages/py4j/java_gateway.py", line 1362, in __call__
+    return_value = get_return_value(
+  File "/usr/local/lib/python3.8/dist-packages/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+  File "/usr/local/lib/python3.8/dist-packages/py4j/protocol.py", line 327, in get_return_value
+    raise Py4JJavaError(
+py4j.protocol.Py4JJavaError: An error occurred while calling o124.save.
+: org.apache.spark.SparkException: Job aborted due to stage failure: Task 8 in stage 19.0 failed 1 times, most recent failure: Lost task 8.0 in stage 19.0 (TID 2074) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+Driver stacktrace:
+        at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2844)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2780)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2779)
+        at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+        at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+        at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+        at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2779)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1(DAGScheduler.scala:1242)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1$adapted(DAGScheduler.scala:1242)
+        at scala.Option.foreach(Option.scala:407)
+        at org.apache.spark.scheduler.DAGScheduler.handleTaskSetFailed(DAGScheduler.scala:1242)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3048)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:2982)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:2971)
+        at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+Caused by: java.lang.OutOfMemoryError: Java heap space
+        at org.apache.spark.sql.catalyst.expressions.GeneratedClass$SpecificSafeProjection.apply(Unknown Source)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator$$anon$10.next(Iterator.scala:461)
+        at scala.collection.Iterator.foreach(Iterator.scala:943)
+        at scala.collection.Iterator.foreach$(Iterator.scala:943)
+        at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+        at org.apache.spark.sql.delta.actions.InMemoryLogReplay.append(InMemoryLogReplay.scala:56)
+        at org.apache.spark.sql.delta.Snapshot.$anonfun$stateReconstruction$2(Snapshot.scala:288)
+        at org.apache.spark.sql.delta.Snapshot$$Lambda$6974/0x0000000841c71040.apply(Unknown Source)
+        at org.apache.spark.sql.execution.MapPartitionsExec.$anonfun$doExecute$3(objects.scala:198)
+        at org.apache.spark.sql.execution.MapPartitionsExec$$Lambda$6975/0x0000000841c42840.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3013/0x0000000841399440.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.sql.execution.SQLExecutionRDD.compute(SQLExecutionRDD.scala:55)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.$anonfun$getOrCompute$1(RDD.scala:378)
+        at org.apache.spark.rdd.RDD$$Lambda$6987/0x0000000841b0b040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$getOrElseUpdate$1(BlockManager.scala:1372)
+        at org.apache.spark.storage.BlockManager$$Lambda$6989/0x0000000841b0a040.apply(Unknown Source)
+        at org.apache.spark.storage.BlockManager.$anonfun$doPutIterator$1(BlockManager.scala:1618)
+        at org.apache.spark.storage.BlockManager$$Lambda$1627/0x0000000840c63040.apply(Unknown Source)
+
+
+
+C:\Users\manth\Documents\GitHub\ATLAS>^A^Q

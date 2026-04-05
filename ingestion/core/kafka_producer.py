@@ -39,6 +39,8 @@ async def init_kafka():
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
                 compression_type="lz4",
                 max_request_size=2097152,  # 2MB limit for large reading batches
+                request_timeout_ms=120000, # 2 minutes timeout for massive bursts
+                connections_max_idle_ms=540000,
                 value_serializer=lambda v: v if isinstance(v, bytes) else str(v).encode('utf-8')
             )
             await _producer.start()
@@ -101,7 +103,8 @@ async def push_history_batch_to_kafka(acid: str, history_data: dict, devices_reg
         return
 
     start_time = datetime.now()
-    tasks = []
+    total_devices = len(history_data)
+    processed = 0
     
     for device_id, raw_readings in history_data.items():
         # Metadata lookup from in-memory registry
@@ -126,18 +129,26 @@ async def push_history_batch_to_kafka(acid: str, history_data: dict, devices_reg
             f'"readings":'.encode('utf-8') + serialized_readings + b"}"
         )
         
-        # Push to Kafka buffer (non-blocking)
-        tasks.append(
-            _producer.send(
-                KAFKA_TOPIC_READINGS, 
-                value=envelope, 
-                key=device_id.encode('utf-8')
-            )
-        )
-
-    # Wait for all 1,660 messages to hit the Kafka buffer
-    if tasks:
-        await asyncio.gather(*tasks)
+        # Push to Kafka with explicit try-except so timeouts don't crash the whole job
+        for attempt in range(3):
+            try:
+                await _producer.send_and_wait(
+                    KAFKA_TOPIC_READINGS, 
+                    value=envelope, 
+                    key=device_id.encode('utf-8')
+                )
+                break  # Success
+            except Exception as e:
+                if attempt == 2:
+                    log.error(f"[kafka] Failed to push {device_id} after retries: {e}")
+                else:
+                    log.warning(f"[kafka] Timeout for {device_id}, retrying ({attempt+1}/3)...")
+                    import asyncio
+                    await asyncio.sleep(2)
         
+        processed += 1
+        if processed % 1000 == 0:
+            log.info(f"[kafka] Export progress: {processed}/{total_devices} devices pushed")
+
     duration = (datetime.now() - start_time).total_seconds()
-    log.info(f"[kafka] Batch Export Complete: {len(tasks)} devices in {duration:.2f}s")
+    log.info(f"[kafka] Batch Export Complete: {processed} devices in {duration:.2f}s")

@@ -86,6 +86,17 @@ TTL metric_time + INTERVAL 7 DAY DELETE
 SETTINGS index_granularity = 8192;
 
 -- -----------------------------------------------------------------------------
+-- Buffer Table (High-throughput intermediary)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS atlas.telemetry_refined_buffer AS atlas.telemetry_refined
+ENGINE = Buffer(
+    atlas, telemetry_refined, 16,
+    10, 100,            -- min / max time (seconds) to flush
+    10000, 1000000,     -- min / max rows to flush
+    10000000, 100000000 -- min / max bytes to flush
+);
+
+-- -----------------------------------------------------------------------------
 -- Hourly Aggregation Materialized View
 -- -----------------------------------------------------------------------------
 -- MergeTree (not SummingMergeTree) because SummingMergeTree sums ALL numeric

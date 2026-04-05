@@ -1,0 +1,65 @@
+2 hours runtime
+atlas-processor  | 26/04/02 14:43:11 WARN ResolveWriteToStream: spark.sql.adaptive.enabled is not supported in streaming DataFrames/Datasets and will be disabled.
+atlas-processor  | 🔥 Processing Day: 2026-03-30
+atlas-processor  | ✅ Batch 0 done
+atlas-processor  | 🔥 Processing Day: 2026-03-28
+atlas-processor  | ✅ Stream Batch 0 | Rows 0
+atlas-processor  | ✅ Batch 1 done
+atlas-processor  | 🔥 Processing Day: 2026-03-31
+atlas-processor  | ✅ Batch 2 done
+atlas-processor  | 🔥 Processing Day: 2026-04-01
+atlas-processor  | ✅ Batch 3 done
+atlas-processor  | 🔥 Processing Day: 2026-04-02
+atlas-processor  | ✅ Batch 4 done
+atlas-processor  | 🔥 Processing Day: 2026-03-29
+atlas-processor  | ✅ Batch 5 done                                                                                                                               
+atlas-processor  | 🔥 Processing Day: 2026-03-27
+atlas-processor  | ✅ Batch 6 done                                                                                                                               
+atlas-processor  | ✅ Stream Batch 1 | Rows 1000
+atlas-processor  | ✅ Stream Batch 2 | Rows 0
+atlas-processor  | ✅ Stream Batch 3 | Rows 2000
+atlas-processor  | 🔥 Processing Day: 2026-04-07
+atlas-processor  | ✅ Batch 7 done
+atlas-processor  | 🔥 Processing Day: 2026-04-05
+atlas-processor  | ✅ Batch 8 done                                                                                                                               
+atlas-processor  | 🔥 Processing Day: 2026-04-04
+atlas-processor  | ✅ Batch 9 done                                                                                                                               
+atlas-processor  | 🔥 Processing Day: 2026-04-03
+                                                    
+
+ ==================================================
+📊 ATLAS BENCHMARK REPORT
+==================================================
+
+🕒 Generated at: 2026-04-02 16:30:47.210049
+
+⚙️ CONFIGURATION:
+- Servers: 1000
+- Data ingestion: every 5 minutes
+- Stream aggregation: 1 hour
+- Batch aggregation: 24 hours
+
+🔵 STREAM PERFORMANCE
+- Total Rows Processed : 3000
+- Total Time           : 19.7 sec
+- Throughput           : 152.31 rows/sec
+- Avg Latency          : 3.939 sec
+- Min Latency          : 1.588 sec
+- Max Latency          : 11.946 sec
+
+🟡 BATCH PERFORMANCE
+- Total Rows Processed : 200550
+- Total Time           : 25.3 sec
+- Throughput           : 7927.3 rows/sec
+- Avg Latency          : 2.108 sec
+- Min Latency          : 0.877 sec
+- Max Latency          : 7.383 sec
+
+🧠 OBSERVATIONS:
+- Streaming processes only fresh data for efficiency
+- Batch computes stable daily aggregates
+- Partitioned storage improves scalability
+- System mimics real production workloads
+
+💡 CONCLUSION:
+The pipeline is scalable, efficient, and production-aligned.

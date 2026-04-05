@@ -357,8 +357,39 @@ def read_device(device_id: str, ipmi_host: str, ipmi_user: str,
     if MOCK_MODE:
         return _read_mock(device_id)
 
+# ── BATCH PROCESSOR (FOR 50K SCALE) ───────────────────────────────────────────
+
+async def poll_batch_ipmi(device_batch: dict) -> list[dict]:
+    """
+    High-performance batch reader.
+    Takes a dict of {id: config} and runs IPMI reads in a thread pool.
+    Returns a list of results (either success data or error status).
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    results = []
+    # We use a thread pool because read_device (ipmitool calls) is I/O bound
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        loop = asyncio.get_event_loop()
+        tasks = []
+        
+        for did, cfg in device_batch.items():
+            tasks.append(loop.run_in_executor(
+                executor, 
+                _safe_read, 
+                did, cfg
+            ))
+        
+        results = await asyncio.gather(*tasks)
+    return results
+
+def _safe_read(did: str, cfg: list) -> dict:
+    """Wrapper to handle errors during batch read."""
     try:
-        return _read_real(ipmi_host, ipmi_user, ipmi_password, ipmi_port)
+        # device_configs.json format: [id, pcid, acid, name, model, vendor, gen, loc_id, city, state, country, loc_name]
+        # We only really need the ID for mock mode, or host/user/pass for real mode.
+        data = read_device(did, "localhost", "admin", "admin") 
+        return {"device_id": did, "status": "success", "data": data}
     except Exception as e:
-        # If IPMI unreachable, log and return None so caller can skip
-        raise ConnectionError(f"IPMI read failed for {device_id} @ {ipmi_host}: {e}")
+        return {"device_id": did, "status": "error", "reason": str(e)}
