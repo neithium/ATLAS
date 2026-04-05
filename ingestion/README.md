@@ -62,6 +62,18 @@ Estimate row counts across the telemetry hypertable instantly:
 Monitor the background demand-based streaming worker in real-time:
 `docker logs -f atlas-ingestion | grep "export] Stream Complete"`
 
-## 🪐 Scaling Strategy
+## 🪐 Scaling Strategy & Teammate Setup
+
+### 1. Scaling from Zero (Teammate Onboarding)
+If you are starting on a fresh machine without the 43MB `device_configs.json`, follow these 2 steps:
+
+*   **Step A: Generate Identity (Registry)**
+    Create the stratified, multi-region 80k device registry:
+    `python3 v2/scripts/generate_registry.py --scale 80000`
+*   **Step B: Generate Activity (Backfill)**
+    Warp the 161M-record historical baseline into the Hot Path:
+    `docker exec atlas-ingestion python3 v2/scripts/prefill_tsdb.py --days 7 --workers 8 --scale 80000`
+
+### 2. Throughput & Baseline
 *   **Parallelism**: Parallelized via `ThreadPoolExecutor` (50 workers) for 80k-device cycles in **< 3 seconds**.
-*   **Throughput**: Engineered to handle **161 Million records per week** on a single-container cluster.
+*   **Capacity**: Engineered to handle **161 Million records per week** on a single production container.

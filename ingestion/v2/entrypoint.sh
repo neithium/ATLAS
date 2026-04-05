@@ -3,9 +3,17 @@ set -e
 
 echo "=== PowerPulse V2 All-in-One Ingestion Starting ==="
 
-# ── 1. Setup Data Directories ──────────────────────────────────────────
+# ── 1. Identity & Data Directory Setup ──────────────────────────────────
+# Ensure postgres user exists (Fixes "chown: invalid user" on some systems)
+if ! id -u postgres >/dev/null 2>&1; then
+    echo "Creating postgres user/group for data security..."
+    groupadd -r postgres && useradd -r -g postgres -s /bin/false postgres
+fi
+
 DATA_DIR="/data"
 mkdir -p $DATA_DIR/redis $DATA_DIR/timescale $DATA_DIR/minio $DATA_DIR/redpanda $DATA_DIR/logs
+
+# Fix permissions for the Silo 1 (Hot Path) storage
 chown -R postgres:postgres $DATA_DIR/timescale
 
 # ── 2. Start Redis ────────────────────────────────────────────────────

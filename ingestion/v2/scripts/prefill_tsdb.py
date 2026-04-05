@@ -1,11 +1,9 @@
 """
-prefill_tsdb.py — Production-Scale V2 Prefill (Hot/Cold Optimization)
+prefill_tsdb.py — Production-Scale V3 Prefill (80k Scale Enabled)
 ──────────────────────────────────────────────────────────────────
-Generates n-days of historical telemetry for all 50,000 devices.
+Generates n-days of historical telemetry for 80,000 devices.
 - Hot Path: Bulk load into TimescaleDB via COPY.
 - Cold Path: Daily Mega-Compaction (one Parquet file per day) for MinIO.
-
-Schema: 28-column Fleet Production Schema
 """
 
 import argparse
@@ -17,13 +15,14 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import psycopg2
 import pandas as pd
 from minio import Minio
 
-# Adjust path to find core.config
+# Adjust path for V2/V3 structure
 V2_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(V2_ROOT))
 
@@ -39,14 +38,17 @@ MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "telemetry-raw")
 
-READINGS_PER_HOUR = 12        # 5-minute intervals
-INTERVAL_SEC = 300            # 5 minutes
+READINGS_PER_HOUR = 12        
+INTERVAL_SEC = 300            
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("prefill-v2")
+log = logging.getLogger("prefill-v3")
 
-from core.config import load_device_registry
-DEVICE_REGISTRY = load_device_registry()
+# Load Registry (80k devices)
+import json
+REGISTRY_PATH = os.path.join(os.getcwd(), "device_configs.json")
+with open(REGISTRY_PATH, "r") as f:
+    DEVICES = list(json.load(f).items())
 
 COLUMNS = [
     "metric_time", "device_id", "platform_customer_id", "application_customer_id",
@@ -58,11 +60,9 @@ COLUMNS = [
 ]
 
 def generate_slot_rows(dt: datetime):
-    """Generate one 5-min slot of telemetry for 50k devices."""
-    n = len(DEVICE_REGISTRY)
+    n = len(DEVICES)
     ts_iso = dt.isoformat()
     
-    # Simulation Logic
     cycle_factor = float(np.sin((dt.hour - 8) * np.pi / 12))
     cpu_util = np.clip(40 + (cycle_factor * 30) + np.random.uniform(-10, 10, n), 5, 95).astype(np.int32)
     cpu_watts = (200 + (cpu_util * 2.5) + np.random.uniform(-5, 5, n)).astype(np.int32)
@@ -75,20 +75,20 @@ def generate_slot_rows(dt: datetime):
 
     rows = []
     for i in range(n):
-        dev = DEVICE_REGISTRY[i]
+        dev_id, meta = DEVICES[i]
         rows.append([
-            ts_iso, dev[0], dev[1], dev[2],
+            ts_iso, dev_id, meta["platform_customer_id"], meta["application_customer_id"],
             float(amb_temp[i]), float(avg_watts[i]), int(cpu_freq[i]),
             4200000, 250, int(cpu_util[i]), int(cpu_watts[i]), int(gpu_watts[i]),
             int(min_watts[i]), int(peak_watts[i]),
-            dev[3], dev[4], dev[5], dev[6],
+            meta["server_name"], meta["model"], meta["processor_vendor"], meta["server_generation"],
             "telemetry_live", "power_metrics", "t", "", "production,critical",
-            dev[7], dev[8], dev[9], dev[10], dev[11]
+            meta["location_id"], meta["location_city"], meta["location_state"], 
+            meta["location_country"], meta["location_name"]
         ])
     return rows
 
 def push_to_tsdb(rows):
-    """Hot Path push."""
     conn = psycopg2.connect(host=TSDB_HOST, port=TSDB_PORT, user=TSDB_USER, password=TSDB_PASS, dbname=TSDB_NAME)
     cur = conn.cursor()
     f = io.StringIO()
@@ -101,54 +101,46 @@ def push_to_tsdb(rows):
     cur.close()
     conn.close()
 
-def run_prefill(days: int = 7):
+def process_day(d: int, days_total: int):
     now = datetime.now(timezone.utc)
-    log.info("=" * 70)
-    log.info(f"V2 DUAL PREFILL (HOT/COLD OPTIMIZED) - {days} Days")
-    log.info("=" * 70)
+    day_start = now - timedelta(days=d+1)
+    date_str = day_start.strftime("%Y-%m-%d")
+    log.info(f"📅 [prefill] Day {d+1}/{days_total} Start ({date_str})...")
+    
+    day_rows = []
+    for s in range(READINGS_PER_HOUR * 24):
+        slot_dt = day_start + timedelta(seconds=INTERVAL_SEC * s)
+        slot_rows = generate_slot_rows(slot_dt)
+        push_to_tsdb(slot_rows)
+        day_rows.extend(slot_rows)
+        if s % 12 == 11:
+            log.info(f"  -> {date_str} hour {(s+1)//12}/{24} synced.")
 
+    # Cold Path Compaction
+    if day_rows:
+        df = pd.DataFrame(day_rows, columns=COLUMNS)
+        pq_buf = io.BytesIO()
+        df.to_parquet(pq_buf, engine='pyarrow', index=False)
+        client = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
+        if not client.bucket_exists(MINIO_BUCKET): client.make_bucket(MINIO_BUCKET)
+        obj_name = f"date={date_str}/daily_compacted.parquet"
+        client.put_object(MINIO_BUCKET, obj_name, data=io.BytesIO(pq_buf.getvalue()), length=len(pq_buf.getvalue()), content_type="application/octet-stream")
+        log.info(f"✅ [cold-path] Day {date_str} Archived to MinIO.")
+
+def run_prefill(days: int = 7, workers: int = 4):
+    log.info(f"🚀 V3 HIGH-SCALE PREFILL - {days} Days | {len(DEVICES):,} Devices | {workers} Workers")
     start_time = time.time()
-    for d in range(days):
-        day_start = now - timedelta(days=d+1)
-        date_str = day_start.strftime("%Y-%m-%d")
-        log.info(f"📅 [prefill] Processing Day {d+1}/{days} ({date_str})...")
-        
-        day_rows = []
-        for s in range(READINGS_PER_HOUR * 24):
-            slot_dt = day_start + timedelta(seconds=INTERVAL_SEC * s)
-            slot_rows = generate_slot_rows(slot_dt)
-            
-            # 1. Hot Path: Push to TSDB immediately
-            push_to_tsdb(slot_rows)
-            # 2. Collect for Cold Path Compaction
-            day_rows.extend(slot_rows)
-            
-            if s % 12 == 0:
-                log.info(f"  -> Hour {s//12} completed...")
-
-        # 3. Cold Path: Daily Mega-Compaction Upload
-        if day_rows:
-            log.info(f"❄️ [cold-path] Saving Day {date_str} to MinIO (Compacted)...")
-            df = pd.DataFrame(day_rows, columns=COLUMNS)
-            pq_buf = io.BytesIO()
-            df.to_parquet(pq_buf, engine='pyarrow', index=False)
-            
-            client = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
-            if not client.bucket_exists(MINIO_BUCKET):
-                client.make_bucket(MINIO_BUCKET)
-                
-            obj_name = f"date={date_str}/daily_compacted.parquet"
-            client.put_object(
-                MINIO_BUCKET, obj_name, 
-                data=io.BytesIO(pq_buf.getvalue()), length=len(pq_buf.getvalue()), 
-                content_type="application/octet-stream"
-            )
-            log.info(f"✅ [cold-path] Day {date_str} Archived.")
+    
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for d in range(days):
+            executor.submit(process_day, d, days)
 
     log.info(f"🔥 Prefill Complete in {time.time()-start_time:.1f}s")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=1)
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--scale", type=int, default=80000)
     args = parser.parse_args()
-    run_prefill(days=args.days)
+    run_prefill(days=args.days, workers=args.workers)
