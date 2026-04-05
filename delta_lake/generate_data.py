@@ -25,9 +25,8 @@ Schema (flattened from PowerDetail array):
 - file_date: Date file was received (partition column)
 - MetricValue: The actual metric value
 
-Output Modes:
-- file: Write to Parquet files (original behavior)
-- dataframe: Return DataFrame directly (for batch pipeline integration)
+Output:
+- Writes partitioned Parquet files organized by file_date
 
 Example with 3 daily files:
 - File Day 8:  metric_time spans Day 2-8, file_date=Day 8
@@ -441,76 +440,13 @@ def generate_multi_day_dataframe(
     return combined_df
 
 
-def generate_legacy_demo_data(spark: SparkSession, output_root: str):
-    """Compatibility mode for existing merge demo pipeline input layout."""
-    output_root = output_root.rstrip("/")
-
-    baseline_start = datetime(2026, 2, 26, 0, 0, 0)
-    overlap_start = baseline_start + timedelta(days=1)
-
-    profile_df = build_metric_profile(spark)
-
-    # File 1: 7-day window ending on baseline_start + 6 days
-    df1 = build_daily_file_df(
-        spark=spark,
-        batch_start=100,
-        batch_end=101,
-        file_date=baseline_start + timedelta(days=6),  # Window: Feb 26 - Mar 4
-        profile_df=profile_df,
-    )
-    
-    # File 2: 7-day window shifted by 1 day
-    df2 = build_daily_file_df(
-        spark=spark,
-        batch_start=100,
-        batch_end=101,
-        file_date=baseline_start + timedelta(days=7),  # Window: Feb 27 - Mar 5
-        profile_df=profile_df,
-    )
-
-    df1.drop("file_date").write.mode("overwrite").option("compression", GeneratorConfig.COMPRESSION_CODEC).parquet(f"{output_root}/file1_baseline.parquet")
-    df2.drop("file_date").write.mode("overwrite").option("compression", GeneratorConfig.COMPRESSION_CODEC).parquet(f"{output_root}/file2_overlap.parquet")
-
-    print("\nLegacy demo files generated:")
-    print(f"- {output_root}/file1_baseline.parquet (2016 rows)")
-    print(f"- {output_root}/file2_overlap.parquet (2016 rows, 1728 duplicates expected)")
-    print(f"- Expected dedup ratio: 85.7% (1728/2016)")
-
-
-def generate_legacy_demo_dataframe(spark: SparkSession) -> tuple:
-    """
-    Generate legacy demo data as DataFrames instead of files.
-    
-    Returns:
-        Tuple of (baseline_df, overlap_df) for direct pipeline integration
-    """
-    baseline_start = datetime(2026, 2, 26, 0, 0, 0)
-    profile_df = build_metric_profile(spark)
-
-    df1 = build_daily_file_df(
-        spark=spark,
-        batch_start=100,
-        batch_end=101,
-        file_date=baseline_start + timedelta(days=6),
-        profile_df=profile_df,
-    ).drop("file_date")
-    
-    df2 = build_daily_file_df(
-        spark=spark,
-        batch_start=100,
-        batch_end=101,
-        file_date=baseline_start + timedelta(days=7),
-        profile_df=profile_df,
-    ).drop("file_date")
-
-    return df1, df2
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ATLAS Benchmark Data Generator")
     parser.add_argument("--output", type=str, default="/raw", help="Root output directory")
-    parser.add_argument("--mode", type=str, choices=["benchmark", "legacy", "dataframe"], default="benchmark",
-                        help="Generation mode: benchmark (files), legacy (2-file demo), dataframe (API mode)")
+    parser.add_argument("--mode", type=str, choices=["benchmark"], default="benchmark",
+                        help="Generation mode: benchmark (partitioned data with incremental batches)")
     parser.add_argument("--devices", type=int, default=100000, help="Number of devices")
     parser.add_argument("--batch-size", type=int, default=10000, help="Devices per batch")
     parser.add_argument("--num-days", type=int, default=7, help="Number of daily files to generate")
@@ -534,61 +470,19 @@ def main():
     
     spark = create_spark_session()
 
-    try:
-        start_dt = datetime.strptime(args.start_date, "%Y-%m-%d")
-
-        if args.mode == "benchmark":
-            generate_benchmark_data(
-                spark=spark,
-                output_root=args.output,
-                total_devices=args.devices,
-                batch_size=args.batch_size,
-                start_date=start_dt,
-                num_days=args.num_days,
-            )
-        elif args.mode == "legacy":
-            generate_legacy_demo_data(spark=spark, output_root=args.output)
-        else:  # dataframe mode - demonstrate API usage
-            print("\n  DataFrame Mode - Demonstrating API Usage")
-            print("  " + "-" * 40)
-            print("\n  Example 1: Single batch DataFrame")
-            
-            batch_df = generate_batch_dataframe(
-                spark=spark,
-                total_devices=10,  # Small demo
-                file_date=start_dt
-            )
-            
-            print(f"  Generated {batch_df.count()} rows")
-            print("\n  Schema:")
-            batch_df.printSchema()
-            print("\n  Sample data:")
-            batch_df.show(5, truncate=False)
-            
-            print("\n  " + "-" * 40)
-            print("  Example 2: Multi-day DataFrame")
-            
-            multi_df = generate_multi_day_dataframe(
-                spark=spark,
-                total_devices=5,
-                start_date=start_dt,
-                num_days=3
-            )
-            
-            print(f"  Generated {multi_df.count()} rows across 3 days")
-            
-            print("\n  " + "-" * 40)
-            print("  Usage in your code:")
-            print("  ```python")
-            print("  from generate_data import generate_batch_dataframe")
-            print("  from delta_merge_pipeline import process_dataframe")
-            print("")
-            print("  batch_df = generate_batch_dataframe(spark, total_devices=1000, file_date=datetime.now())")
-            print("  result = process_dataframe(batch_df, output_path='/refined')")
-            print("  ```")
-            
-    finally:
-        spark.stop()
+    start_dt = datetime.strptime(args.start_date, "%Y-%m-%d")
+    
+    # Benchmark is the only mode
+    generate_benchmark_data(
+        spark=spark,
+        output_root=args.output,
+        total_devices=args.devices,
+        batch_size=args.batch_size,
+        start_date=start_dt,
+        num_days=args.num_days,
+    )
+    
+    spark.stop()
 
 
 if __name__ == "__main__":

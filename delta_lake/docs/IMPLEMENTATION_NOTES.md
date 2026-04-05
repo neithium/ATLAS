@@ -11,7 +11,7 @@
 1. [Initial Requirements](#1-initial-requirements)
 2. [Problems Encountered & Solutions](#2-problems-encountered--solutions)
 3. [Final Architecture](#3-final-architecture)
-4. [Pipeline Modes](#4-pipeline-modes)
+4. [Pipeline Mode](#4-pipeline-mode)
 5. [Features Added](#5-features-added)
 6. [Data Generation Strategy](#6-data-generation-strategy)
 7. [Performance Optimizations](#7-performance-optimizations)
@@ -275,27 +275,11 @@ merge_condition = """
 
 ---
 
-## 4. Pipeline Modes
+## 4. Pipeline Mode
 
-The pipeline supports two operational modes:
+The pipeline supports benchmark mode with incremental MERGE processing:
 
-### 4.1 Legacy Mode
-
-For backward compatibility and simple demos with 2 static files.
-
-```bash
-docker compose run -e RUN_GENERATOR=y -e GENERATOR_MODE=legacy -e RUN_PIPELINE=y -e PIPELINE_MODE=legacy spark
-```
-
-**Flow:**
-1. Generate `file1_baseline.parquet` and `file2_overlap.parquet`
-2. Initialize Delta table with file1
-3. MERGE file2 (deduplicating 6-day overlap)
-4. Single OPTIMIZE + Z-ORDER
-
-### 4.2 Benchmark Mode
-
-For production-scale testing with N daily files using 7-day rolling window patterns.
+**Benchmark Mode** - Production-scale testing with N daily files using 7-day rolling window patterns.
 
 ```bash
 docker compose run -e RUN_GENERATOR=y -e DEVICE_COUNT=100000 -e NUM_DAYS=7 -e RUN_PIPELINE=y spark
@@ -391,13 +375,13 @@ Full Docker Compose configuration via environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RUN_GENERATOR` | `n` | Run data generator (y/n) |
-| `GENERATOR_MODE` | `benchmark` | Generator mode (benchmark/legacy) |
+| `GENERATOR_MODE` | `benchmark` | Benchmark mode only (legacy removed) |
 | `DEVICE_COUNT` | `100000` | Number of devices to generate |
 | `BATCH_SIZE` | `10000` | Devices per batch (memory management) |
 | `NUM_DAYS` | `7` | Number of daily files to generate |
 | `START_DATE` | `2026-03-01` | First file date (YYYY-MM-DD) |
 | `RUN_PIPELINE` | `n` | Run deduplication pipeline (y/n) |
-| `PIPELINE_MODE` | `benchmark` | Pipeline mode (benchmark/legacy) |
+| `PIPELINE_MODE` | `benchmark` | Benchmark mode only (legacy removed) |
 | `OPTIMIZE_EVERY` | `3` | OPTIMIZE frequency (batches) |
 
 ---
@@ -496,19 +480,7 @@ for batch_start in range(0, total_devices, batch_size):
 
 ## 8. Test Results
 
-### 8.1 Legacy Mode (2 Files, 1 Device)
-
-| Metric | Value |
-|--------|-------|
-| File 1 (baseline) | 2,016 rows |
-| File 2 (overlap) | 2,016 rows |
-| Total input | 4,032 rows |
-| **Final deduplicated** | **2,304 rows** |
-| Duplicates dropped | 1,728 |
-| Deduplication ratio | 42.9% |
-| Total pipeline time | 35.41s |
-
-### 8.2 Benchmark Mode (7 Files, 10 Devices)
+### 8.1 Benchmark Mode (7 Files, 10 Devices)
 
 | Metric | Value |
 |--------|-------|
@@ -552,7 +524,6 @@ Complete rewrite with:
 - `PipelineConfig` class for centralized configuration
 - `LatencyTracker` class for P50/P95/P99 metrics
 - `CheckpointManager` class for fault tolerance
-- `run_legacy_pipeline()` for 2-file demo mode
 - `run_benchmark_pipeline()` for production-scale testing
 - `get_file_dates()` for batch discovery
 - `prepare_partition_columns()` for data preparation
@@ -686,7 +657,6 @@ docker compose down -v
 - **Added** `LatencyTracker` class with P50/P95/P99 percentile tracking
 - **Added** `CheckpointManager` class for fault-tolerant resumable pipelines
 - **Added** environment variables: `NUM_DAYS`, `START_DATE`, `OPTIMIZE_EVERY`
-- **Added** dual mode support: legacy (2-file demo) and benchmark (N-file daily rolling windows)
 - **Verified** 73.5% deduplication ratio with 7 daily files (matches expected math)
 
 ### March 8, 2026
@@ -734,14 +704,20 @@ Here is the revised, highly detailed engineering log restricted *strictly* to to
 * **Finding:** The local architecture and partitioning logic is 100% sound—the failure was entirely bound by local RAM limits. Processing 1 Lakh devices concurrently in a single batch is officially impossible on this consumer hardware.
 * **Production Spec:** To successfully execute this pipeline at the 100,000 device scale without micro-batching, we must deploy the codebase to a distributed cloud cluster (AWS EMR/Databricks) utilizing horizontal scaling, with a minimum requirement of **16GB to 32GB of RAM per Spark Executor**. Local limits are officially capped at our previously successful 10,000 device benchmark.
 ---
-- docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=100000 -e BATCH_SIZE=10000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse
 
- 
-- docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=10 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse   
+## 11. Commands Reference
 
+### Benchmark Mode (Recommended)
 
-# Legacy mode (2-file demo)
-docker compose run --rm -e GENERATOR_MODE=legacy -e PIPELINE_MODE=legacy atlas-lakehouse
+```bash
+# Small benchmark (10 devices, 7 days)
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e DEVICE_COUNT=10 \
+  -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 spark
 
-# Benchmark mode with vacuum
+# Production scale (100K devices, 7 days)
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e DEVICE_COUNT=100000 \
+  -e BATCH_SIZE=10000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse
+
+# Benchmark with vacuum (cleanup old Delta log files)
 docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y spark
+```

@@ -9,9 +9,8 @@ Architecture: Lakehouse Pattern for 400,000+ Device Scale
 - 7-Day Rolling Window Overlap Handling via MERGE deduplication
 - Storage Optimization: Parquet columnar format with Z-ORDER clustering
 
-Pipeline Modes:
-1. legacy   - Process 2 static files (file1_baseline + file2_overlap)
-2. benchmark - Process partitioned benchmark data with incremental date-batch MERGE
+Pipeline Mode:
+- benchmark: Process partitioned benchmark data with incremental date-batch MERGE
 
 Scalability Features:
 - Date-partitioned batch processing (avoids OOM for 400K+ devices)
@@ -53,8 +52,8 @@ class PipelineConfig:
     REFINED_PATH = "/refined"
     CHECKPOINT_PATH = "/refined/_checkpoints"
     
-    # Mode: legacy | benchmark | dataframe
-    MODE = " benchmark"
+    # Mode: benchmark only
+    MODE = "benchmark"
     
     # Triple-Hash Composite Primary Key columns
     PRIMARY_KEY_COLUMNS = ["device_id", "metric_time", "application_customer_id"]
@@ -676,79 +675,6 @@ def print_latency_report(tracker: LatencyTracker):
 
 
 # =============================================================================
-# LEGACY MODE PIPELINE
-# =============================================================================
-
-def run_legacy_pipeline(spark: SparkSession, tracker: LatencyTracker) -> dict:
-    """Run legacy 2-file pipeline (original behavior)."""
-    print("\n" + "-" * 80)
-    print("[STEP 2] Reading baseline data (File 1 - pre-flattened)...")
-    print("-" * 80)
-    
-    read_start = time.perf_counter()
-    df1_raw = spark.read.parquet(f"{PipelineConfig.RAW_DATA_PATH}/file1_baseline.parquet")
-    df1_prepared = prepare_partition_columns(df1_raw)
-    file1_count = df1_prepared.count()
-    read_elapsed = time.perf_counter() - read_start
-    
-    print(f"         ✓ File 1 rows: {file1_count:,}")
-    print(f"         ✓ Read time: {read_elapsed:.2f}s")
-    
-    print("\n" + "-" * 80)
-    print("[STEP 3] Creating Delta table with 5-level partitioning...")
-    print("-" * 80)
-    
-    batch_start = time.perf_counter()
-    initialize_delta_table(
-        spark=spark,
-        df=df1_prepared,
-        path=PipelineConfig.REFINED_PATH,
-        partition_cols=PipelineConfig.PARTITION_COLUMNS
-    )
-    batch_elapsed = time.perf_counter() - batch_start
-    
-    print(f"         ✓ Delta table created at {PipelineConfig.REFINED_PATH}")
-    print(f"         ✓ Baseline records: {file1_count:,}")
-    
-    tracker.record_batch(batch_elapsed, 0, read_elapsed, file1_count)
-    
-    print("\n" + "-" * 80)
-    print("[STEP 4] Reading overlap data (File 2 - 7-day rolling window)...")
-    print("-" * 80)
-    
-    read_start = time.perf_counter()
-    df2_raw = spark.read.parquet(f"{PipelineConfig.RAW_DATA_PATH}/file2_overlap.parquet")
-    df2_prepared = prepare_partition_columns(df2_raw)
-    file2_count = df2_prepared.count()
-    read_elapsed = time.perf_counter() - read_start
-    
-    print(f"         ✓ File 2 rows: {file2_count:,}")
-    print(f"         ✓ Expected overlap with File 1 (6-day window)")
-    
-    print("\n" + "-" * 80)
-    print("[STEP 5] Executing Delta MERGE deduplication...")
-    print("-" * 80)
-    print("         Triple-Hash Key: (device_id, metric_time, application_customer_id)")
-    print("         Logic: WHEN MATCHED → Ignore | WHEN NOT MATCHED → Insert")
-    
-    merge_start = time.perf_counter()
-    merge_metrics = execute_merge_deduplication(
-        spark=spark,
-        target_path=PipelineConfig.REFINED_PATH,
-        source_df=df2_prepared
-    )
-    merge_elapsed = time.perf_counter() - merge_start
-    batch_elapsed = time.perf_counter() - read_start
-    
-    print(f"         ✓ MERGE completed in {merge_elapsed:.2f}s")
-    print(f"         ✓ Operation: {merge_metrics['operation']}")
-    
-    tracker.record_batch(batch_elapsed, merge_elapsed, read_elapsed, file2_count)
-    
-    return {"file1_count": file1_count, "file2_count": file2_count}
-
-
-# =============================================================================
 # BENCHMARK MODE PIPELINE
 # =============================================================================
 
@@ -1070,8 +996,8 @@ def parse_args():
                         help='Input raw parquet directory')
     parser.add_argument('--output', type=str, default=PipelineConfig.REFINED_PATH, 
                         help='Output refined delta directory')
-    parser.add_argument('--mode', type=str, choices=['legacy', 'benchmark', 'dataframe'], default='legacy',
-                        help='Pipeline mode: legacy (2 files), benchmark (partitioned data), or dataframe (API mode)')
+    parser.add_argument('--mode', type=str, choices=['benchmark'], default='benchmark',
+                        help='Pipeline mode: benchmark (partitioned data with incremental MERGE)')
     parser.add_argument('--resume', action='store_true', 
                         help='Resume from last checkpoint (benchmark mode only)')
     parser.add_argument('--reset', action='store_true',
@@ -1099,10 +1025,9 @@ def main():
     """
     ATLAS Refined Layer - Delta Lake Deduplication Pipeline
     
-    Modes:
-    - legacy: Process 2 static files (file1_baseline + file2_overlap)
-    - benchmark: Process partitioned benchmark data with incremental MERGE
-    - dataframe: API mode for programmatic DataFrame input
+    Mode:
+    - benchmark: Process partitioned data with incremental date-batch MERGE
+      Enable fault-tolerance with checkpointing for rolling-window patterns
     """
     args = parse_args()
     
@@ -1126,16 +1051,14 @@ def main():
     print("  ATLAS - REFINED LAYER DELTA LAKE PIPELINE")
     print("  High-Performance Deduplication for 400K+ Device Scale")
     print("=" * 80)
-    print(f"\n  Mode: {args.mode.upper()}")
+    print(f"\n  Mode: BENCHMARK (Partitioned Incremental MERGE)")
     print("  Architecture:")
     print("  - Triple-Hash Key: (device_id, metric_time, application_customer_id)")
     print("  - 5-Level Partitioning: report_type/date/pcid/acid/device_id")
     print(f"  - Storage: Parquet with {PipelineConfig.COMPRESSION_CODEC.upper()} compression")
     print("  - Optimization: Z-ORDER by metric_time for query locality")
-    
-    if args.mode == "benchmark":
-        print(f"  - Batch Processing: OPTIMIZE every {args.optimize_every} batches")
-        print(f"  - Fault Tolerance: Checkpointing {'enabled' if PipelineConfig.ENABLE_CHECKPOINTING else 'disabled'}")
+    print(f"  - Batch Processing: OPTIMIZE every {args.optimize_every} batches")
+    print(f"  - Fault Tolerance: Checkpointing {'enabled' if PipelineConfig.ENABLE_CHECKPOINTING else 'disabled'}")
     
     print(f"\n  Horizontal Scaling:")
     print(f"  - Dynamic Allocation: {args.dynamic_allocation}")
@@ -1169,23 +1092,13 @@ def main():
     if args.dynamic_allocation:
         print("         ✓ Dynamic allocation enabled")
     
-    # Run appropriate pipeline
-    if args.mode == "legacy":
-        result = run_legacy_pipeline(spark, tracker)
-        total_input = result.get("file1_count", 0) + result.get("file2_count", 0)
-        num_days = 2
-    elif args.mode == "benchmark":
-        result = run_benchmark_pipeline(spark, tracker, checkpoint_mgr, resume=args.resume)
-        if "error" in result:
-            spark.stop()
-            return
-        total_input = result.get("total_rows", 0)
-        num_days = result.get("num_days", 0)
-    else:  # dataframe mode
-        print("         ℹ DataFrame mode - use process_dataframe() API")
-        print("         ℹ Example: from delta_merge_pipeline import process_dataframe")
+    # Run benchmark pipeline
+    result = run_benchmark_pipeline(spark, tracker, checkpoint_mgr, resume=args.resume)
+    if "error" in result:
         spark.stop()
         return
+    total_input = result.get("total_rows", 0)
+    num_days = result.get("num_days", 0)
     
     # Run VACUUM if enabled
     if args.vacuum:

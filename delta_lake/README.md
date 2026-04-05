@@ -133,15 +133,19 @@ result = process_dataframe(
 print(f"Processed {result['row_count']} rows")
 ```
 
-## Pipeline Modes
+## Pipeline Mode
 
-### Batch Pipeline (`delta_merge_pipeline.py`)
+The pipeline supports **benchmark mode** for production-scale testing with N daily files using 7-day rolling window patterns.
 
-| Mode | Description |
-|------|-------------|
-| `legacy` | Process 2 static files (baseline + overlap demo) |
-| `benchmark` | Process partitioned benchmark data with incremental MERGE |
-| `dataframe` | API mode for programmatic DataFrame input |
+```bash
+# Small benchmark (10 devices, 7 days)
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y \
+  -e DEVICE_COUNT=10 -e NUM_DAYS=7 spark
+
+# Production scale (100K devices)  
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y \
+  -e DEVICE_COUNT=100000 -e NUM_DAYS=7 atlas-lakehouse
+```
 
 ## Configuration Options
 
