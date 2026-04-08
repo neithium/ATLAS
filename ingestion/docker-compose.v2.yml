@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  powerpulse-v2:
+    container_name: powerpulse-v2
+    build:
+      context: .
+      dockerfile: Dockerfile.v2.allinone
+    ports:
+      - "80:80"        # Nginx (Gateway)
+      - "8001:8001"    # V2 API + Poller
+      - "5432:5432"    # TimescaleDB (Hot Path)
+      - "9000:9000"    # MinIO (Cold Path API)
+      - "9001:9001"    # MinIO (Console)
+    volumes:
+      - powerpulse-data:/data
+    environment:
+      - ENABLE_POLLER=true
+      - MOCK_IPMI=true
+    restart: always
+
+volumes:
+  powerpulse-data:
