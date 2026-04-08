@@ -13,6 +13,7 @@ Livewire mode enables real-time integration of streaming Parquet data from the u
 
 ---
 
+
 ## Architecture
 
 ### Data Flow
