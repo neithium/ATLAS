@@ -1,0 +1,351 @@
+(.venv) PS C:\Users\manth\Documents\GitHub\ATLAS\delta_lake> docker compose up
+Attaching to atlas-delta-lake
+atlas-delta-lake  | ============================================ 
+atlas-delta-lake  |   ATLAS - Delta Lake Deduplication Module (Without horizontal scaling) 
+atlas-delta-lake  | ============================================
+atlas-delta-lake  | 
+atlas-delta-lake  | Configuration:
+atlas-delta-lake  |   RUN_GENERATOR=n
+atlas-delta-lake  |   GENERATOR_MODE=benchmark
+atlas-delta-lake  |   DEVICE_COUNT=100000
+atlas-delta-lake  |   BATCH_SIZE=10000
+atlas-delta-lake  |   NUM_DAYS=7
+atlas-delta-lake  |   START_DATE=2026-03-01
+atlas-delta-lake  |   RUN_PIPELINE=n
+atlas-delta-lake  |   PIPELINE_MODE=benchmark
+atlas-delta-lake  |   OPTIMIZE_EVERY=3
+atlas-delta-lake  |   COMPRESSION_CODEC=zstd
+atlas-delta-lake  |   RUN_VACUUM=n
+atlas-delta-lake  | 
+atlas-delta-lake  | [1/2] Skipping generator (RUN_GENERATOR=n)
+atlas-delta-lake  | 
+atlas-delta-lake  | [2/2] Skipping pipeline (RUN_PIPELINE=n)
+atlas-delta-lake  | 
+atlas-delta-lake  | Done!
+atlas-delta-lake exited with code 0
+(.venv) PS C:\Users\manth\Documents\GitHub\ATLAS\delta_lake> docker compose up
+[+] Running 1/1
+ ✔ Container atlas-delta-lake  Recreated                                                                                            0.2s 
+Attaching to atlas-delta-lake
+atlas-delta-lake  | ============================================
+atlas-delta-lake  |   ATLAS - Delta Lake Deduplication Module
+atlas-delta-lake  | ============================================
+atlas-delta-lake  | 
+atlas-delta-lake  | Configuration:
+atlas-delta-lake  |   RUN_GENERATOR=y
+atlas-delta-lake  |   GENERATOR_MODE=benchmark
+atlas-delta-lake  |   DEVICE_COUNT=100
+atlas-delta-lake  |   BATCH_SIZE=1000
+atlas-delta-lake  |   NUM_DAYS=7
+atlas-delta-lake  |   START_DATE=2026-03-01
+atlas-delta-lake  |   RUN_PIPELINE=y
+atlas-delta-lake  |   PIPELINE_MODE=benchmark
+atlas-delta-lake  |   OPTIMIZE_EVERY=5
+atlas-delta-lake  |   COMPRESSION_CODEC=zstd
+atlas-delta-lake  |   RUN_VACUUM=n
+atlas-delta-lake  | 
+atlas-delta-lake  | [1/2] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+atlas-delta-lake  | Setting default log level to "WARN".
+atlas-delta-lake  | To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+atlas-delta-lake  | 26/04/04 15:51:08 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+atlas-delta-lake  | ktop   o View Config   w Enable Watch
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  |   ATLAS DATA GENERATOR
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Mode: BENCHMARK
+atlas-delta-lake  |   Compression: ZSTD
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  | Output path:              /raw/benchmark_data
+atlas-delta-lake  | Total devices:            100
+atlas-delta-lake  | Device batch size:        1,000
+atlas-delta-lake  | Number of daily files:    7
+atlas-delta-lake  | Rows per device per file: 2,016 (7 days × 288)
+atlas-delta-lake  | 
+atlas-delta-lake  | Real-World Simulation:
+atlas-delta-lake  | - Each file contains 7-day rolling window
+atlas-delta-lake  | - File for Day N: metric_time spans (Day N-6) to Day N
+atlas-delta-lake  | - New rows per file: 288/device (1 day)
+atlas-delta-lake  | - Duplicate rows per file: 1,728/device (6 days)
+atlas-delta-lake  | 
+atlas-delta-lake  | Expected Results After Deduplication:
+atlas-delta-lake  | - Total raw input rows:   1,411,200
+atlas-delta-lake  | - Expected unique rows:   374,400
+atlas-delta-lake  | - Expected duplicates:    1,036,800
+atlas-delta-lake  | - Expected dedup ratio:   73.5%
+atlas-delta-lake  | 
+atlas-delta-lake  | File date range: 2026-03-01 → 2026-03-07
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 1/7: file_date = 2026-03-01
+atlas-delta-lake  |   → metric_time window: 2026-02-23 to 2026-03-01
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 5.93s | Throughput: 34,004 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 2/7: file_date = 2026-03-02
+atlas-delta-lake  |   → metric_time window: 2026-02-24 to 2026-03-02
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 1.37s | Throughput: 146,723 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 3/7: file_date = 2026-03-03
+atlas-delta-lake  |   → metric_time window: 2026-02-25 to 2026-03-03
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 1.37s | Throughput: 147,472 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 4/7: file_date = 2026-03-04
+atlas-delta-lake  |   → metric_time window: 2026-02-26 to 2026-03-04
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 1.13s | Throughput: 177,825 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 5/7: file_date = 2026-03-05
+atlas-delta-lake  |   → metric_time window: 2026-02-27 to 2026-03-05
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 1.05s | Throughput: 191,499 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 6/7: file_date = 2026-03-06
+atlas-delta-lake  |   → metric_time window: 2026-02-28 to 2026-03-06
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 0.94s | Throughput: 214,956 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | DAILY FILE 7/7: file_date = 2026-03-07
+atlas-delta-lake  |   → metric_time window: 2026-03-01 to 2026-03-07
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch 1/1: devices 1..100
+atlas-delta-lake  |   Rows written: 201,600 | Time: 0.95s | Throughput: 211,207 rows/s
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | Benchmark Generation Complete
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | Output path:            /raw/benchmark_data
+atlas-delta-lake  | Total raw rows:         1,411,200
+atlas-delta-lake  | Expected unique after dedup: 374,400
+atlas-delta-lake  | Expected dedup ratio:   73.5%
+atlas-delta-lake  | Total elapsed:          15.15s
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  | [2/2] Running deduplication pipeline (mode=benchmark)...
+atlas-delta-lake  | :: loading settings :: url = jar:file:/opt/spark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache                                     
+atlas-delta-lake  | The jars for the packages stored in: /root/.ivy2/jars
+atlas-delta-lake  | io.delta#delta-spark_2.12 added as a dependency
+atlas-delta-lake  | :: resolving dependencies :: org.apache.spark#spark-submit-parent-01c451e0-a693-4ff0-97e7-1f671eb46f98;1.0
+atlas-delta-lake  |     confs: [default]
+atlas-delta-lake  |     found io.delta#delta-spark_2.12;3.1.0 in central
+atlas-delta-lake  |     found io.delta#delta-storage;3.1.0 in central
+atlas-delta-lake  |     found org.antlr#antlr4-runtime;4.9.3 in central
+atlas-delta-lake  | downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
+atlas-delta-lake  |     [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (7969ms)
+atlas-delta-lake  | downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
+atlas-delta-lake  |     [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (332ms)
+atlas-delta-lake  | downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
+atlas-delta-lake  |     [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (693ms)
+atlas-delta-lake  | :: resolution report :: resolve 4871ms :: artifacts dl 8999ms
+atlas-delta-lake  |     :: modules in use:
+atlas-delta-lake  |     io.delta#delta-spark_2.12;3.1.0 from central in [default]
+atlas-delta-lake  |     io.delta#delta-storage;3.1.0 from central in [default]
+atlas-delta-lake  |     org.antlr#antlr4-runtime;4.9.3 from central in [default]
+atlas-delta-lake  |     ---------------------------------------------------------------------
+atlas-delta-lake  |     |                  |            modules            ||   artifacts   |
+atlas-delta-lake  |     |       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+atlas-delta-lake  |     ---------------------------------------------------------------------
+atlas-delta-lake  |     |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
+atlas-delta-lake  |     ---------------------------------------------------------------------
+atlas-delta-lake  | :: retrieving :: org.apache.spark#spark-submit-parent-01c451e0-a693-4ff0-97e7-1f671eb46f98
+atlas-delta-lake  |     confs: [default]
+atlas-delta-lake  |     3 artifacts copied, 0 already retrieved (5727kB/33ms)
+atlas-delta-lake  | 26/04/04 15:51:42 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+atlas-delta-lake  | Setting default log level to "WARN".
+atlas-delta-lake  | To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/04/04 15:52:08 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  |   ATLAS - REFINED LAYER DELTA LAKE PIPELINE
+atlas-delta-lake  |   High-Performance Deduplication for 400K+ Device Scale
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Mode: BENCHMARK
+atlas-delta-lake  |   Architecture:
+atlas-delta-lake  |   - Triple-Hash Key: (device_id, metric_time, application_customer_id)
+atlas-delta-lake  |   - 5-Level Partitioning: report_type/date/pcid/acid/device_id
+atlas-delta-lake  |   - Storage: Parquet with ZSTD compression
+atlas-delta-lake  |   - Optimization: Z-ORDER by metric_time for query locality
+atlas-delta-lake  |   - Batch Processing: OPTIMIZE every 5 batches
+atlas-delta-lake  |   - Fault Tolerance: Checkpointing enabled
+atlas-delta-lake  | 
+atlas-delta-lake  |   Horizontal Scaling:
+atlas-delta-lake  |   - Dynamic Allocation: False
+atlas-delta-lake  |   - Executors: 4
+atlas-delta-lake  |   - Executor Cores: 4
+atlas-delta-lake  |   - Executor Memory: 2g
+atlas-delta-lake  | 
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  | [STEP 1] Initializing Spark session with Delta Lake...
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  |          ✓ SparkSession created with Delta Lake 3.1.0
+atlas-delta-lake  |          ✓ Compression: zstd
+atlas-delta-lake  |          ✓ Parquet vectorized reader enabled
+atlas-delta-lake  |          ✓ Adaptive Query Execution enabled
+atlas-delta-lake  | 
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  | [STEP 2] Discovering file_date batches in benchmark data...
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  |          ℹ file_date = date batch was received (each contains 7-day rolling window)
+atlas-delta-lake  |          ✓ Found 7 daily file batches
+atlas-delta-lake  |          ✓ File date range: 2026-03-01 → 2026-03-07
+atlas-delta-lake  |          ✓ File batches to process: 7
+atlas-delta-lake  |          ℹ Fresh benchmark run detected (resume=False): clearing existing output at /refined
+atlas-delta-lake  | 
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  | [STEP 3] Processing file batches with incremental MERGE...
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  |          ℹ Each batch = 2016 rows/device (7-day window), only 288 new/device
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 1/7: file_date=2026-03-01
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.57s
+atlas-delta-lake  |          Partition structure: /report_type/partition_date/platform_customer_id/application_customer_id/device_id/
+atlas-delta-lake  |          Compression: zstd
+atlas-delta-lake  |   │  Action: INIT | Time: 20.35s
+atlas-delta-lake  |   │  Batch total: 20.92s | Throughput: 9,636 rows/s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 2/7: file_date=2026-03-02
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.26s
+atlas-delta-lake  |   │  Action: MERGE | Time: 5.71s
+atlas-delta-lake  |   │  Batch total: 5.96s | Throughput: 33,810 rows/s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 3/7: file_date=2026-03-03
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.21s
+atlas-delta-lake  |   │  Action: MERGE | Time: 4.13s
+atlas-delta-lake  |   │  Batch total: 4.34s | Throughput: 46,500 rows/s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 4/7: file_date=2026-03-04
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.15s
+atlas-delta-lake  |   │  Action: MERGE | Time: 3.28s
+atlas-delta-lake  |   │  Batch total: 3.43s | Throughput: 58,842 rows/s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 5/7: file_date=2026-03-05
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.14s
+atlas-delta-lake  |   │  Action: MERGE | Time: 3.42s
+atlas-delta-lake  |   │  Batch total: 3.56s | Throughput: 56,649 rows/s
+atlas-delta-lake  |   │  Running OPTIMIZE (every 5 batches)...
+atlas-delta-lake  |   │  OPTIMIZE completed in 40.44s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 6/7: file_date=2026-03-06
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.12s
+atlas-delta-lake  |   │  Action: MERGE | Time: 3.40s
+atlas-delta-lake  |   │  Batch total: 3.51s | Throughput: 57,363 rows/s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   ┌─ Batch 7/7: file_date=2026-03-07
+atlas-delta-lake  |   │  Rows: 201,600 | Read: 0.11s
+atlas-delta-lake  |   │  Action: MERGE | Time: 3.19s
+atlas-delta-lake  |   │  Batch total: 3.29s | Throughput: 61,205 rows/s
+atlas-delta-lake  |   └─ ✓ Batch complete
+atlas-delta-lake  | 
+atlas-delta-lake  |   Running final OPTIMIZE...
+atlas-delta-lake  |   ✓ Final OPTIMIZE completed in 40.57s
+atlas-delta-lake  | 
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  | [FINAL] Verifying deduplication results...
+atlas-delta-lake  | --------------------------------------------------------------------------------
+atlas-delta-lake  | 
+atlas-delta-lake  |   Delta Table Details:
+atlas-delta-lake  |   - Location: /refined
+atlas-delta-lake  |   - Format: delta
+atlas-delta-lake  |   - Partitions: ['report_type', 'partition_date', 'platform_customer_id', 'application_customer_id', 'device_id']
+atlas-delta-lake  |   - Num Files: 1300
+atlas-delta-lake  |   - Size (bytes): 5992340
+atlas-delta-lake  | 
+atlas-delta-lake  |   Recent Operations:
+atlas-delta-lake  |   - 2026-04-04 15:53:54.404000: OPTIMIZE
+atlas-delta-lake  |   - 2026-04-04 15:53:14.258000: MERGE
+atlas-delta-lake  |   - 2026-04-04 15:53:10.902000: MERGE
+atlas-delta-lake  |   - 2026-04-04 15:53:06.710000: OPTIMIZE
+atlas-delta-lake  |   - 2026-04-04 15:52:26.728000: MERGE
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  |   PIPELINE EXECUTION SUMMARY
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Mode: BENCHMARK
+atlas-delta-lake  | 
+atlas-delta-lake  |   Input Statistics:
+atlas-delta-lake  |   - Total input rows:      1,411,200
+atlas-delta-lake  | 
+atlas-delta-lake  |   Deduplication Results:
+atlas-delta-lake  |   - Final table rows:      374,400
+atlas-delta-lake  |   - Duplicates dropped:    1,036,800
+atlas-delta-lake  |   - Dedup ratio:           73.5%
+atlas-delta-lake  |   - Partition count:       52
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  |   LATENCY & THROUGHPUT REPORT
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  |   Overall Performance:
+atlas-delta-lake  |   - Total batches processed: 7
+atlas-delta-lake  |   - Total rows processed:    1,411,200
+atlas-delta-lake  |   - Total elapsed time:      150.46s
+atlas-delta-lake  |   - Throughput:              9,379.3 rows/sec
+atlas-delta-lake  | 
+atlas-delta-lake  |   Batch Latency (seconds):
+atlas-delta-lake  |   - Min:  3.294s
+atlas-delta-lake  |   - Max:  20.922s
+atlas-delta-lake  |   - Mean: 6.430s
+atlas-delta-lake  |   - P50:  3.559s
+atlas-delta-lake  |   - P95:  16.434s
+atlas-delta-lake  |   - P99:  20.024s
+atlas-delta-lake  | 
+atlas-delta-lake  |   MERGE Operation Latency (seconds):
+atlas-delta-lake  |   - Min:  3.185s
+atlas-delta-lake  |   - Max:  20.353s
+atlas-delta-lake  |   - Mean: 6.210s
+atlas-delta-lake  |   - P50:  3.421s
+atlas-delta-lake  |   - P95:  15.959s
+atlas-delta-lake  |   - P99:  19.474s
+atlas-delta-lake  | 
+atlas-delta-lake  |   Read Latency (seconds):
+atlas-delta-lake  |   - Min:  0.108s
+atlas-delta-lake  |   - Max:  0.569s
+atlas-delta-lake  |   - Mean: 0.221s
+atlas-delta-lake  | 
+atlas-delta-lake  |   Architecture Verification:
+atlas-delta-lake  |   ✓ Triple-Hash Key: device_id + metric_time + application_customer_id
+atlas-delta-lake  |   ✓ 5-Level Partitioning: report_type/partition_date/platform_customer_id/application_customer_id/device_id
+atlas-delta-lake  |   ✓ Storage Format: Parquet with ZSTD compression
+atlas-delta-lake  |   ✓ Z-ORDER Clustering: metric_time
+atlas-delta-lake  | 
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  |   ATLAS REFINED LAYER PIPELINE COMPLETE
+atlas-delta-lake  | ================================================================================
+atlas-delta-lake  | 
+atlas-delta-lake  | 
+atlas-delta-lake  | Done!
+                                                                                
+atlas-delta-lake exited with code 0
