@@ -1,79 +1,73 @@
 import json
 import time
-import os
 import random
+import os
 from datetime import datetime, timedelta
+from kafka import KafkaProducer
+import logging
 
-OUTPUT_DIR = "/app/data/raw"
-DEVICE_COUNT = 1000
+# ---------------- LOGGING ----------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] [%(name)s] - %(message)s"
+)
+logger = logging.getLogger("ATLAS")
+
+logging.getLogger("kafka").setLevel(logging.ERROR)
+
+# ---------------- CONFIG ----------------
+DEVICE_COUNT = 100
+TOPIC = "raw-server-metrics"
+RAW_DIR = "/app/data/raw"
 
 VIRTUAL_START = datetime.utcnow()
 START_REAL = time.time()
-TIME_MULTIPLIER = 60  # 1 min = 1 hour
+TIME_MULTIPLIER = 60
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(RAW_DIR, exist_ok=True)
+
+producer = KafkaProducer(
+    bootstrap_servers='broker1:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+    linger_ms=50,
+    batch_size=32768
+)
 
 def get_virtual_now():
     elapsed = time.time() - START_REAL
     return VIRTUAL_START + timedelta(seconds=elapsed * TIME_MULTIPLIER)
 
-def generate_power_detail():
-    records = []
+def generate_event(device_id):
     now = get_virtual_now()
+    return {
+        "device_id": device_id,
+        "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+        "cpu": random.randint(10, 90),
+        "mem": random.randint(20, 80)
+    }
 
-    # 6 days history
-    for i in range(6 * 24):
-        t = now - timedelta(hours=i)
-        records.append({
-            "Time": t.isoformat() + "Z",
-            "Average": float(random.uniform(200, 400)),
-            "CpuUtil": int(random.randint(10, 90)),  # important
-            "AmbTemp": float(random.uniform(20, 35)),
-            "Minimum": float(random.uniform(150, 200)),
-            "Peak": float(random.uniform(350, 450)),
-            "is_fresh": False
-        })
-
-    # fresh (1 hour)
-    for i in range(12):
-        t = now - timedelta(minutes=i * 5)
-        records.append({
-            "Time": t.isoformat() + "Z",
-            "Average": float(random.uniform(200, 400)),
-            "CpuUtil": int(random.randint(10, 90)),
-            "AmbTemp": float(random.uniform(20, 35)),
-            "Minimum": float(random.uniform(150, 200)),
-            "Peak": float(random.uniform(350, 450)),
-            "is_fresh": True
-        })
-
-    return records
+logger.info("GENERATOR STARTED")
 
 while True:
-    ts = int(time.time())
-    print("SIM TIME:", get_virtual_now())
+    try:
+        virtual_time = get_virtual_now()
+        logger.info(f"Producing | virtual_time={virtual_time}")
 
-    for i in range(DEVICE_COUNT):
-        device_id = f"PLAT1-DEV-{i:04d}"
+        ts = int(time.time())
 
-        payload = {
-            "application_customer_id": "APPCUST0001",
-            "device_count": 1,
-            "devices": {
-                device_id: {
-                    "device_id": device_id,
-                    "platform_customer_id": "PLATCUST001",
-                    "application_customer_id": "APPCUST0001",
-                    "report_type": "power",
-                    "data": {
-                        "PowerDetail": generate_power_detail()
-                    }
-                }
-            }
-        }
+        with open(f"{RAW_DIR}/batch_{ts}.json", "w") as f:
+            for i in range(DEVICE_COUNT):
+                device_id = f"DEV-{i:04d}"
+                event = generate_event(device_id)
 
-        with open(f"{OUTPUT_DIR}/data_{device_id}_{ts}.json", "w") as f:
-            json.dump(payload, f)
+                producer.send(TOPIC, event)
+                f.write(json.dumps(event) + "\n")
 
-    print("✅ Generated batch")
-    time.sleep(300)
+        producer.flush()
+        logger.info("Batch sent")
+
+        time.sleep(5)
+
+    except Exception:
+        logger.exception("Generator failed")
+        time.sleep(5)
