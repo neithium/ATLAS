@@ -47,6 +47,7 @@ volumes:
   # Redis and MinIO data volumes
   redis-data:
   minio-data:
+  ingestion-tsdb-data:
 
 services:
   # ===========================================================================
@@ -78,28 +79,31 @@ services:
       - MINIO_HOST=127.0.0.1
       - MINIO_BUCKET=telemetry-raw
       - KAFKA_BOOTSTRAP=broker1:9092
-      - KAFKA_TOPIC=telemetry-export-v2
+      - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
       - SCALE_SIZE=80000
     volumes:
       - ./ingestion:/app
-      - redis-data:/var/lib/redis
-      - minio-data:/data
-      - postgres-data:/var/lib/postgresql/data
+      - redis-data:/data/redis
+      - minio-data:/data/minio
+      - ingestion-tsdb-data:/data/timescale
     networks:
       - atlas-network
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 8G
         reservations:
-          memory: 2G
+          memory: 4G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    depends_on:
+      broker1:
+        condition: service_healthy
     command: ["/app/v2/entrypoint.sh"]
 
 
