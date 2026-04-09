@@ -52,10 +52,11 @@ def init():
     except Exception as e:
         print(f"Hypertable exists or error: {e}")
         
-    # 3. Create Optimized Index
+    # 3. Create Optimized Hierarchical Indexes
     cur.execute("CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_acid_time ON telemetry_live (application_customer_id, metric_time DESC);")
     
-    print("V2 TSDB Initialized!")
+    print("V2 TSDB (Scale-Ready) Initialized!")
     cur.close()
     conn.close()
 

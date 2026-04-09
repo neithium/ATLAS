@@ -39,9 +39,9 @@ POLL_STARTUP_DELAY = 1.0  # seconds between batch starts
 # Storage Enablers
 ENABLE_TSDB_PUSH = os.getenv("ENABLE_TSDB_PUSH", "1") == "1"
 ENABLE_MINIO_PUSH = os.getenv("ENABLE_MINIO_PUSH", "1") == "1"
-TS_CONN_STR = os.getenv("TS_CONN_STR", "host=localhost port=5432 dbname=postgres user=postgres password=postgres")
+TS_CONN_STR = os.getenv("TS_CONN_STR", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
 
-MINIO_HOST = os.getenv("MINIO_HOST", "localhost:9000")
+MINIO_HOST = os.getenv("MINIO_HOST", "127.0.0.1:9000")
 MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "telemetry-raw")

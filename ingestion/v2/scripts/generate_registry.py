@@ -1,4 +1,4 @@
-import json
+import orjson
 import os
 import argparse
 
@@ -81,8 +81,8 @@ def generate_registry(scale=80000, output_path="device_configs.json"):
         if i % 10000 == 0 and i > 0:
             print(f"  - Synchronized {i:,} entries...")
 
-    with open(output_path, "w") as f:
-        json.dump(devices, f, indent=None)
+    with open(output_path, "wb") as f:
+        f.write(orjson.dumps(devices))
         
     print(f"✅ Registry Synchronized: {output_path} ({os.path.getsize(output_path) / 1024 / 1024:.2f} MB)")
 
