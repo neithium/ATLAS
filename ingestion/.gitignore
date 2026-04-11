@@ -8,3 +8,4 @@ venv/
 simu2/
 TODO.md
 /experiment-v2/
+ingestion/device_configs.json

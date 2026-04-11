@@ -19,7 +19,7 @@ chown -R postgres:postgres $DATA_DIR/timescale $DATA_DIR/redis $DATA_DIR/minio $
 # ── 1.5. Initialize Postgres Cluster if empty ───────────────────────────
 if [ ! -s "$DATA_DIR/timescale/PG_VERSION" ]; then
     echo "🏗️ Initializing empty TimescaleDB cluster in $DATA_DIR/timescale..."
-    sudo -u postgres /usr/lib/postgresql/15/bin/initdb -D $DATA_DIR/timescale
+    su postgres -s /bin/bash -c "/usr/lib/postgresql/15/bin/initdb -D $DATA_DIR/timescale"
     echo "shared_preload_libraries = 'timescaledb'" >> $DATA_DIR/timescale/postgresql.conf
 fi
 
@@ -29,7 +29,7 @@ redis-server --port 6379 --dir $DATA_DIR/redis --appendonly yes --daemonize yes
 
 # ── 3. Start TimescaleDB ──────────────────────────────────────────────
 echo "Starting TimescaleDB..."
-sudo -u postgres /usr/lib/postgresql/15/bin/postgres -D $DATA_DIR/timescale > $DATA_DIR/logs/timescale.log 2>&1 &
+su postgres -s /bin/bash -c "/usr/lib/postgresql/15/bin/postgres -D $DATA_DIR/timescale" > $DATA_DIR/logs/timescale.log 2>&1 &
 
 # ── 4. Start Redpanda (Kafka) ──────────────────────────────────────────
 echo "Starting Redpanda (Kafka-compatible)..."
@@ -44,7 +44,7 @@ rpk redpanda start --mode dev-container --smp 1 --memory 1G --overprovisioned --
 
 # Wait for essential services
 sleep 5
-until sudo -u postgres psql -c "SELECT 1" >/dev/null 2>&1; do
+until su postgres -s /bin/bash -c "psql -c 'SELECT 1'" >/dev/null 2>&1; do
   echo "Waiting for TimescaleDB..."
   sleep 2
 done
@@ -52,9 +52,9 @@ done
 # Initialize V2 Schema
 echo "Initializing Telemetry Hypertable..."
 # Force password for postgres user to match TS_CONN_STR
-sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';"
-sudo -u postgres psql -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
-sudo -u postgres psql -c "
+su postgres -s /bin/bash -c "psql -c \"ALTER USER postgres WITH PASSWORD 'postgres';\""
+su postgres -s /bin/bash -c "psql -c 'CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;'"
+su postgres -s /bin/bash -c "psql -c \"
 CREATE TABLE IF NOT EXISTS telemetry_live (
     metric_time TIMESTAMPTZ NOT NULL,
     device_id TEXT NOT NULL,
@@ -84,9 +84,9 @@ CREATE TABLE IF NOT EXISTS telemetry_live (
     location_state TEXT,
     location_country TEXT,
     location_name TEXT
-);"
-sudo -u postgres psql -c "SELECT create_hypertable('telemetry_live', 'metric_time', if_not_exists => TRUE);"
-sudo -u postgres psql -c "CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);"
+);\""
+su postgres -s /bin/bash -c "psql -c \"SELECT create_hypertable('telemetry_live', 'metric_time', if_not_exists => TRUE);\""
+su postgres -s /bin/bash -c "psql -c \"CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);\""
 
 # ── 5. Start MinIO ────────────────────────────────────────────────────
 echo "Starting MinIO..."
@@ -106,7 +106,7 @@ echo "Starting V2 API + Poller (Uvicorn)..."
 cd /app
 
 # Crucial Environment Flags for V2 logic
-export ENABLE_POLLER=true
+export ENABLE_POLLER=${ENABLE_POLLER:-true}
 export ENABLE_TSDB_PUSH=1
 export TS_CONN_STR="host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres"
 export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
