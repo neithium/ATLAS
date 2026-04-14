@@ -27,6 +27,10 @@ import os
 import shutil
 import statistics
 import time
+import os
+import time
+import json
+import statistics
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -53,7 +57,7 @@ class PipelineConfig:
     REFINED_PATH = "/refined"
     CHECKPOINT_PATH = "/refined/_checkpoints"
     
-    # Mode: legacy | benchmark | dataframe
+    # Mode: legacy | benchmark | dataframe | livewire
     MODE = " benchmark"
     
     # Triple-Hash Composite Primary Key columns
@@ -242,10 +246,10 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge") -> Spa
         .config("spark.sql.parquet.compression.codec", PipelineConfig.COMPRESSION_CODEC)
         .config("spark.sql.parquet.enableVectorizedReader", "true")
         .config("spark.sql.parquet.filterPushdown", "true")
-        # Adaptive Query Execution for partition pruning efficiency
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-        .config("spark.sql.adaptive.skewJoin.enabled", "true")
+        # Adaptive Query Execution (Disable for streaming modes)
+        .config("spark.sql.adaptive.enabled", "false" if PipelineConfig.MODE == "livewire" else "true")
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "false" if PipelineConfig.MODE == "livewire" else "true")
+        .config("spark.sql.adaptive.skewJoin.enabled", "false" if PipelineConfig.MODE == "livewire" else "true")
         # Delta optimizations for large-scale writes
         .config("spark.databricks.delta.optimizeWrite.enabled", "true")
         .config("spark.databricks.delta.autoCompact.enabled", "false")  # Manual OPTIMIZE
@@ -1060,6 +1064,132 @@ def process_dataframe(
 
 
 # =============================================================================
+# LIVEWIRE MODE PIPELINE
+# =============================================================================
+
+def run_livewire_pipeline(
+    spark: SparkSession,
+    tracker: LatencyTracker,
+    source_path: str = "/stream_raw",
+    target_path: str = PipelineConfig.REFINED_PATH
+) -> dict:
+    """
+    Run the livewire pipeline using Spark Structured Streaming to fetch files
+    produced by the upstream processing engine and deduplicate them into the lakehouse.
+    """
+    print("\n" + "=" * 80)
+    print(f"🔌 LIVEWIRE MODE: Monitoring {source_path}")
+    print("=" * 80)
+    
+    # Initialize the target Delta table explicitly if not exists
+    if not delta_table_exists(spark, target_path):
+        print("         Initializing target Delta table...")
+        # create a dummy dataframe matching the expected schema to init the table
+        from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType, LongType
+        dummy_schema = StructType([
+            StructField("device_id", StringType()),
+            StructField("metric_time", TimestampType()),
+            StructField("application_customer_id", StringType()),
+            StructField("report_type", StringType()),
+            StructField("platform_customer_id", StringType()),
+            StructField("avg_cpu", DoubleType()),
+            StructField("avg_mem", DoubleType()),
+            StructField("num_records", LongType()),
+            StructField("partition_date", StringType())
+        ])
+        df_dummy = spark.createDataFrame([], dummy_schema)
+        initialize_delta_table(
+            spark,
+            df_dummy,
+            target_path,
+            PipelineConfig.PARTITION_COLUMNS
+        )
+    
+    # Use readStream for continuous folder ingestion
+    from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType, LongType, DateType
+    schema = StructType([
+        StructField("device_id", StringType()),
+        StructField("avg_cpu", DoubleType()),
+        StructField("avg_mem", DoubleType()),
+        StructField("num_records", LongType()),
+        StructField("window_start", TimestampType(), True),
+        StructField("window_end", TimestampType(), True),
+        StructField("event_date", DateType(), True)
+    ])
+    
+    try:
+        # Recursive reading from /stream_raw allows parsing both /batch and /stream partitions
+        stream_df = spark.readStream.schema(schema).parquet(f"{source_path}/*/*.parquet")
+    except Exception as e:
+        print(f"         ⚠ Could not initialize stream from {source_path}: {e}")
+        return {"status": "failed"}
+
+    # Track batches
+    batch_counter = {"count": 0}
+    
+    def process_livewire_batch(batch_df: DataFrame, batch_id: int):
+        start_time = time.perf_counter()
+        rows = batch_df.count()
+        if rows == 0:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⏳ Waiting for stream data (Batch {batch_id}) - no new files detected.", flush=True)
+            return
+            
+        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚡ Processing Micro-batch {batch_id} with {rows} rows...", flush=True)
+        
+        # Schema alignment mapping streaming and batch outputs
+        from pyspark.sql.functions import coalesce, to_timestamp, current_timestamp
+        aligned_df = (
+            batch_df
+            .withColumn("metric_time", coalesce(col("window_start"), to_timestamp(col("event_date")), current_timestamp()))
+            .withColumn("application_customer_id", lit("livewire_unknown"))
+            .withColumn("platform_customer_id", lit("livewire_unknown"))
+            .withColumn("report_type", lit("livewire_raw"))
+            .drop("window_start", "window_end", "event_date")  # Drop staging columns
+        )
+        
+        prepared_df = prepare_partition_columns(aligned_df)
+        hashed_df = generate_composite_hash(prepared_df)
+        
+        # Execute MERGE deduplication
+        merge_start = time.perf_counter()
+        merge_results = execute_merge_deduplication(spark, target_path, hashed_df)
+        merge_elapsed = time.perf_counter() - merge_start
+        
+        total_time = time.perf_counter() - start_time
+        
+        tracker.record_batch(
+            batch_time=total_time,
+            merge_time=merge_elapsed,
+            read_time=total_time - merge_elapsed,
+            rows=rows
+        )
+        
+        batch_counter["count"] += 1
+        
+        # Optimize periodically
+        if batch_counter["count"] % PipelineConfig.OPTIMIZE_EVERY_N_BATCHES == 0:
+            print(f"         🔨 Running OPTIMIZE with Z-ORDER by {PipelineConfig.ZORDER_COLUMN}...")
+            optimize_delta_table(spark, target_path, PipelineConfig.ZORDER_COLUMN)
+
+    try:
+        query = (
+            stream_df.writeStream
+            .foreachBatch(process_livewire_batch)
+            .option("checkpointLocation", f"{PipelineConfig.CHECKPOINT_PATH}/livewire")
+            .trigger(processingTime="5 seconds")
+            .start()
+        )
+        query.awaitTermination()
+    except KeyboardInterrupt:
+        print("\n         🛑 Stopping Livewire Stream...")
+        query.stop()
+    except Exception as e:
+        print(f"\n         ❌ Livewire stream failed: {e}")
+        return {"status": "failed", "error": str(e)}
+        
+    return {"status": "completed"}
+
+# =============================================================================
 # MAIN PIPELINE
 # =============================================================================
 
@@ -1070,8 +1200,8 @@ def parse_args():
                         help='Input raw parquet directory')
     parser.add_argument('--output', type=str, default=PipelineConfig.REFINED_PATH, 
                         help='Output refined delta directory')
-    parser.add_argument('--mode', type=str, choices=['legacy', 'benchmark', 'dataframe'], default='legacy',
-                        help='Pipeline mode: legacy (2 files), benchmark (partitioned data), or dataframe (API mode)')
+    parser.add_argument('--mode', type=str, choices=['legacy', 'benchmark', 'dataframe', 'livewire'], default='legacy',
+                        help='Pipeline mode: legacy (2 files), benchmark (partitioned data), dataframe (API mode), or livewire (streaming)')
     parser.add_argument('--resume', action='store_true', 
                         help='Resume from last checkpoint (benchmark mode only)')
     parser.add_argument('--reset', action='store_true',
@@ -1103,6 +1233,7 @@ def main():
     - legacy: Process 2 static files (file1_baseline + file2_overlap)
     - benchmark: Process partitioned benchmark data with incremental MERGE
     - dataframe: API mode for programmatic DataFrame input
+    - livewire: Continuous ingestion and deduplication using Spark Structured Streaming
     """
     args = parse_args()
     
@@ -1181,6 +1312,12 @@ def main():
             return
         total_input = result.get("total_rows", 0)
         num_days = result.get("num_days", 0)
+    elif args.mode == "livewire":
+        # Stream from /stream_raw by default in livewire mode
+        stream_path = "/stream_raw" if args.input == "/raw" else args.input
+        result = run_livewire_pipeline(spark, tracker, source_path=stream_path, target_path=PipelineConfig.REFINED_PATH)
+        spark.stop()
+        return
     else:  # dataframe mode
         print("         ℹ DataFrame mode - use process_dataframe() API")
         print("         ℹ Example: from delta_merge_pipeline import process_dataframe")
