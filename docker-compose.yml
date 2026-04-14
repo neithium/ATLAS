@@ -526,12 +526,9 @@ services:
       - refined-volume:/refined
       - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
-      - ./delta_lake/data:/app/data
-      # Mount scripts for live editing
+      # Schema reference
       - ./delta_lake/generate_data.py:/app/generate_data.py
       - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
-      - ./delta_lake/streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
-      - ./delta_lake/streaming_data_producer.py:/app/streaming_data_producer.py
       # Schema reference
       - ./schema:/app/schema:ro
     environment:
