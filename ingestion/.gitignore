@@ -1,4 +1,9 @@
-# Python
+# Ingestion Local Registries
+device_configs.json
+device.json
+registry.json
+
+# Local Python
 __pycache__/
 *.py[cod]
 *$py.class

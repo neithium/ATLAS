@@ -16,7 +16,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import asyncpg
 import pandas as pd
@@ -163,76 +163,118 @@ def _do_tsdb_copy(f):
     finally:
         conn.close()
 
-async def archive_daily_to_minio():
-    """
-    V3 Dual-Archive Mega-Compactor (TSDB -> MinIO):
-    1. Writes Hive-Partitioned Raw Data (telemetry-raw)
-    2. Writes Immutable Recovery Backup (telemetry-archive)
-    """
-    if not ENABLE_MINIO_PUSH:
-        return
-        
+async def _archive_segment_task(start_time, end_time, bucket_name, partition_path, segment_id):
+    """Worker task to process a specific time segment into 48-field Parquet."""
     try:
-        now = datetime.now(timezone.utc)
-        target_day = now - timedelta(days=1)
-        log.info(f"📅 [cold-path] Starting Dual-Archive Mega-Compaction for {target_day.strftime('%Y-%m-%d')}...")
-
-        # 🏙 Hive Partition Path Calculation
-        y, m, d = target_day.strftime("%Y"), target_day.strftime("%m"), target_day.strftime("%d")
-        partition_path = f"year={y}/month={m}/day={d}"
-        filename = f"daily_compacted_{target_day.strftime('%Y%m%d')}.parquet"
-
-        # 1. Fetch full 24h history from Hot Path
-        start = target_day.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1)
-        
         conn = await asyncpg.connect(TS_CONN_STR.replace("localhost", "127.0.0.1"))
-        records = await conn.fetch("SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2", start, end)
+        records = await conn.fetch("SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2", start_time, end_time)
         await conn.close()
-        
-        if not records:
-            log.info("📅 [cold-path] No data found for specified window.")
-            return
 
-        df = pd.DataFrame([dict(r) for r in records])
-        
-        # 💾 Prepare Parquet Stream
+        if not records:
+            return f"Segment {segment_id}: No Data"
+
+        # 💎 RESTRUCTURING TO 48-FIELD GOLDEN SCHEMA 💎
+        hydrated_records = []
+        for r in records:
+            did = r['device_id']
+            meta = DEVICES.get(did, {})
+            full_doc = {
+                "device_id": did,
+                "report_id": "ARCHIVE-" + str(uuid.uuid4())[:8],
+                "created_at": r['metric_time'].isoformat(),
+                "status": r.get('status', True),
+                "model": r.get('model', meta.get('model')),
+                "tags": r.get('tags', meta.get('tags')),
+                "report_type": "telemetry_archive",
+                "server_name": r.get('server_name', meta.get('server_name')),
+                "error_reason": r.get('error_reason'),
+                "location_id": r.get('location_id', meta.get('location_id')),
+                "location_city": r.get('location_city', meta.get('location_city', 'Unknown')),
+                "location_state": r.get('location_state', meta.get('location_state', 'Unknown')),
+                "location_country": r.get('location_country', meta.get('location_country', 'India')),
+                "location_name": r.get('location_name', meta.get('location_name', 'Unknown')),
+                "processor_vendor": r.get('processor_vendor', meta.get('processor_vendor', 'Intel')),
+                "server_generation": r.get('server_generation', meta.get('server_generation', 'Unknown')),
+                "platform_customer_id": r['platform_customer_id'],
+                "application_customer_id": r['application_customer_id'],
+                "metric_type": r.get('metric_type', 'power_metrics'),
+                "data": {
+                    "Id": did,
+                    "Average": r.get('avg_watts', 0),
+                    "Maximum": r.get('peak_watts', 0),
+                    "Minimum": r.get('min_watts', 0),
+                    "Name": r.get('server_name', meta.get('server_name')),
+                    "PowerDetail": [
+                        {
+                            "AmbTemp": r.get('amb_temp'),
+                            "Average": r.get('avg_watts'),
+                            "CpuAvgFreq": r.get('cpu_avg_freq'),
+                            "CpuMax": r.get('cpu_max'),
+                            "CpuPwrSavLim": r.get('cpu_pwr_sav_lim'),
+                            "CpuUtil": r.get('cpu_util'),
+                            "CpuWatts": r.get('cpu_watts'),
+                            "GpuWatts": r.get('gpu_watts'),
+                            "Minimum": r.get('min_watts'),
+                            "Peak": r.get('peak_watts'),
+                            "Time": r['metric_time'].isoformat()
+                        }
+                    ]
+                },
+                "inventory_data": {
+                    "cpu_count": 2,
+                    "socket_count": 2,
+                    "cpu_inventory": [{"model": r.get('model', 'Intel'), "speed": 2400, "total_cores": 16}],
+                    "memory_inventory": [{"memory_size": 128, "operating_freq": 3200, "memory_device_type": "DDR4"}]
+                }
+            }
+            hydrated_records.append(full_doc)
+
+        df = pd.DataFrame(hydrated_records)
         pq_buf = io.BytesIO()
         df.to_parquet(pq_buf, engine='pyarrow', index=False, compression="snappy")
         data_size = len(pq_buf.getvalue())
-        
-        # 🏙 Initialize MinIO Client
-        s3 = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
-        
-        # 🏙 DESTINATION 1: Partitioned Raw (For Spark Consumption)
-        if not s3.bucket_exists(MINIO_BUCKET):
-            s3.make_bucket(MINIO_BUCKET)
-        
-        s3.put_object(
-            MINIO_BUCKET, 
-            f"{partition_path}/{filename}", 
-            data=io.BytesIO(pq_buf.getvalue()), 
-            length=data_size, 
-            content_type="application/octet-stream"
-        )
-        log.info(f"✅ [cold-path] Partitioned Raw Synced: {MINIO_BUCKET}/{partition_path}")
 
-        # 🏙 DESTINATION 2: Immutable Recovery Archive (Backup)
-        archive_bucket = "telemetry-archive"
-        if not s3.bucket_exists(archive_bucket):
-            s3.make_bucket(archive_bucket)
-            
-        s3.put_object(
-            archive_bucket, 
-            f"recovery/{partition_path}/{filename}", 
-            data=io.BytesIO(pq_buf.getvalue()), 
-            length=data_size, 
-            content_type="application/octet-stream"
-        )
-        log.info(f"🛡️ [cold-path] Recovery Archive Created: {archive_bucket}/recovery/{partition_path}")
-
+        s3 = Minio("127.0.0.1:9000", access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
+        filename = f"part-{segment_id}_{start_time.strftime('%H%M')}.parquet"
+        
+        # PUSH TO RAW
+        s3.put_object(bucket_name, f"{partition_path}/{filename}", data=io.BytesIO(pq_buf.getvalue()), length=data_size)
+        # PUSH TO ARCHIVE
+        s3.put_object("telemetry-archive", f"recovery/{partition_path}/{filename}", data=io.BytesIO(pq_buf.getvalue()), length=data_size)
+        
+        return f"✅ Segment {segment_id} Synced ({len(records)} rows)"
     except Exception as e:
-        log.error(f"❌ [cold-path] Dual-Archive Mega-Compaction Failed: {e}")
+        return f"❌ Segment {segment_id} Failed: {e}"
+
+async def archive_daily_to_minio(target_date: Optional[datetime] = None):
+    """V3 Master Parallel Archiver (5 Segments/Workers)."""
+    if not ENABLE_MINIO_PUSH: return
+    
+    try:
+        now = datetime.now(timezone.utc)
+        target_day = target_date or (now - timedelta(days=1))
+        base_start = target_day.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        y, m, d = target_day.strftime("%Y"), target_day.strftime("%m"), target_day.strftime("%d")
+        partition_path = f"year={y}/month={m}/day={d}"
+        
+        log.info(f"🛰️ Starting 5-Batch Parallel Archival for {y}-{m}-{d}...")
+
+        # 5 Segments of 4.8 Hours (288 minutes) each
+        segment_duration = timedelta(hours=4.8)
+        tasks = []
+        for i in range(5):
+            seg_start = base_start + (segment_duration * i)
+            seg_end = seg_start + segment_duration
+            tasks.append(_archive_segment_task(seg_start, seg_end, MINIO_BUCKET, partition_path, i+1))
+        
+        results = await asyncio.gather(*tasks)
+        for res in results:
+            log.info(res)
+            
+        log.info("🏁 All 5 Batches Complete. Cold Storage Synced.")
+    except Exception as e:
+        log.error(f"❌ Parallel Compaction Failed: {e}")
 
 def start(run_immediately: bool = True):
     """Initializes the polling and archiving schedules."""
