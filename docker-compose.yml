@@ -502,6 +502,12 @@ services:
   #   - Uses triple-hash Composite Key: device_id + metric_time + application_customer_id
   #   - Writes clean Parquet to 5-level directory: /refined/metric_name/date/pcid/acid/device_id/
   #   - Runs OPTIMIZE for storage compaction
+  #
+  # Pipeline Modes:
+  #   - benchmark : Static date-partitioned batch MERGE processing
+  #   - legacy    : Legacy 2-file MERGE comparison
+  #   - livewire  : Spark Structured Streaming (readStream) low-latency continuous ingestion 
+  #                 and deduplication directly from upstream Processor outputs.
   # ===========================================================================
 
   atlas-lakehouse:
@@ -518,6 +524,7 @@ services:
       # Shared volumes for inter-container data flow
       - raw-volume:/raw
       - refined-volume:/refined
+      - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
       - ./delta_lake/data:/app/data
       # Mount scripts for live editing
@@ -531,15 +538,15 @@ services:
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=4g
-      # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
-      - RUN_GENERATOR=${RUN_GENERATOR:-y}            # y = run generator, n = skip
-      - GENERATOR_MODE=${GENERATOR_MODE:-benchmark}  # benchmark | legacy
+        # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
+      - RUN_GENERATOR=${RUN_GENERATOR:-n}            # y = run generator, n = skip
+      - GENERATOR_MODE=${GENERATOR_MODE:-livewire}  # benchmark | legacy | livewire
       - DEVICE_COUNT=${DEVICE_COUNT:-100}            # Number of devices for benchmark
       - BATCH_SIZE=${BATCH_SIZE:-1000}               # Batch size for memory management
       - NUM_DAYS=${NUM_DAYS:-7}                      # Number of daily files (7-day rolling window)
       - START_DATE=${START_DATE:-2026-03-01}         # First file date (YYYY-MM-DD)
       - RUN_PIPELINE=${RUN_PIPELINE:-y}              # y = run pipeline, n = skip
-      - PIPELINE_MODE=${PIPELINE_MODE:-benchmark}    # benchmark | legacy (must match GENERATOR_MODE)
+      - PIPELINE_MODE=${PIPELINE_MODE}    # benchmark | legacy | livewire
       - OPTIMIZE_EVERY=${OPTIMIZE_EVERY:-5}          # Run OPTIMIZE after every N batches
       - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
       # Storage optimization settings
@@ -563,6 +570,7 @@ services:
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
         echo '' &&
         echo 'Configuration:' &&
+        [ -z \"$$PIPELINE_MODE\" ] && PIPELINE_MODE=\"$$GENERATOR_MODE\";
         echo \"  RUN_GENERATOR=$$RUN_GENERATOR\" &&
         echo \"  GENERATOR_MODE=$$GENERATOR_MODE\" &&
         echo \"  DEVICE_COUNT=$$DEVICE_COUNT\" &&
@@ -581,6 +589,8 @@ services:
           if [ \"$$GENERATOR_MODE\" = 'legacy' ]; then
             echo '[1/3] Generating legacy merge-demo input under /raw ...' &&
             python3 generate_data.py --mode legacy --output /raw;
+          elif [ \"$$GENERATOR_MODE\" = 'livewire' ]; then
+            echo '[1/3] Skipping generator for livewire mode...' && true;
           else
             echo '[1/3] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...' &&
             python3 generate_data.py --mode benchmark --output /raw --devices $$DEVICE_COUNT --batch-size $$BATCH_SIZE --num-days $$NUM_DAYS --start-date $$START_DATE;
@@ -591,7 +601,11 @@ services:
         echo '' &&
         if [ \"$$RUN_PIPELINE\" = 'y' ] || [ \"$$RUN_PIPELINE\" = 'Y' ]; then
           echo \"[2/3] Running deduplication pipeline (mode=$$PIPELINE_MODE)...\" &&
-          python3 delta_merge_pipeline.py --input /raw --output /refined --mode $$PIPELINE_MODE --optimize-every $$OPTIMIZE_EVERY;
+          if [ \"$$PIPELINE_MODE\" = 'livewire' ]; then
+            python3 delta_merge_pipeline.py --input /stream_raw --output /refined --mode livewire --optimize-every $$OPTIMIZE_EVERY;
+          else
+            python3 delta_merge_pipeline.py --input /raw --output /refined --mode $$PIPELINE_MODE --optimize-every $$OPTIMIZE_EVERY;
+          fi;
         else
           echo \"[2/3] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
         fi &&
