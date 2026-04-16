@@ -84,7 +84,7 @@ def generate_registry(scale=80000, output_path="device_configs.json"):
     with open(output_path, "wb") as f:
         f.write(orjson.dumps(devices))
         
-    print(f"✅ Registry Synchronized: {output_path} ({os.path.getsize(output_path) / 1024 / 1024:.2f} MB)")
+    print(f" Registry Synchronized: {output_path} ({os.path.getsize(output_path) / 1024 / 1024:.2f} MB)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

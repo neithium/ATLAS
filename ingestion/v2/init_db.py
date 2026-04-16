@@ -53,6 +53,7 @@ def init():
         print(f"Hypertable exists or error: {e}")
         
     # 3. Create Optimized Hierarchical Indexes
+    # Enables alternative query paths: filter by device_id or by application_customer_id
     cur.execute("CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_acid_time ON telemetry_live (application_customer_id, metric_time DESC);")
     

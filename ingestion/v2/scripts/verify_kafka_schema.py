@@ -10,7 +10,7 @@ EXPECTED_TOP = {"device_id","report_id","created_at","status","model","tags","re
 EXPECTED_DATA = {"Id","Average","Maximum","Minimum","Name","PowerDetail"}
 
 EXPECTED_PD = {"AmbTemp","Average","CpuAvgFreq","CpuMax","CpuPwrSavLim",
-    "CpuUtil","CpuWatts","GpuWatts","Minimum","Peak","Time"}
+    "CpuUtil","CpuWatts","GpuWatts","Minimum","Peak","Time","is_fresh"}
 
 EXPECTED_INV = {"cpu_count","socket_count","cpu_inventory","memory_inventory"}
 
@@ -18,7 +18,7 @@ async def verify():
     consumer = AIOKafkaConsumer(
         'raw-server-metrics',
         bootstrap_servers='broker1:9092',
-        auto_offset_reset='earliest',
+        auto_offset_reset='latest',
         consumer_timeout_ms=15000
     )
     await consumer.start()
@@ -76,14 +76,42 @@ async def verify():
             if missing_inv:
                 for m in missing_inv: print(f"  ❌ MISSING: inventory_data.{m}")
 
+            # 🏁 FRESHNESS AUDITOR
+            print("\n🏁 FRESHNESS LOGIC AUDIT")
+            print("-" * 60)
+            fresh_points = [p for p in pd if p.get("is_fresh") is True]
+            stale_points = [p for p in pd if p.get("is_fresh") is False]
+            
+            dates_found = sorted(list(set(p["Time"][:10] for p in pd)))
+            fresh_dates = sorted(list(set(p["Time"][:10] for p in fresh_points)))
+            
+            print(f"  • Total Data Points: {len(pd)}")
+            print(f"  • Date Range: {dates_found[0]} to {dates_found[-1]} ({len(dates_found)} days)")
+            print(f"  • Fresh Points found: {len(fresh_points)} (Expected ~288)")
+            print(f"  • Fresh Date identified: {fresh_dates}")
+            
+            # Boundary Safety Checks
+            is_valid = True
+            if len(fresh_dates) > 1:
+                print(f"  ❌ ERROR: Multiple 'Fresh' days detected! {fresh_dates}")
+                is_valid = False
+            elif fresh_dates and fresh_dates[0] != dates_found[-1]:
+                print(f"  ❌ ERROR: Fresh day {fresh_dates[0]} is NOT the latest date {dates_found[-1]}!")
+                is_valid = False
+            elif not fresh_dates:
+                print("  ❌ ERROR: No points marked as 'Fresh'!")
+                is_valid = False
+            else:
+                print(f"  ✅ SUCCESS: Only the terminal day ({fresh_dates[0]}) is marked as Fresh.")
+            
             total = len(top_keys) + len(data_keys) + len(pd_keys) + len(inv_keys)
             expected = len(EXPECTED_TOP) + len(EXPECTED_DATA) + len(EXPECTED_PD) + len(EXPECTED_INV)
-            print(f"\n{'🎯' if total >= expected else '⚠️'} TOTAL: {total}/{expected} fields")
+            print(f"\n{'🎯' if total >= expected and is_valid else '⚠️'} TOTAL: {total}/{expected} fields")
             
-            if not (missing_top or missing_data or missing_pd or missing_inv):
-                print("🏆 RESULT: ALL 48 FIELDS PRESENT ✅")
+            if not (missing_top or missing_data or missing_pd or missing_inv) and is_valid:
+                print("🏆 RESULT: ALL 49 FIELDS PRESENT & LOGICALLY CONSISTENT ✅")
             else:
-                print("❌ RESULT: SCHEMA INCOMPLETE")
+                print("❌ RESULT: SCHEMA OR LOGIC FAILED")
             print("=" * 60)
             break
     finally:

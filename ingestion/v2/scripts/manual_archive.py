@@ -28,12 +28,12 @@ async def manual_archival_push():
     logging.basicConfig(level=logging.INFO)
     log = logging.getLogger("manual-archive")
     
-    # 🎯 TARGET DATE: April 4th, 12 AM - 1 AM
-    target_day = datetime(2026, 4, 4, tzinfo=timezone.utc)
-    start = target_day.replace(hour=0, minute=0, second=0)
-    end = start + timedelta(hours=1)
+    # 🎯 TARGET WINDOW: Last 60 Minutes
+    now = datetime.now(timezone.utc)
+    end = now.replace(second=0, microsecond=0)
+    start = end - timedelta(hours=1)
     
-    log.info(f"🏗️ [MANUAL] Seeding data for window: {start.isoformat()} to {end.isoformat()}...")
+    log.info(f"🏗️ [MANUAL] Archiving recent data window: {start.isoformat()} to {end.isoformat()}...")
 
     # Load Registry
     with open(REGISTRY_PATH, "rb") as f:
@@ -90,8 +90,14 @@ async def manual_archival_push():
         root_path = f"production/year={start.year}/month={start.month:02d}/day={start.day:02d}/hour={start.hour:02d}/"
         file_name = "manual_sample_50dev.parquet"
         
-        s3.put_object("telemetry-raw", root_path + file_name, data=io.BytesIO(file_bytes), length=len(file_bytes))
-        s3.put_object("telemetry-archive", root_path + file_name, data=io.BytesIO(file_bytes), length=len(file_bytes))
+        # Dual-Silo Write
+        for bucket in ["telemetry-raw", "telemetry-archive"]:
+            try:
+                s3.put_object(bucket, root_path + file_name, io.BytesIO(file_bytes), len(file_bytes))
+            except:
+                if not s3.bucket_exists(bucket):
+                    s3.make_bucket(bucket)
+                s3.put_object(bucket, root_path + file_name, io.BytesIO(file_bytes), len(file_bytes))
 
         log.info(f"✅ MANUAL PUSH SUCCESSFUL! Check MinIO: {root_path}")
         await conn.close()

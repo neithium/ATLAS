@@ -67,16 +67,19 @@ LAST_POLL = {
     "status": "idle"
 }
 
-def _get_devices_to_poll() -> List[str]:
-    return list(DEVICES.keys())
+def _get_devices_to_poll() -> Dict[str, Any]:
+    """Hot-loads the latest registry from disk to pick up dynamic additions."""
+    from config.devices import load_devices
+    return load_devices()
 
-async def _poll_batch(device_ids: List[str]) -> List[Dict[str, Any]]:
-    batch_configs = {did: DEVICES[did] for did in device_ids}
+async def _poll_batch(device_ids: List[str], current_registry: Dict[str, Any]) -> List[Dict[str, Any]]:
+    batch_configs = {did: current_registry[did] for did in device_ids}
     return await poll_batch_ipmi(batch_configs)
 
 async def poll_all():
-    """Main polling loop for 50,000 devices every 5 minutes."""
-    devices = _get_devices_to_poll()
+    """Main polling loop for the entire fleet (now supports 80,000+ devices)."""
+    current_registry = _get_devices_to_poll()
+    devices = list(current_registry.keys())
     total_devices = len(devices)
     
     LAST_POLL["start_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -97,7 +100,7 @@ async def poll_all():
             if batch_idx > 0:
                 await asyncio.sleep(POLL_STARTUP_DELAY * batch_idx % 10) 
             
-            results = await _poll_batch(batch)
+            results = await _poll_batch(batch, current_registry)
             total_results.append(results)
             
             success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
@@ -121,6 +124,10 @@ async def _push_to_tsdb_hot(batch_results):
     records = []
     ts_iso = datetime.now(timezone.utc).isoformat()
     
+    # Load registry ONCE (not per-record — avoids 80k reads of the 57MB file)
+    from config.devices import load_devices
+    registry = load_devices()
+    
     for result_list in batch_results:
         for r in result_list:
             if not isinstance(r, dict) or r.get("status") != "success":
@@ -128,7 +135,7 @@ async def _push_to_tsdb_hot(batch_results):
                 
             did = r["device_id"]
             reading = r["data"]
-            meta = DEVICES.get(did, {})
+            meta = registry.get(did, {})
             
             records.append([
                 ts_iso, did, meta.get("platform_customer_id"), meta.get("application_customer_id"),

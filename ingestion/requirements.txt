@@ -1,4 +1,6 @@
 aiokafka
+kafka-python
+python-snappy
 asyncpg
 orjson
 fastapi
