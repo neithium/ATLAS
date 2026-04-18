@@ -254,7 +254,14 @@ async def hourly_archival_job():
 # =============================================================================
 @app.on_event("startup")
 async def startup_event():
+    global _kafka
+    
+    # Initialize Kafka producer and START it
     await get_kafka()
+    if _kafka:
+        await _kafka.start()
+        log.info("🛰️  [KAFKA] Producer STARTED")
+    
     await get_db_pool()
     
     # Production: Runs at :03 every hour to avoid poller overlap at :00/:05

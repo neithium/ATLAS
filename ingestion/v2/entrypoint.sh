@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS telemetry_live (
 );\""
 su postgres -s /bin/bash -c "psql -c \"SELECT create_hypertable('telemetry_live', 'metric_time', if_not_exists => TRUE);\""
 su postgres -s /bin/bash -c "psql -c \"CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);\""
+su postgres -s /bin/bash -c "psql -c \"CREATE INDEX IF NOT EXISTS idx_acid_time ON telemetry_live (application_customer_id, metric_time DESC);\""
+su postgres -s /bin/bash -c "psql -c \"CREATE INDEX IF NOT EXISTS idx_pcid_acid_time ON telemetry_live (platform_customer_id, application_customer_id, metric_time DESC);\""
 
 # ── 5. Start MinIO ────────────────────────────────────────────────────
 echo "Starting MinIO..."
