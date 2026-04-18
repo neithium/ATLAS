@@ -337,6 +337,16 @@ BULK_BATCH_SIZE = 400  # 🎯 Dialed back to the 'Sweet Spot' for 1601 device sy
 
 def _build_power_detail(r):
     """Builds a single PowerDetail entry from a DB row."""
+    # Compute is_fresh dynamically: True if within last 24 hours
+    metric_time = r.get('metric_time')
+    if metric_time:
+        # Ensure metric_time has timezone info for comparison
+        if hasattr(metric_time, 'replace') and metric_time.tzinfo is None:
+            metric_time = metric_time.replace(tzinfo=timezone.utc)
+        is_fresh = metric_time > (datetime.now(timezone.utc) - timedelta(days=1))
+    else:
+        is_fresh = False
+    
     return {
         "AmbTemp": float(r.get('amb_temp', 25)),
         "Average": float(r.get('avg_watts', 0)),
@@ -349,7 +359,7 @@ def _build_power_detail(r):
         "Minimum": int(r.get('min_watts', 250)),
         "Peak": int(r.get('peak_watts', 400)),
         "Time": r['metric_time'].isoformat() if hasattr(r.get('metric_time'), 'isoformat') else str(r.get('metric_time', '')),
-        "is_fresh": bool(r.get('is_fresh', False))
+        "is_fresh": is_fresh
     }
 
 async def _export_stream_task(device_ids: List[str], start_time: datetime, end_time: datetime):
