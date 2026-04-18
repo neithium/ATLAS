@@ -66,26 +66,34 @@ def get_registry_path():
     raise FileNotFoundError("Could not find device_configs.json")
 
 class PrefillEngine:
-    def __init__(self, registry_path):
+    def __init__(self, registry_path, limit=None):
         with open(registry_path, "rb") as f:
-            self.devices = orjson.loads(f.read())
-        self.n = len(self.devices)
-        self.device_ids = list(self.devices.keys())
+            full_devices = orjson.loads(f.read())
+        
+        self.device_ids = list(full_devices.keys())
+        if limit and limit < len(self.device_ids):
+            log.info(f"Limiting to first {limit} devices.")
+            self.device_ids = self.device_ids[:limit]
+            self.devices = {did: full_devices[did] for did in self.device_ids}
+        else:
+            self.devices = full_devices
+            
+        self.n = len(self.device_ids)
         
         # Pre-build the static part as a Base DataFrame
         self.worker_df = pd.DataFrame({
             "device_id": self.device_ids,
-            "platform_customer_id": [d["platform_customer_id"] for d in self.devices.values()],
-            "application_customer_id": [d["application_customer_id"] for d in self.devices.values()],
-            "server_name": [d["server_name"] for d in self.devices.values()],
-            "model": [d["model"] for d in self.devices.values()],
-            "processor_vendor": [d["processor_vendor"] for d in self.devices.values()],
-            "server_generation": [d["server_generation"] for d in self.devices.values()],
-            "location_id": [d["location_id"] for d in self.devices.values()],
-            "location_city": [d["location_city"] for d in self.devices.values()],
-            "location_state": [d["location_state"] for d in self.devices.values()],
-            "location_country": [d["location_country"] for d in self.devices.values()],
-            "location_name": [d["location_name"] for d in self.devices.values()],
+            "platform_customer_id": [self.devices[did]["platform_customer_id"] for did in self.device_ids],
+            "application_customer_id": [self.devices[did]["application_customer_id"] for did in self.device_ids],
+            "server_name": [self.devices[did]["server_name"] for did in self.device_ids],
+            "model": [self.devices[did]["model"] for did in self.device_ids],
+            "processor_vendor": [self.devices[did].get("processor_vendor", "Intel") for did in self.device_ids],
+            "server_generation": [self.devices[did].get("server_generation", "15G") for did in self.device_ids],
+            "location_id": [self.devices[did].get("location_id", "LOC-01") for did in self.device_ids],
+            "location_city": [self.devices[did].get("location_city", "Unknown") for did in self.device_ids],
+            "location_state": [self.devices[did].get("location_state", "Unknown") for did in self.device_ids],
+            "location_country": [self.devices[did].get("location_country", "India") for did in self.device_ids],
+            "location_name": [self.devices[did].get("location_name", "Unknown") for did in self.device_ids],
             "report_type": "telemetry_live",
             "metric_type": "power_metrics",
             "status": "t",
@@ -125,9 +133,9 @@ def push_to_tsdb(cur, df):
     copy_sql = f"COPY telemetry_live ({','.join(COLUMNS)}) FROM STDIN WITH DELIMITER E'\\t' NULL ''"
     cur.copy_expert(sql=copy_sql, file=buf)
 
-def process_day_task(d_num, days_total, registry_path, skip_archive):
+def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
     """Worker task for Multi-Processing with Low Memory Footprint."""
-    engine = PrefillEngine(registry_path)
+    engine = PrefillEngine(registry_path, limit=limit)
     now = datetime.now(timezone.utc)
     day_start = (now - timedelta(days=d_num + 1)).replace(hour=0, minute=0, second=0, microsecond=0)
     date_str = day_start.strftime("%Y-%m-%d")
@@ -191,9 +199,9 @@ def process_day_task(d_num, days_total, registry_path, skip_archive):
             cur.close()
             conn.close()
 
-def run_prefill(days: int = 7, workers: int = 4, skip_archive: bool = False):
+def run_prefill(days: int = 7, workers: int = 4, limit: int = None, skip_archive: bool = False):
     registry_path = get_registry_path()
-    log.info(f"🔥 Starting Memory-Safe Hyper-Velocity Prefill: {days} Days | {workers} Workers")
+    log.info(f"🔥 Starting Memory-Safe Hyper-Velocity Prefill: {days} Days | {workers} Workers | Limit: {limit if limit else 'All'}")
     
     # Initialize MinIO Bucket if needed
     if not skip_archive:
@@ -203,7 +211,7 @@ def run_prefill(days: int = 7, workers: int = 4, skip_archive: bool = False):
         except Exception: pass
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(process_day_task, d, days, registry_path, skip_archive) for d in range(days)]
+        futures = [executor.submit(process_day_task, d, days, registry_path, limit, skip_archive) for d in range(days)]
         for future in futures:
             future.result()
 
@@ -211,9 +219,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=1)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--skip-archive", action="store_true")
     args = parser.parse_args()
     
     start_time = time.time()
-    run_prefill(days=args.days, workers=args.workers, skip_archive=args.skip_archive)
+    run_prefill(days=args.days, workers=args.workers, limit=args.limit, skip_archive=args.skip_archive)
     log.info(f"🏁 ALL DONE. Total time: {time.time()-start_time:.2f}s")

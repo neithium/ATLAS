@@ -1,4 +1,9 @@
-# Python
+# Ingestion Local Registries
+device_configs.json
+device.json
+registry.json
+
+# Local Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,3 +13,12 @@ venv/
 simu2/
 TODO.md
 /experiment-v2/
+ingestion/device_configs.json
+/validate_schema.py
+/last_msg.json
+/consume_recent.py
+/v2/scripts/check_is_fresh.py
+/v2/scripts/test_record.py
+/v2/scripts/verify_kafka_msg.py
+/v2/scripts/verify_kafka_push.py
+/v2/scripts/verify_kafka_schema.py

@@ -81,7 +81,7 @@ services:
       - KAFKA_BOOTSTRAP=broker1:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=true
+      - ENABLE_POLLER=false
       - SCALE_SIZE=80000
     volumes:
       - ./ingestion:/app

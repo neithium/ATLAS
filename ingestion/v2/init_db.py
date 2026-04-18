@@ -53,8 +53,14 @@ def init():
         print(f"Hypertable exists or error: {e}")
         
     # 3. Create Optimized Hierarchical Indexes
+    # Enables alternative query paths: filter by device_id or by application_customer_id
+    # We include platform_customer_id as the leading column to speed up PCID/ACID API lookups
+    cur.execute("DROP INDEX IF EXISTS idx_device_time;")
+    cur.execute("DROP INDEX IF EXISTS idx_acid_time;")
+    
     cur.execute("CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_acid_time ON telemetry_live (application_customer_id, metric_time DESC);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pcid_acid_time ON telemetry_live (platform_customer_id, application_customer_id, metric_time DESC);")
     
     print("V2 TSDB (Scale-Ready) Initialized!")
     cur.close()
