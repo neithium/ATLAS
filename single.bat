@@ -1,6 +1,6 @@
 @echo off
-echo Stopping any running containers (preserving data)...
-docker-compose --profile full-cluster down
+echo Stopping any running containers and cleaning volumes...
+docker-compose --profile full-cluster down -v
 echo Starting single broker1...
-cmd /V /C "set KAFKA_QUORUM_VOTERS=1@broker1:9093 && set KAFKA_REPLICATION_FACTOR=1 && set KAFKA_MIN_ISR=1 && set KAFKA_AUTO_CREATE_TOPICS=true && set KAFKA_BOOTSTRAP_SERVERS=broker1:9092 && docker-compose up -d broker1"
+cmd /V /C "set KAFKA_QUORUM_VOTERS=1@broker1:9093 && set KAFKA_REPLICATION_FACTOR=1 && set KAFKA_MIN_ISR=1 && set KAFKA_AUTO_CREATE_TOPICS=true && docker-compose up -d broker1 kafka-init"
 echo Done! Run 'docker ps' to check status.

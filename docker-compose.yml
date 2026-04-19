@@ -153,10 +153,10 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker1
     hostname: broker1
-    # ports:
-    #   - "9062:9092"
-    #   - "9063:9093"
-    #   - "9064:9094"
+    ports:
+      - "9062:9092"
+      - "9063:9093"
+      - "9064:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=1
@@ -204,7 +204,7 @@ services:
 
     mem_limit: 2g
     mem_reservation: 1g
-    restart: unless-stopped
+    restart: always
     volumes:
       - kafka-data-1:/bitnami/kafka
     networks:
@@ -231,10 +231,10 @@ services:
     hostname: broker2
     profiles:
       - full-cluster
-    # ports:
-    #   - "9065:9092"
-    #   - "9066:9093"
-    #   - "9067:9094"
+    ports:
+      - "9065:9092"
+      - "9066:9093"
+      - "9067:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=2
@@ -260,7 +260,7 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
       - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=${KAFKA_AUTO_CREATE_TOPICS:-true}
 
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
@@ -278,7 +278,7 @@ services:
 
     mem_limit: 2g
     mem_reservation: 1g
-    restart: unless-stopped
+    restart: always
     volumes:
       - kafka-data-2:/bitnami/kafka
     networks:
@@ -305,10 +305,10 @@ services:
     hostname: broker3
     profiles:
       - full-cluster
-    # ports:
-    #   - "9068:9092"
-    #   - "9069:9093"
-    #   - "9070:9094"
+    ports:
+      - "9068:9092"
+      - "9069:9093"
+      - "9070:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=3
@@ -334,7 +334,7 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
       - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=${KAFKA_AUTO_CREATE_TOPICS:-true}
 
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
@@ -352,7 +352,7 @@ services:
 
     mem_limit: 2g
     mem_reservation: 1g
-    restart: unless-stopped
+    restart: always
     volumes:
       - kafka-data-3:/bitnami/kafka
     networks:
@@ -369,7 +369,7 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
-      # ============================================
+  # ============================================
   # Kafka Topic Initialization (runs once on startup)
   # ============================================
   kafka-init:
