@@ -30,6 +30,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from minio import Minio
 from aiokafka import AIOKafkaProducer
 
+# Thread pool for synchronous background tasks (like Kafka flushing)
+_executor = ThreadPoolExecutor(max_workers=20)
+
 # Adjust path: Ensure we can import schema_builder from the ingestion/ root
 V2_ROOT = Path(__file__).resolve().parent.parent
 if str(V2_ROOT.parent) not in sys.path:
@@ -417,8 +420,7 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     # Flush with error handling for timeout scenarios
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(_executor, kafka_prod.flush, 300)  # 5-minute timeout
+        await asyncio.wait_for(kafka_prod.flush(), timeout=300)  # 5-minute timeout
         log.info(f"✅ [KAFKA] Stream-batch flush successful for {processed} messages")
     except Exception as e:
         log.warning(f"⚠️  [KAFKA] Flush timeout (flush may still complete): {type(e).__name__} - {e}")
@@ -464,8 +466,7 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     # Flush with error handling for timeout scenarios
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(_executor, kafka_prod.flush, 300)  # 5-minute timeout
+        await asyncio.wait_for(kafka_prod.flush(), timeout=300)  # 5-minute timeout
         log.info(f"✅ [KAFKA] Latest-batch flush successful for {processed} messages")
     except Exception as e:
         log.warning(f"⚠️  [KAFKA] Flush timeout (flush may still complete): {type(e).__name__} - {e}")
@@ -565,7 +566,7 @@ async def _export_first_task(device_ids: List[str], count: int = 2016):
     # Flush with non-blocking AIOKafka flush
     t_flush_start = time.monotonic()
     try:
-        await kafka_prod.flush()
+        await asyncio.wait_for(kafka_prod.flush(), timeout=300)
         t_flush_elapsed = time.monotonic() - t_flush_start
         log.info(f"✅ [KAFKA] Historical-batch flush successful for {processed} messages (flush took {t_flush_elapsed:.2f}s)")
     except Exception as e:
