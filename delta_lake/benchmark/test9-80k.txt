@@ -1,0 +1,247 @@
+Microsoft Windows [Version 10.0.26200.8246]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\manth\Documents\GitHub\ATLAS>docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=80000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 atlas-lakehouse
+time="2026-04-19T16:39:54+05:30" level=warning msg="The \"PIPELINE_MODE\" variable is not set. Defaulting to a blank string."
+time="2026-04-19T16:39:54+05:30" level=warning msg="Found orphan containers ([atlas-atlas-lakehouse-run-31f1865f10a7]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Lakehouse - Delta Lake Deduplication Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  RUN_GENERATOR=y
+  GENERATOR_MODE=benchmark
+  DEVICE_COUNT=80000
+  BATCH_SIZE=10000
+  NUM_DAYS=1
+  START_DATE=2026-03-01
+  RUN_PIPELINE=y
+  PIPELINE_MODE=benchmark
+  OPTIMIZE_EVERY=5
+  COMPRESSION_CODEC=zstd
+  RUN_VACUUM=n
+  VACUUM_RETENTION_DAYS=14
+  KEEP_ALIVE=y
+
+[1/3] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+
+================================================================================
+  ATLAS DATA GENERATOR
+================================================================================
+
+  Mode: BENCHMARK
+  Compression: ZSTD
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/04/19 11:09:56 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+================================================================================
+ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+================================================================================
+
+Output path:              /raw/benchmark_data
+Total devices:            80,000
+Device batch size:        10,000
+Number of daily files:    1
+Rows per device per file: 2,016 (7 days × 288)
+
+Real-World Simulation:
+- Each file contains 7-day rolling window
+- File for Day N: metric_time spans (Day N-6) to Day N
+- New rows per file: 288/device (1 day)
+- Duplicate rows per file: 1,728/device (6 days)
+
+Expected Results After Deduplication:
+- Total raw input rows:   161,280,000
+- Expected unique rows:   161,280,000
+- Expected duplicates:    0
+- Expected dedup ratio:   0.0%
+
+File date range: 2026-03-01 → 2026-03-01
+
+================================================================================
+DAILY FILE 1/1: file_date = 2026-03-01
+  → metric_time window: 2026-02-23 to 2026-03-01
+================================================================================
+
+  Batch 1/8: devices 1..10,000
+  Rows written: 20,160,000 | Time: 36.99s | Throughput: 545,073 rows/s
+
+  Batch 2/8: devices 10,001..20,000
+  Rows written: 20,160,000 | Time: 28.12s | Throughput: 716,969 rows/s
+
+  Batch 3/8: devices 20,001..30,000
+  Rows written: 20,160,000 | Time: 27.84s | Throughput: 724,196 rows/s
+
+  Batch 4/8: devices 30,001..40,000
+  Rows written: 20,160,000 | Time: 28.24s | Throughput: 713,828 rows/s
+
+  Batch 5/8: devices 40,001..50,000
+  Rows written: 20,160,000 | Time: 29.31s | Throughput: 687,806 rows/s
+
+  Batch 6/8: devices 50,001..60,000
+  Rows written: 20,160,000 | Time: 28.15s | Throughput: 716,279 rows/s
+
+  Batch 7/8: devices 60,001..70,000
+  Rows written: 20,160,000 | Time: 27.62s | Throughput: 729,983 rows/s
+
+  Batch 8/8: devices 70,001..80,000
+  Rows written: 20,160,000 | Time: 32.91s | Throughput: 612,666 rows/s
+
+================================================================================
+Benchmark Generation Complete
+================================================================================
+Output path:            /raw/benchmark_data
+Total raw rows:         161,280,000
+Expected unique after dedup: 161,280,000
+Expected dedup ratio:   0.0%
+Total elapsed:          240.91s
+================================================================================
+
+[2/3] Running deduplication pipeline (mode=benchmark)...
+
+================================================================================
+  ATLAS - REFINED LAYER DELTA LAKE PIPELINE
+  High-Performance Deduplication for 400K+ Device Scale
+================================================================================
+
+  Mode: BENCHMARK
+  Architecture:
+  - Triple-Hash Key: (device_id, metric_time, application_customer_id)
+  - 5-Level Partitioning: report_type/date/pcid/acid/device_id
+  - Storage: Parquet with ZSTD compression
+  - Optimization: Z-ORDER by metric_time for query locality
+  - Batch Processing: OPTIMIZE every 5 batches
+  - Fault Tolerance: Checkpointing enabled
+
+  Horizontal Scaling:
+  - Dynamic Allocation: False
+  - Executors: 2
+  - Executor Cores: 2
+  - Executor Memory: 2g
+
+--------------------------------------------------------------------------------
+[STEP 1] Initializing Spark session with Delta Lake...
+--------------------------------------------------------------------------------
+:: loading settings :: url = jar:file:/opt/spark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-edb54954-2fe8-4e6d-84f6-5080e203ee3d;1.0
+        confs: [default]
+        found io.delta#delta-spark_2.12;3.1.0 in central
+        found io.delta#delta-storage;3.1.0 in central
+        found org.antlr#antlr4-runtime;4.9.3 in central
+downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (839ms)
+downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (141ms)
+downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
+        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (180ms)
+:: resolution report :: resolve 3510ms :: artifacts dl 1166ms
+        :: modules in use:
+        io.delta#delta-spark_2.12;3.1.0 from central in [default]
+        io.delta#delta-storage;3.1.0 from central in [default]
+        org.antlr#antlr4-runtime;4.9.3 from central in [default]
+        ---------------------------------------------------------------------
+        |                  |            modules            ||   artifacts   |
+        |       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+        ---------------------------------------------------------------------
+        |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
+        ---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-edb54954-2fe8-4e6d-84f6-5080e203ee3d
+        confs: [default]
+        3 artifacts copied, 0 already retrieved (5727kB/13ms)
+26/04/19 11:14:05 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+         ✓ SparkSession created with Delta Lake 3.1.0
+         ✓ Compression: zstd
+         ✓ Parquet vectorized reader enabled
+         ✓ Adaptive Query Execution enabled
+
+--------------------------------------------------------------------------------
+[STEP 2] Discovering file_date batches in benchmark data...
+--------------------------------------------------------------------------------
+         ℹ file_date = date batch was received (each contains 7-day rolling window)
+         ✓ Found 1 daily file batches
+         ✓ File date range: 2026-03-01 → 2026-03-01
+         ✓ File batches to process: 1
+         ℹ Fresh benchmark run detected (resume=False): clearing existing output at /refined
+
+--------------------------------------------------------------------------------
+[STEP 3] Processing file batches with incremental MERGE...
+--------------------------------------------------------------------------------
+         ℹ Each batch = 2016 rows/device (7-day window), only 288 new/device
+
+  ┌─ Batch 1/1: file_date=2026-03-01
+  │  Rows: 161,280,000 | Read: 0.46s
+         Partition structure: /report_type/partition_date/platform_customer_id/application_customer_id/device_id/
+         Compression: zstd
+[Stage 15:>                                                     (1 + 12) / 2[Stage 15:>                                                     (4 + 12) / 2[Stage 15:>                                                    (10 + 12) / 2[Stage 15:>                                                    (11 + 12) / 2[Stage 1[Stage 15:=>                                                   (60 + 12) / 2000]
+[Stage 15:====================================>              (1441 + 12) / 2000]
+
+
+
+
+
+[Stage 15:====================================>              (1442 + 12) / 2000]
+[Stage 15:====================================>              (1444 + 12) / 2000]
+[Stage 15:====================================>              (1449 + 12) / 2000]
+[Stage 15:=====================================>             (1453 + 12) / 2000]
+
+
+
+
+
+
+
+
+
+
+[Stage 15:=====================================>             (1454 + 12) / 2000]
+[Stage 15:=====================================>             (1464 + 12) / 2000]
+
+
+
+
+[Stage 15:=====================================>             (1465 + 12) / 2000]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+26/04/19 11:40:49 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
+  │  Action: INIT | Time: 1602.58s
+  │  Batch total: 1603.07s | Throughput: 100,607 rows/s
+  └─ ✓ Batch complete
+
+  Running final OPTIMIZE... ---- waited for 30mins, OPTIMIZE Function never ended... so assuming it to be > 30mins
+ 
+
+
+
