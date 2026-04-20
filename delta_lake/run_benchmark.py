@@ -17,9 +17,11 @@ from pyspark.sql.functions import col
 
 def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmark") -> SparkSession:
     """
-    Create SparkSession configured for the Vertical Monolith: 
-    1 Executor, 6 Cores, 5GB Executor Memory, Dynamic Allocation disabled.
+    Create SparkSession with dynamic profile support: 
+    Supports 'local' (Monolith) or 'cluster' (Distributed POC) via EXECUTION_MODE env var.
     """
+    execution_mode = os.environ.get('EXECUTION_MODE', 'local').lower()
+    
     builder = (
         SparkSession.builder
         .appName(app_name)
@@ -38,10 +40,6 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.adaptive.skewJoin.enabled", "true")
         .config("spark.dynamicAllocation.enabled", "false")
-        # Vertical Monolith Config: 1 executor, 6 cores, 5GB
-        .config("spark.executor.instances", "1")
-        .config("spark.executor.cores", "6")
-        .config("spark.executor.memory", "5g")
         # Delta optimizations
         .config("spark.databricks.delta.optimizeWrite.enabled", "true")
         .config("spark.databricks.delta.autoCompact.enabled", "false")
@@ -49,10 +47,28 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
     )
     
-    if os.getenv("SPARK_MASTER"):
-        builder = builder.master(os.getenv("SPARK_MASTER"))
+    if execution_mode == 'cluster':
+        # Cluster Profile: Remote distributed spark setup
+        builder = (
+            builder
+            .master("spark://atlas-spark-master:7077")
+            .config("spark.executor.instances", "1")
+            .config("spark.executor.cores", "2")
+            .config("spark.executor.memory", "1g")
+        )
     else:
-        builder = builder.master("local[*]")
+        # Local Profile (Default): Vertical Monolith inside Lakehouse container
+        builder = (
+            builder
+            .master("local[*]")
+            .config("spark.executor.instances", "1")
+            .config("spark.executor.cores", "6")
+            .config("spark.executor.memory", "5g")
+        )
+    
+    if os.getenv("SPARK_MASTER") and execution_mode != 'cluster':
+        # Override local if explicit master passed via env var
+        builder = builder.master(os.getenv("SPARK_MASTER"))
     
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
