@@ -21,7 +21,9 @@ WORKDIR /app
 
 # Copy application scripts
 COPY generate_data.py /app/
-COPY delta_merge_pipeline.py /app/
+COPY delta_core.py /app/
+COPY run_benchmark.py /app/
+COPY run_livewire.py /app/
 
 # Set environment variables for PySpark
 ENV PYSPARK_PYTHON=python3

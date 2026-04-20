@@ -738,9 +738,15 @@ Here is the revised, highly detailed engineering log restricted *strictly* to to
 
  
 - docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=10 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse   
+- docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=1000 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse  
 
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=75000 -e BATCH_SIZE=1000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse   
 
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=75000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=85000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
  
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=50000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
 
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=5  -e BATCH_SIZE=10000 -e NUM_DAYS=2 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
 # Benchmark mode with vacuum
 docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y spark
