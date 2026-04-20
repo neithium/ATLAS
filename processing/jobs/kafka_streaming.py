@@ -33,6 +33,8 @@ df = spark.readStream \
     .option("kafka.bootstrap.servers", "broker1:9092") \
     .option("subscribe", "raw-server-metrics") \
     .option("startingOffsets", "latest") \
+    .option("kafka.group.id", "atlas-processor-streaming-group") \
+    .option("failOnDataLoss", "false") \
     .load()
 
 parsed = df.selectExpr("CAST(value AS STRING)") \
