@@ -296,7 +296,7 @@ async def get_kafka():
                 max_batch_size=41943040,      # ⬆️ 40MB for ultra-bursts
                 max_request_size=10485760,     # ⬆️ 10MB
                 request_timeout_ms=300000,    # ⬆️ 5-minute timeout for heavy flushes
-                acks=0                        # ⚡ 'Extreme Speed' - No ack wait to hit <30s
+                acks=1                        # ⚡ 'Extreme Speed' - No ack wait to hit <30s
             )
             # Startup handled in main.py
             log.info(f"🛰️  [KAFKA] Production Producer Initialized (AIOKafka)")
@@ -374,7 +374,7 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     pool = await get_db_pool()
     batch_size = 100
-    semaphore = asyncio.Semaphore(60)  # Increased from 30 to 60 for better parallelism
+    semaphore = asyncio.Semaphore(20)  # Increased from 30 to 60 for better parallelism
     
     async def process_batch(batch_ids):
         nonlocal processed
@@ -417,8 +417,9 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     # Flush with error handling for timeout scenarios
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(_executor, kafka_prod.flush, 300)  # 5-minute timeout
+        await kafka_prod.flush()
+        # loop = asyncio.get_event_loop()
+        # await loop.run_in_executor(_executor, kafka_prod.flush, 300)  # 5-minute timeout
         log.info(f"✅ [KAFKA] Stream-batch flush successful for {processed} messages")
     except Exception as e:
         log.warning(f"⚠️  [KAFKA] Flush timeout (flush may still complete): {type(e).__name__} - {e}")
@@ -433,7 +434,7 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     pool = await get_db_pool()
     batch_size = 100
-    semaphore = asyncio.Semaphore(60)  # Increased from 30 to 60 for better parallelism
+    semaphore = asyncio.Semaphore(20)  # Increased from 30 to 60 for better parallelism
     
     async def process_batch(batch_ids):
         nonlocal processed
@@ -464,8 +465,9 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     # Flush with error handling for timeout scenarios
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(_executor, kafka_prod.flush, 300)  # 5-minute timeout
+        await kafka_prod.flush()
+        # loop = asyncio.get_event_loop()
+        # await loop.run_in_executor(_executor, kafka_prod.flush, 300)  # 5-minute timeout
         log.info(f"✅ [KAFKA] Latest-batch flush successful for {processed} messages")
     except Exception as e:
         log.warning(f"⚠️  [KAFKA] Flush timeout (flush may still complete): {type(e).__name__} - {e}")
@@ -553,7 +555,7 @@ async def _export_first_task(device_ids: List[str], count: int = 2016):
     t_batches_start = time.monotonic()
     batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
     # Increased from Semaphore(30) to 60 for more parallelism
-    semaphore = asyncio.Semaphore(60)
+    semaphore = asyncio.Semaphore(20)
     
     async def process_batch_with_semaphore(batch_ids):
         async with semaphore:
@@ -600,7 +602,7 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
     
     pool = await get_db_pool()
     batch_size = 100
-    semaphore = asyncio.Semaphore(60)
+    semaphore = asyncio.Semaphore(20)
     
     async def process_batch(batch_ids):
         nonlocal processed
