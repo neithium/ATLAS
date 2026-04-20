@@ -361,6 +361,8 @@ df = spark.readStream.format("kafka") \
     .option("kafka.bootstrap.servers", "broker1:9092") \
     .option("subscribe", "raw-server-metrics") \
     .option("startingOffsets", "latest") \
+    .option("kafka.group.id", "atlas-processor-streaming-group") \
+    .option("failOnDataLoss", "false") \
     .load()
 
 # ---------------- PARSE JSON ----------------
