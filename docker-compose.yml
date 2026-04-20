@@ -534,6 +534,7 @@ services:
       # Schema reference
       - ./schema:/app/schema:ro
     environment:
+      - PYTHONUNBUFFERED=1
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=4g
