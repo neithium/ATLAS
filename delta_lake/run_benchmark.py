@@ -55,6 +55,7 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
             .config("spark.executor.instances", "1")
             .config("spark.executor.cores", "2")
             .config("spark.executor.memory", "1g")
+            .config("spark.jars.ivy", "/tmp/.ivy2")
         )
     else:
         # Local Profile (Default): Vertical Monolith inside Lakehouse container
@@ -205,7 +206,31 @@ def run_benchmark_pipeline(
     }
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
+    
+    parser = argparse.ArgumentParser(description="ATLAS Benchmark Pipeline")
+    parser.add_argument("--generate-data", action="store_true", help="Generate benchmark data before running pipeline")
+    parser.add_argument("--devices", type=int, default=2000, help="Number of devices for data generation")
+    parser.add_argument("--days", type=int, default=3, help="Number of daily batches to generate")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Device batch size")
+    args = parser.parse_args()
+
     spark = create_spark_session()
+    
+    if args.generate_data:
+        from generate_data import generate_benchmark_data
+        print(f"\n[INIT] Generating benchmark data for {args.devices} devices over {args.days} days...")
+        # Since it runs in container, /raw is the correct output root
+        generate_benchmark_data(
+            spark=spark,
+            output_root=PipelineConfig.RAW_DATA_PATH,
+            total_devices=args.devices,
+            batch_size=args.batch_size,
+            start_date=datetime(2026, 2, 20),
+            num_days=args.days
+        )
+    
     tracker = LatencyTracker()
     tracker.start_pipeline()
     checkpoint_mgr = CheckpointManager(PipelineConfig.CHECKPOINT_PATH)

@@ -875,8 +875,10 @@ services:
     container_name: atlas-spark-master
     profiles:
       - cluster-poc
+    user: root
     environment:
       - SPARK_MODE=master
+      - SPARK_DAEMON_USER=root
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
@@ -896,8 +898,10 @@ services:
     container_name: atlas-spark-worker-local
     profiles:
       - cluster-poc
+    user: root
     environment:
       - SPARK_MODE=worker
+      - SPARK_DAEMON_USER=root
       - SPARK_MASTER_URL=spark://atlas-spark-master:7077
       - SPARK_WORKER_MEMORY=4G
       - SPARK_WORKER_CORES=4
