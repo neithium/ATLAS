@@ -17,9 +17,11 @@ from pyspark.sql.functions import col
 
 def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmark") -> SparkSession:
     """
-    Create SparkSession configured for the Vertical Monolith: 
-    1 Executor, 6 Cores, 5GB Executor Memory, Dynamic Allocation disabled.
+    Create SparkSession with dynamic profile support: 
+    Supports 'local' (Monolith) or 'cluster' (Distributed POC) via EXECUTION_MODE env var.
     """
+    execution_mode = os.environ.get('EXECUTION_MODE', 'local').lower()
+    
     builder = (
         SparkSession.builder
         .appName(app_name)
@@ -38,10 +40,6 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.adaptive.skewJoin.enabled", "true")
         .config("spark.dynamicAllocation.enabled", "false")
-        # Vertical Monolith Config: 1 executor, 6 cores, 5GB
-        .config("spark.executor.instances", "1")
-        .config("spark.executor.cores", "6")
-        .config("spark.executor.memory", "5g")
         # Delta optimizations
         .config("spark.databricks.delta.optimizeWrite.enabled", "true")
         .config("spark.databricks.delta.autoCompact.enabled", "false")
@@ -49,10 +47,29 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
     )
     
-    if os.getenv("SPARK_MASTER"):
-        builder = builder.master(os.getenv("SPARK_MASTER"))
+    if execution_mode == 'cluster':
+        # Cluster Profile: Remote distributed spark setup
+        builder = (
+            builder
+            .master("spark://atlas-spark-master:7077")
+            .config("spark.executor.instances", "1")
+            .config("spark.executor.cores", "2")
+            .config("spark.executor.memory", "1g")
+            .config("spark.jars.ivy", "/tmp/.ivy2")
+        )
     else:
-        builder = builder.master("local[*]")
+        # Local Profile (Default): Vertical Monolith inside Lakehouse container
+        builder = (
+            builder
+            .master("local[*]")
+            .config("spark.executor.instances", "1")
+            .config("spark.executor.cores", "6")
+            .config("spark.executor.memory", "5g")
+        )
+    
+    if os.getenv("SPARK_MASTER") and execution_mode != 'cluster':
+        # Override local if explicit master passed via env var
+        builder = builder.master(os.getenv("SPARK_MASTER"))
     
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
@@ -189,7 +206,31 @@ def run_benchmark_pipeline(
     }
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
+    
+    parser = argparse.ArgumentParser(description="ATLAS Benchmark Pipeline")
+    parser.add_argument("--generate-data", action="store_true", help="Generate benchmark data before running pipeline")
+    parser.add_argument("--devices", type=int, default=2000, help="Number of devices for data generation")
+    parser.add_argument("--days", type=int, default=3, help="Number of daily batches to generate")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Device batch size")
+    args = parser.parse_args()
+
     spark = create_spark_session()
+    
+    if args.generate_data:
+        from generate_data import generate_benchmark_data
+        print(f"\n[INIT] Generating benchmark data for {args.devices} devices over {args.days} days...")
+        # Since it runs in container, /raw is the correct output root
+        generate_benchmark_data(
+            spark=spark,
+            output_root=PipelineConfig.RAW_DATA_PATH,
+            total_devices=args.devices,
+            batch_size=args.batch_size,
+            start_date=datetime(2026, 2, 20),
+            num_days=args.days
+        )
+    
     tracker = LatencyTracker()
     tracker.start_pipeline()
     checkpoint_mgr = CheckpointManager(PipelineConfig.CHECKPOINT_PATH)

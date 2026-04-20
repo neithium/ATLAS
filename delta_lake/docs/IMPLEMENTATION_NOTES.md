@@ -750,3 +750,17 @@ docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchm
 docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=5  -e BATCH_SIZE=10000 -e NUM_DAYS=2 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
 # Benchmark mode with vacuum
 docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y spark
+
+
+## note to myself: to trigger the api via post 
+ingestion api : curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPCUST0010/telemetry/export?days=7 
+
+
+
+curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPCUST0010/telemetry/export?days=7"
+
+
+## Cluster mode
+docker-compose --profile cluster-poc up
+.\Run-ClusterBenchmark.ps1
+
