@@ -49,12 +49,19 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
     
     if execution_mode == 'cluster':
         # Cluster Profile: Remote distributed spark setup
+        # CRITICAL RESOURCE CONSTRAINTS to prevent executor death spiral
         builder = (
             builder
             .master("spark://atlas-spark-master:7077")
-            .config("spark.executor.instances", "1")
-            .config("spark.executor.cores", "2")
-            .config("spark.executor.memory", "1g")
+            # Prevent core overcommitment across cluster nodes
+            .config("spark.cores.max", "2")
+            # Cap total number of executors (prevents cascading failures)
+            .config("spark.executor.instances", "2")
+            # Limit per-executor memory (leaves JVM overhead for 4GB systems)
+            .config("spark.executor.memory", "800m")
+            # Reduce Spark cache memory to prevent OOM kills
+            .config("spark.memory.fraction", "0.6")
+            # Ivy cache directory
             .config("spark.jars.ivy", "/tmp/.ivy2")
         )
     else:
