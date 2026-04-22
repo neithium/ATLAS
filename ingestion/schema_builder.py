@@ -137,13 +137,13 @@ def build_48_field_golden_record(
     return record
 
 
-def build_batch_power_detail(raw_readings: List[dict], max_date_prefix: Optional[str] = None) -> tuple:
+def build_batch_power_detail(raw_readings: List[dict], fresh_cutoff_str: Optional[str] = None) -> tuple:
     """
     Builds PowerDetail array from multiple readings and returns aggregates.
     
     Args:
         raw_readings: List of telemetry readings from DB
-        max_date_prefix: Optional "YYYY-MM-DD" string to flag 'is_fresh' in a single pass.
+        fresh_cutoff_str: Optional ISO timestamp. Points >= this are flagged 'is_fresh'.
     
     Returns:
         Tuple of (power_detail_array, avg_watts, max_watts, min_watts)
@@ -218,8 +218,8 @@ def build_batch_power_detail(raw_readings: List[dict], max_date_prefix: Optional
         timestamp_str = timestamp.isoformat() if needs_iso else str(timestamp)
         
         is_fresh = False
-        if max_date_prefix:
-            is_fresh = timestamp_str[:10] == max_date_prefix
+        if fresh_cutoff_str:
+            is_fresh = timestamp_str >= fresh_cutoff_str
         else:
             is_fresh = bool(reading.get("is_fresh", False))
 

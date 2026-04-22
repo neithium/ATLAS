@@ -108,6 +108,31 @@ log = logging.getLogger("api-v3")
 
 app = FastAPI(title="PowerPulse V3 Unified Ingestion API")
 
+# --- Concurrency & Safety Controls ---
+# Tier 1: Context Guard (Prevents redundant fetches for the SAME PCID/ACID)
+ACTIVE_HIERARCHIES = set() 
+HIERARCHY_LOCK = asyncio.Lock()
+
+# Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # Max 2 parallel export jobs total
+
+# =============================================================================
+# THROTTLING WRAPPER
+# =============================================================================
+async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
+    """Wrapper to enforce global system limits and automatic cleanup of hierarchical locks."""
+    async with GLOBAL_THROTTLE_SEM:
+        try:
+            log.info(f"🚦 [THROTTLE] Starting export for {h_key} (Occupying 1/2 system slots)")
+            await task_func(*args, **kwargs)
+        except Exception as e:
+            log.error(f"💥 [GUARD] Task failed for {h_key}: {e}")
+        finally:
+            async with HIERARCHY_LOCK:
+                if h_key in ACTIVE_HIERARCHIES:
+                    ACTIVE_HIERARCHIES.remove(h_key)
+            log.info(f"🟢 [GUARD] Export complete for {h_key}. Hierarchy lock released.")
+
 # =============================================================================
 # 48-FIELD GOLDEN SCHEMA BUILDER (Matches Spark input_schema)
 # =============================================================================
@@ -675,18 +700,38 @@ async def _process_and_send(did, readings, DEVICES, kafka_prod):
     meta = DEVICES.get(did, {})
     
     # Build PowerDetail array from all readings
-    # Optimized: We pass max_date directly to achieve Single-Pass hydration
-    max_date = None
+    # Optimized: We pass a 1-hour temporal cutoff to achieve high-precision 'is_fresh' flagging
+    fresh_cutoff = None
     if readings:
         try:
+            # Detect key based on query type (JSON vs Raw)
             key = "Time" if "Time" in readings[0] else "metric_time"
-            # O(1) date detection from pre-sorted DB tail
-            last_record = readings[-1]
-            max_date = str(last_record[key])[:10]
+            
+            # O(1) temporal detection from pre-sorted DB tail
+            last_val = readings[-1][key]
+            
+            # Use 1-hour window (12 points) for freshness as requested
+            if isinstance(last_val, datetime):
+                fresh_cutoff = (last_val - timedelta(hours=1)).isoformat()
+            elif isinstance(last_val, str):
+                # Handle string timestamps from json_agg
+                # Basic string manipulation for speed: just parse and subtract
+                try:
+                    # Remove timezone +00:00/Z for simple parsing if needed, 
+                    # but ISO strings are directly comparable if they share format.
+                    # Best: Parse properly to ensure 1-hour subtraction
+                    from dateutil.parser import parse
+                    last_ts = parse(last_val)
+                    fresh_cutoff = (last_ts - timedelta(hours=1)).isoformat()
+                except:
+                    fresh_cutoff = last_val
+            else:
+                fresh_cutoff = str(last_val)
+                
         except Exception as e:
-            log.warning(f"⚠️  [is_fresh] Date detection failed for {did}: {e}")
+            log.warning(f"⚠️  [is_fresh] Cutoff detection failed for {did}: {e}")
 
-    power_detail_list, avg_watts, max_watts, min_watts = build_batch_power_detail(readings, max_date)
+    power_detail_list, avg_watts, max_watts, min_watts = build_batch_power_detail(readings, fresh_cutoff)
     latest = readings[-1] if readings else {}
     
     # Use unified schema builder
@@ -730,8 +775,15 @@ async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tas
         if not device_ids:
             return {"status": "Empty Hierarchy", "pcid": pcid, "acid": acid}
             
-        background_tasks.add_task(_export_stream_task, device_ids, start_time, end_time)
-        return {"status": "Archival Stream Started", "targeted_devices": len(device_ids)}
+        # --- Hierarchical Lock Check ---
+        h_key = f"{pcid}:{acid}"
+        async with HIERARCHY_LOCK:
+            if h_key in ACTIVE_HIERARCHIES:
+                return {"status": "error", "message": f"Export already in progress for {h_key}"}
+            ACTIVE_HIERARCHIES.add(h_key)
+
+        background_tasks.add_task(_handle_throttled_export, _export_stream_task, h_key, device_ids, start_time, end_time)
+        return {"status": "Archival Stream Accepted", "targeted_devices": len(device_ids), "hierarchy": h_key}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -750,8 +802,15 @@ async def trigger_latest_telemetry_export(pcid: str, acid: str, background_tasks
         if not device_ids:
             return {"status": "Empty Hierarchy"}
         
-        background_tasks.add_task(_export_latest_task, device_ids, count)
-        return {"status": "Latest Sync Started", "requested_points": count, "device_count": len(device_ids)}
+        # --- Hierarchical Lock Check ---
+        h_key = f"{pcid}:{acid}"
+        async with HIERARCHY_LOCK:
+            if h_key in ACTIVE_HIERARCHIES:
+                return {"status": "error", "message": f"Latest Sync already active for {h_key}"}
+            ACTIVE_HIERARCHIES.add(h_key)
+
+        background_tasks.add_task(_handle_throttled_export, _export_latest_task, h_key, device_ids, count)
+        return {"status": "Latest Sync Accepted", "requested_points": count, "device_count": len(device_ids), "hierarchy": h_key}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -765,7 +824,9 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
 
         log.info(f"📥 [API] Manual Export Requested for {len(device_ids)} specific devices.")
         
-        background_tasks.add_task(_export_stream_task, device_ids, start_time, end_time)
+        # Manual exports use a special key to ensure they don't block hierarchical ones
+        m_key = f"manual:{uuid.uuid4().hex[:8]}"
+        background_tasks.add_task(_handle_throttled_export, _export_stream_task, m_key, device_ids, start_time, end_time)
         return {
             "status": "Manual Stream Started", 
             "requested_devices": len(device_ids),
@@ -791,8 +852,15 @@ async def trigger_historical_first_export(pcid: str, acid: str, background_tasks
         if not target_ids:
             return {"status": "error", "message": "No devices found for hierarchy"}
             
-        background_tasks.add_task(_export_first_task, target_ids, count)
-        return {"status": "accepted", "job": "historical_first_sync", "device_count": len(target_ids)}
+        # --- Hierarchical Lock Check ---
+        h_key = f"{pcid}:{acid}"
+        async with HIERARCHY_LOCK:
+            if h_key in ACTIVE_HIERARCHIES:
+                return {"status": "error", "message": f"Historical Sync already active for {h_key}"}
+            ACTIVE_HIERARCHIES.add(h_key)
+
+        background_tasks.add_task(_handle_throttled_export, _export_first_task, h_key, target_ids, count)
+        return {"status": "accepted", "job": "historical_first_sync", "device_count": len(target_ids), "hierarchy": h_key}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
