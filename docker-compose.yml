@@ -881,9 +881,6 @@ services:
       - SPARK_HOSTNAME=localhost
       - SPARK_LOCAL_HOSTNAME=localhost
       - SPARK_WEBUI_PORT=8080
-      # Resource constraints to prevent executor death spiral
-      - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=1500M
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
@@ -913,9 +910,8 @@ services:
       - SPARK_HOSTNAME=localhost
       - SPARK_LOCAL_HOSTNAME=localhost
       - SPARK_WEBUI_PORT=8081
-      # Resource constraints to prevent executor death spiral
-      - SPARK_WORKER_MEMORY=1500M
-      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=4
     volumes:
       - ./delta_lake:/app
       - C:/Users/Public/atlas-data/refined:/refined
