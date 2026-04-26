@@ -52,7 +52,7 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         builder = (
             builder
             .master("spark://atlas-spark-master:7077")
-            .config("spark.executor.instances", "1")
+            .config("spark.executor.instances", "2")
             .config("spark.executor.cores", "2")
             .config("spark.executor.memory", "1g")
             .config("spark.jars.ivy", "/tmp/.ivy2")
@@ -211,8 +211,8 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="ATLAS Benchmark Pipeline")
     parser.add_argument("--generate-data", action="store_true", help="Generate benchmark data before running pipeline")
-    parser.add_argument("--devices", type=int, default=2000, help="Number of devices for data generation")
-    parser.add_argument("--days", type=int, default=3, help="Number of daily batches to generate")
+    parser.add_argument("--devices", type=int, default=1000, help="Number of devices for data generation")
+    parser.add_argument("--days", type=int, default=4, help="Number of daily batches to generate")
     parser.add_argument("--batch-size", type=int, default=1000, help="Device batch size")
     args = parser.parse_args()
 

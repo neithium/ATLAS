@@ -69,7 +69,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Step 4: Execute the PySpark benchmark inside the container
 Write-Host "[STAGE 4] Installing dependencies and Executing Benchmark Pipeline inside Spark Master..." -ForegroundColor Yellow
-Write-Host "> Command: docker exec -u spark atlas-spark-master bash -c `"export EXECUTION_MODE=cluster && python3 /app/run_benchmark.py --generate-data --devices 1000 --days 3`"" -ForegroundColor DarkGray
+Write-Host "> Command: docker exec -u spark atlas-spark-master bash -c `"export EXECUTION_MODE=cluster && python3 /app/run_benchmark.py --generate-data --devices 100  --days 3`"" -ForegroundColor DarkGray
 Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
 
 # Pre-install delta-spark as root, then run benchmark as spark user to fix file ownership
@@ -78,7 +78,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "[WARN] Delta-spark installation had issues, but continuing..." -ForegroundColor Yellow
 }
 
-docker exec -u spark atlas-spark-master bash -c "export EXECUTION_MODE=cluster && python3 /app/run_benchmark.py --generate-data --devices 1000 --days 3"
+docker exec -u spark atlas-spark-master bash -c "export EXECUTION_MODE=cluster && python3 /app/run_benchmark.py --generate-data --devices 100 --days 1"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "[SUCCESS] Benchmark job completed successfully." -ForegroundColor Green

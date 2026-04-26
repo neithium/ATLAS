@@ -154,7 +154,7 @@ def build_daily_file_df(
                     lit("APP-017"),
                     lit("APP-113"),
                     lit("APP-226"),
-                    lit("APP-67890"),
+                    lit("APP-67890"), 
                 ),
                 (pmod(col("device_num"), lit(5)) + lit(1)).cast("int"),
             ),
