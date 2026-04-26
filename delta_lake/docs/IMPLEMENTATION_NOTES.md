@@ -760,7 +760,3 @@ ingestion api : curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPC
 curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPCUST0010/telemetry/export?days=7"
 
 
-## Cluster mode
-docker-compose --profile cluster-poc up
-.\Run-ClusterBenchmark.ps1
-

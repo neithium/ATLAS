@@ -17,10 +17,8 @@ from pyspark.sql.functions import col
 
 def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmark") -> SparkSession:
     """
-    Create SparkSession with dynamic profile support: 
-    Supports 'local' (Monolith) or 'cluster' (Distributed POC) via EXECUTION_MODE env var.
+    Create SparkSession for local execution
     """
-    execution_mode = os.environ.get('EXECUTION_MODE', 'local').lower()
     
     builder = (
         SparkSession.builder
@@ -45,29 +43,14 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.databricks.delta.autoCompact.enabled", "false")
         .config("spark.databricks.delta.properties.defaults.targetFileSize", str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
         .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
+        # Local Profile (Default): Vertical Monolith inside Lakehouse container
+        .master("local[*]")
+        .config("spark.executor.instances", "1")
+        .config("spark.executor.cores", "6")
+        .config("spark.executor.memory", "5g")
     )
     
-    if execution_mode == 'cluster':
-        # Cluster Profile: Remote distributed spark setup
-        builder = (
-            builder
-            .master("spark://atlas-spark-master:7077")
-            .config("spark.executor.instances", "2")
-            .config("spark.executor.cores", "2")
-            .config("spark.executor.memory", "1g")
-            .config("spark.jars.ivy", "/tmp/.ivy2")
-        )
-    else:
-        # Local Profile (Default): Vertical Monolith inside Lakehouse container
-        builder = (
-            builder
-            .master("local[*]")
-            .config("spark.executor.instances", "1")
-            .config("spark.executor.cores", "6")
-            .config("spark.executor.memory", "5g")
-        )
-    
-    if os.getenv("SPARK_MASTER") and execution_mode != 'cluster':
+    if os.getenv("SPARK_MASTER"):
         # Override local if explicit master passed via env var
         builder = builder.master(os.getenv("SPARK_MASTER"))
     
