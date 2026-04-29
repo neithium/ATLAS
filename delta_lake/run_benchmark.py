@@ -55,7 +55,7 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         builder = builder.master(os.getenv("SPARK_MASTER"))
     
     spark = builder.getOrCreate()
-    spark.sparkContext.setLogLevel("WARN")
+    spark.sparkContext.setLogLevel("INFO")
     return spark
 
 def get_file_dates(spark: SparkSession, data_path: str) -> List[str]:
@@ -120,7 +120,7 @@ def run_benchmark_pipeline(
     for idx, file_date in enumerate(file_dates_to_process, start=1):
         batch_start = time.perf_counter()
         
-        print(f"\n  ┌─ Batch {idx}/{len(file_dates_to_process)}: file_date={file_date}")
+        print(f"\n  ┌─ Batch {idx}/{len(file_dates_to_process)}: file_date={file_date}", flush=True)
         
         read_start = time.perf_counter()
         batch_df = (
@@ -132,7 +132,7 @@ def run_benchmark_pipeline(
         row_count = prepared_df.count()
         read_elapsed = time.perf_counter() - read_start
         
-        print(f"  │  Rows: {row_count:,} | Read: {read_elapsed:.2f}s")
+        print(f"  │  Rows: {row_count:,} | Read: {read_elapsed:.2f}s", flush=True)
         
         merge_elapsed = 0
         if not table_initialized:
@@ -145,9 +145,9 @@ def run_benchmark_pipeline(
             )
             merge_elapsed = time.perf_counter() - init_start
             table_initialized = True
-            print(f"  │  Action: INIT | Time: {merge_elapsed:.2f}s")
+            print(f"  │  Action: INIT | Time: {merge_elapsed:.2f}s", flush=True)
         else:
-            print(f"  │  Merging day i against accumulated days 0..i-1...")
+            print(f"  │  Merging day i against accumulated days 0..i-1...", flush=True)
             merge_start = time.perf_counter()
             execute_merge_deduplication(
                 spark=spark,
@@ -155,12 +155,12 @@ def run_benchmark_pipeline(
                 source_df=prepared_df
             )
             merge_elapsed = time.perf_counter() - merge_start
-            print(f"  │  MERGE Time: {merge_elapsed:.2f}s")
+            print(f"  │  MERGE Time: {merge_elapsed:.2f}s", flush=True)
         
         batch_elapsed = time.perf_counter() - batch_start
         throughput = row_count / batch_elapsed if batch_elapsed > 0 else 0
         
-        print(f"  │  Batch total: {batch_elapsed:.2f}s | Throughput: {throughput:,.0f} rows/s")
+        print(f"  │  Batch total: {batch_elapsed:.2f}s | Throughput: {throughput:,.0f} rows/s", flush=True)
         
         tracker.record_batch(batch_elapsed, merge_elapsed, read_elapsed, row_count)
         total_rows_processed += row_count
@@ -170,13 +170,13 @@ def run_benchmark_pipeline(
         
         optimize_counter += 1
         if optimize_counter >= PipelineConfig.OPTIMIZE_EVERY_N_BATCHES:
-            print(f"  │  Running OPTIMIZE...")
+            print(f"  │  Running OPTIMIZE...", flush=True)
             opt_start = time.perf_counter()
             optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
-            print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s")
+            print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s", flush=True)
             optimize_counter = 0
         
-        print(f"  └─ ✓ Batch complete")
+        print(f"  └─ ✓ Batch complete", flush=True)
     
     if optimize_counter > 0:
         print("\n  Running final OPTIMIZE...")

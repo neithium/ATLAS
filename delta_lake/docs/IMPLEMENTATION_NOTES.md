@@ -759,4 +759,6 @@ ingestion api : curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPC
 
 curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPCUST0010/telemetry/export?days=7"
 
+--- 5000 acid, 5000 pcid,  55 000 devices, 288 datapoints per day, 
+docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=55000 -e BATCH_SIZE=11000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=5 atlas-lakehouse
 
