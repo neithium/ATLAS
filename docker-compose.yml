@@ -662,6 +662,7 @@ services:
       - "8123:8123" # ClickHouse HTTP interface (queries, dashboards)
       - "9000:9000" # ClickHouse Native TCP interface
       - "5432:5432" # PostgreSQL
+      - "8501:8501" # Streamlit Dashboard
     env_file: .env.example
     environment:
       # Override hosts for internal (same-container) connections.
