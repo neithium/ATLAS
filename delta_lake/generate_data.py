@@ -145,33 +145,13 @@ def build_daily_file_df(
     device_df = (
         spark.range(batch_start, batch_end)
         .withColumnRenamed("id", "device_num")
-        .withColumn("device_id", format_string("SRV-%06d", col("device_num") + lit(1)))
-        .withColumn(
-            "application_customer_id",
-            element_at(
-                array(
-                    lit("APP-001"),
-                    lit("APP-017"),
-                    lit("APP-113"),
-                    lit("APP-226"),
-                    lit("APP-67890"), 
-                ),
-                (pmod(col("device_num"), lit(5)) + lit(1)).cast("int"),
-            ),
-        )
-        .withColumn(
-            "platform_customer_id",
-            element_at(
-                array(
-                    lit("PLAT-001"),
-                    lit("PLAT-021"),
-                    lit("PLAT-101"),
-                    lit("PLAT-12345"),
-                    lit("PLAT-907"),
-                ),
-                (pmod(col("device_num"), lit(5)) + lit(1)).cast("int"),
-            ),
-        )
+        .withColumn("id", col("device_num") + lit(1))
+        .withColumn("device_id", format_string("SRV-%06d", col("id")))
+        .withColumn("pair_index", floor((col("id") - lit(1)) / lit(11)) + lit(1))
+        # Ensure pair_index wraps around or caps correctly if id exceeds 55000, 
+        # but 55000 / 11 = 5000. So we can just use pair_index directly.
+        .withColumn("application_customer_id", format_string("APPCUST%04d", col("pair_index").cast("int")))
+        .withColumn("platform_customer_id", format_string("PLATCUST%04d", col("pair_index").cast("int")))
         .withColumn(
             "report_type",
             element_at(
@@ -184,6 +164,7 @@ def build_daily_file_df(
                 (pmod(col("device_num"), lit(4)) + lit(1)).cast("int"),
             ),
         )
+        .drop("id", "pair_index")
     )
 
     # Build time dimension - 7 days at 5-minute intervals = 2016 timestamps
@@ -511,8 +492,8 @@ def parse_args():
     parser.add_argument("--output", type=str, default="/raw", help="Root output directory")
     parser.add_argument("--mode", type=str, choices=["benchmark", "legacy", "dataframe"], default="benchmark",
                         help="Generation mode: benchmark (files), legacy (2-file demo), dataframe (API mode)")
-    parser.add_argument("--devices", type=int, default=100000, help="Number of devices")
-    parser.add_argument("--batch-size", type=int, default=10000, help="Devices per batch")
+    parser.add_argument("--devices", type=int, default=55000, help="Number of devices")
+    parser.add_argument("--batch-size", type=int, default=11000, help="Devices per batch")
     parser.add_argument("--num-days", type=int, default=7, help="Number of daily files to generate")
     parser.add_argument("--start-date", type=str, default="2026-03-01", help="First file date (YYYY-MM-DD)")
     parser.add_argument("--compression", type=str, default="zstd", choices=["zstd", "snappy", "gzip"],
