@@ -81,7 +81,7 @@ services:
       - KAFKA_BOOTSTRAP=broker1:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=true
+      - ENABLE_POLLER=true 
       - SCALE_SIZE=80000
     volumes:
       - ./ingestion:/app
@@ -476,8 +476,8 @@ services:
       echo '⏳ Waiting for Kafka to stabilize...' &&
       sleep 40 &&
 
-      echo '🚀 Starting Generator...' &&
-      python3 /app/jobs/json_generator.py &
+      # echo '🚀 Starting Generator...' &&
+      # python3 /app/jobs/json_generator.py &
 
       echo '🚀 Starting Kafka Streaming...' &&
       spark-submit \
