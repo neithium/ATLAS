@@ -90,7 +90,7 @@ def create_spark_session() -> SparkSession:
         .config("spark.sql.parquet.compression.codec", GeneratorConfig.COMPRESSION_CODEC)
         .getOrCreate()
     )
-    spark.sparkContext.setLogLevel("INFO")
+    spark.sparkContext.setLogLevel("WARN")
     return spark
 
 

@@ -54,7 +54,7 @@ def get_customers():
     if ch_client:
         try:
             # Query distinct application_customer_id from ClickHouse
-            df = ch_client.query_df("SELECT DISTINCT application_customer_id FROM telemetry_refined WHERE application_customer_id != ''")
+            df = ch_client.query_df("SELECT DISTINCT application_customer_id FROM atlas.telemetry_refined WHERE application_customer_id != ''")
             if not df.empty:
                 return df['application_customer_id'].tolist()
         except:
@@ -171,7 +171,7 @@ def get_pipeline_runs():
 # Dashboard UI Layout
 # =============================================================================
 
-st.title("🛰️ ATLAS Real-Time Observability")
+st.title("  ATLAS Real-Time Observability")
 st.markdown("Monitoring telemetry ingestion, deduplication, and refined querying over ClickHouse & Postgres.")
 
 # ---------- SIDEBAR ----------

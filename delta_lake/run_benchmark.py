@@ -55,7 +55,7 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         builder = builder.master(os.getenv("SPARK_MASTER"))
     
     spark = builder.getOrCreate()
-    spark.sparkContext.setLogLevel("INFO")
+    spark.sparkContext.setLogLevel("WARN")
     return spark
 
 def get_file_dates(spark: SparkSession, data_path: str) -> List[str]:
