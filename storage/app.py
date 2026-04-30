@@ -4,12 +4,12 @@ import psycopg
 import pandas as pd
 import plotly.express as px
 import os
-import time
 
-st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide")
+st.set_page_config(page_title="ATLAS Dynamic Data Explorer", layout="wide")
 
-# Connection specs mapping local envs 
-# (these match the supervisord container context where everything is local)
+# =============================================================================
+# Connection Configuration
+# =============================================================================
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 POSTGRES_HOST   = os.environ.get("POSTGRES_HOST", "127.0.0.1")
 POSTGRES_DB     = os.environ.get("POSTGRES_DB", "atlas_metadata")
@@ -18,231 +18,189 @@ POSTGRES_PASS   = os.environ.get("POSTGRES_PASSWORD", "atlas_secure_pwd")
 
 @st.cache_resource(ttl=60)
 def init_ch_client():
-    """Initialize ClickHouse connection with a short TTL."""
     try:
         return clickhouse_connect.get_client(host=CLICKHOUSE_HOST, port=8123, username='default', password='', database='atlas')
     except Exception as e:
-        st.error(f"ClickHouse connection failed: {e}")
         return None
 
 @st.cache_resource(ttl=60)
 def init_pg_client():
-    """Initialize PostgreSQL connection with a short TTL."""
     try:
-        conn = psycopg.connect(
-            host=POSTGRES_HOST,
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASS
-        )
-        return conn
+        return psycopg.connect(host=POSTGRES_HOST, dbname=POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASS)
     except Exception as e:
-        st.error(f"PostgreSQL connection failed: {e}")
         return None
 
-# Attempt connections
 ch_client = init_ch_client()
 pg_conn = init_pg_client()
 
 # =============================================================================
-# Helper queries for caching
+# Dynamic Data Fetchers
 # =============================================================================
 
 @st.cache_data(ttl=60)
-def get_customers():
-    """Fetch distinct application customers."""
-    if ch_client:
-        try:
-            # Query distinct application_customer_id from ClickHouse
-            df = ch_client.query_df("SELECT DISTINCT application_customer_id FROM atlas.telemetry_refined WHERE application_customer_id != ''")
-            if not df.empty:
-                return df['application_customer_id'].tolist()
-        except:
-            pass
-    # If connection fails or query fails (table empty), return mocks 
-    return ["APPCUST0001", "APPCUST0002", "APPCUST0003"]
+def query_pg(sql_query):
+    if not pg_conn or pg_conn.closed: return pd.DataFrame()
+    try:
+        with pg_conn.cursor() as cur:
+            cur.execute(sql_query)
+            if cur.description:
+                cols = [desc[0] for desc in cur.description]
+                return pd.DataFrame(cur.fetchall(), columns=cols)
+        return pd.DataFrame()
+    except Exception as e:
+        pg_conn.rollback()
+        return pd.DataFrame()
+
+def get_pg_tables():
+    df = query_pg("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+    return df['table_name'].tolist() if not df.empty else []
 
 @st.cache_data(ttl=60)
-def get_report_types():
-    """Fetch distinct report types from ClickHouse."""
+def get_ch_tables():
     if ch_client:
         try:
-            df = ch_client.query_df("SELECT DISTINCT report_type FROM telemetry_refined WHERE report_type != ''")
-            if not df.empty:
-                return df['report_type'].tolist()
-        except:
-            pass
-    return ["power_metrics", "thermal_metrics"]
+            df = ch_client.query_df("SHOW TABLES FROM atlas")
+            return df['name'].tolist() if not df.empty else []
+        except: pass
+    return []
 
 @st.cache_data(ttl=60)
-def get_kpis(acid):
-    """Calculate the total device count & latest averages."""
-    kpi_data = {
-        "devices": 0,
-        "avg_power": 0.0,
-        "avg_thermal": 0.0
-    }
+def get_ch_table_schema(table_name):
     if ch_client:
         try:
-            # Fetch KPIs using ClickHouse for ultra-fast aggregation over backend
-            # Note: For strict demo purposes filtering by acid
-            dev_df = ch_client.query_df(f"SELECT uniqExact(device_id) as count FROM telemetry_refined WHERE application_customer_id = '{acid}'")
-            kpi_data["devices"] = dev_df['count'].iloc[0] if not dev_df.empty else 0
-
-            power_df = ch_client.query_df(f"SELECT avg(MetricValue) as avg_val FROM telemetry_refined WHERE application_customer_id = '{acid}' AND report_type = 'power_metrics'")
-            kpi_data["avg_power"] = power_df['avg_val'].iloc[0] if not power_df.empty and not pd.isna(power_df['avg_val'].iloc[0]) else 0.0
-
-            thermal_df = ch_client.query_df(f"SELECT avg(MetricValue) as avg_val FROM telemetry_refined WHERE application_customer_id = '{acid}' AND report_type = 'thermal_metrics'")
-            kpi_data["avg_thermal"] = thermal_df['avg_val'].iloc[0] if not thermal_df.empty and not pd.isna(thermal_df['avg_val'].iloc[0]) else 0.0
-            return kpi_data
-        except:
-            pass
-
-    # Mock Data Fallback
-    kpi_data = {
-        "devices": 10560,
-        "avg_power": 242.5,
-        "avg_thermal": 55.4
-    }
-    return kpi_data
+            return ch_client.query_df(f"DESCRIBE TABLE atlas.{table_name}")
+        except: pass
+    return pd.DataFrame()
 
 @st.cache_data(ttl=60)
-def get_time_series_data(acid, types, start_dt, end_dt):
-    """Retrieve raw historical metrics for plots."""
-    if ch_client and len(types) > 0:
+def get_ch_data(table_name, limit=50):
+    if ch_client:
         try:
-            # Format types payload for IN clause
-            types_str = "','".join(types)
-            sql = f"""
-                SELECT metric_time, device_id, report_type, MetricValue 
-                FROM telemetry_refined 
-                WHERE application_customer_id = '{acid}' 
-                  AND report_type IN ('{types_str}')
-                  AND metric_time >= '{start_dt}'
-                  AND metric_time <= '{end_dt}'
-                ORDER BY metric_time DESC 
-                LIMIT 5000
-            """
-            df = ch_client.query_df(sql)
-            if not df.empty:
-                return df
+            return ch_client.query_df(f"SELECT * FROM atlas.{table_name} LIMIT {limit}")
+        except: pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=10) # 10-second TTL for "Real-Time" feel
+def get_ch_chart_data(table, x_col, y_col, color_col, limit=1000):
+    """Fetches specific columns for plotting, ordered by time."""
+    if ch_client:
+        try:
+            select_cols = f"{x_col}, {y_col}"
+            if color_col != "None": select_cols += f", {color_col}"
+            
+            query = f"SELECT {select_cols} FROM atlas.{table} ORDER BY {x_col} DESC LIMIT {limit}"
+            return ch_client.query_df(query)
         except Exception as e:
-            st.warning(f"Failed to fetch time series: {str(e)}")
-
-    # Mock Data Fallback
-    times = pd.date_range(end=pd.Timestamp.now(), periods=100, freq='5T')
-    data = []
-    for rtype in (types if len(types) > 0 else ['power_metrics']):
-        base = 240 if rtype == 'power_metrics' else 60
-        for _ in range(100):
-            data.append({"metric_time": times[_], "device_id": "SRV_MOCK", "report_type": rtype, "MetricValue": base + (time.time() % 10)})
-    return pd.DataFrame(data)
-
-@st.cache_data(ttl=60)
-def get_raw_records():
-    """Retrieve raw tabular data for debugging block."""
-    if ch_client:
-        try:
-            df = ch_client.query_df("SELECT metric_time, application_customer_id, report_type, device_id, MetricValue FROM telemetry_refined ORDER BY metric_time DESC LIMIT 100")
-            if not df.empty:
-                return df
-        except:
-            pass
-    # Mock Data
-    return pd.DataFrame([
-        {"metric_time": pd.Timestamp.now(), "application_customer_id": "MOCK", "report_type": "MOCK", "device_id": "MOCK", "MetricValue": 0.0}
-    ])
-
-@st.cache_data(ttl=60)
-def get_pipeline_runs():
-    """Retrieve data pipeline run metadata from PostgreSQL."""
-    if pg_conn:
-        try:
-            query = "SELECT pipeline_name, status, records_processed, records_deduplicated, started_at, completed_at FROM pipeline_runs ORDER BY started_at DESC LIMIT 5"
-            return pd.read_sql(query, pg_conn)
-        except:
-            pass
-    # Mock Data Fallback
-    return pd.DataFrame([
-        {"pipeline_name": "delta_loader_mock", "status": "running", "records_processed": 0, "records_deduplicated": 0, "started_at": pd.Timestamp.now(), "completed_at": None}
-    ])
+            st.error(f"Chart Data Error: {e}")
+    return pd.DataFrame()
 
 # =============================================================================
-# Dashboard UI Layout
+# UI Layout
 # =============================================================================
 
-st.title("  ATLAS Real-Time Observability")
-st.markdown("Monitoring telemetry ingestion, deduplication, and refined querying over ClickHouse & Postgres.")
+st.title(" ATLAS Observability Dashboard")
+st.markdown(" Observability a nd Real-Time Telemetry Visualization Packed in One")
 
-# ---------- SIDEBAR ----------
-st.sidebar.header("Filter Telemetry")
-
-available_customers = get_customers()
-selected_customer = st.sidebar.selectbox("Application Customer ID", available_customers)
-
-available_reports = get_report_types()
-selected_reports = st.sidebar.multiselect("Report Types", available_reports, default=available_reports[:1])
-
-# Date / Time Range Slider
-import datetime
-today = datetime.date.today()
-date_range = st.sidebar.slider("Time Range", 
-                               min_value=today - datetime.timedelta(days=7), 
-                               max_value=today + datetime.timedelta(days=1), 
-                               value=(today - datetime.timedelta(days=1), today))
-
-st.sidebar.markdown("---")
-if not ch_client:
-    st.sidebar.error("🔴 ClickHouse Offline (Displaying Mock Data)")
-else:
-    st.sidebar.success("🟢 ClickHouse Connected")
-
-if not pg_conn:
-    st.sidebar.error("🔴 PostgreSQL Offline")
-else:
-    st.sidebar.success("🟢 PostgreSQL Connected")
-
-
-# ---------- MAIN BODY ----------
-kpis = get_kpis(selected_customer)
-
-st.subheader("Key Performance Indicators")
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Devices Active", f"{kpis['devices']:,}")
-col2.metric("Latest Avg Power Metric", f"{kpis['avg_power']:.2f} W")
-col3.metric("Latest Avg Thermal Metric", f"{kpis['avg_thermal']:.2f} °C")
+col1, col2 = st.columns(2)
+with col1:
+    if ch_client: st.success("  ClickHouse Online (Time-Series Engine)")
+    else: st.error("  ClickHouse Offline")
+with col2:
+    if pg_conn and not pg_conn.closed: st.success("  PostgreSQL Online (Relational Metadata)")
+    else: st.error("  PostgreSQL Offline")
 
 st.markdown("---")
 
-st.subheader(f"Time Series: {selected_customer}")
-ts_df = get_time_series_data(selected_customer, selected_reports, date_range[0], date_range[1])
+# Added the new "Live Charts" tab
+tab_ch, tab_pg, tab_charts = st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder"])
 
-if not ts_df.empty:
-    fig = px.line(
-        ts_df, 
-        x="metric_time", 
-        y="MetricValue", 
-        color="device_id", 
-        facet_row="report_type", 
-        title="High-Cardinality Metric Flows",
-        template="plotly_dark",
-        height=500
-    )
-    # Hide verbose legend depending on scale
-    fig.update_layout(showlegend=(len(ts_df['device_id'].unique()) < 20))
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("No time series data available for these filters.")
+# -----------------------------------------------------------------------------
+# ClickHouse Tab
+# -----------------------------------------------------------------------------
+with tab_ch:
+    ch_tables = get_ch_tables()
+    if not ch_tables:
+        st.info("No tables found in ClickHouse.")
+    else:
+        selected_ch_table = st.selectbox("Select ClickHouse Table:", ch_tables, key="ch_table")
+        col_schema, col_preview = st.columns([1, 2])
+        with col_schema:
+            st.markdown(f"**Schema for `{selected_ch_table}`**")
+            st.dataframe(get_ch_table_schema(selected_ch_table), use_container_width=True, height=400)
+        with col_preview:
+            st.markdown(f"**Live Data Preview (Top 50 Rows)**")
+            st.dataframe(get_ch_data(selected_ch_table), use_container_width=True, height=400)
 
+# -----------------------------------------------------------------------------
+# PostgreSQL Tab
+# -----------------------------------------------------------------------------
+with tab_pg:
+    pg_tables = get_pg_tables()
+    if not pg_tables:
+        st.info("No tables found in PostgreSQL.")
+    else:
+        selected_pg_table = st.selectbox("Select PostgreSQL Table:", pg_tables, key="pg_table")
+        col_schema_pg, col_preview_pg = st.columns([1, 2])
+        with col_schema_pg:
+            st.markdown(f"**Schema for `{selected_pg_table}`**")
+            pg_schema_df = query_pg(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{selected_pg_table}'")
+            st.dataframe(pg_schema_df, use_container_width=True, height=400)
+        with col_preview_pg:
+            st.markdown(f"**Live Data Preview (Top 50 Rows)**")
+            st.dataframe(query_pg(f"SELECT * FROM {selected_pg_table} LIMIT 50"), use_container_width=True, height=400)
 
-st.markdown("---")
+# -----------------------------------------------------------------------------
+# Live Charts Builder Tab (NEW)
+# -----------------------------------------------------------------------------
+with tab_charts:
+    st.subheader("Dynamic Time-Series Visualizer")
+    
+    if not ch_tables:
+        st.warning("No ClickHouse tables available for charting.")
+    else:
+        # 1. Select the table to plot
+        chart_table = st.selectbox("Source Table:", ch_tables, key="chart_table")
+        schema_df = get_ch_table_schema(chart_table)
+        
+        if not schema_df.empty:
+            # 2. Introspect columns to figure out what can be plotted
+            # Find Date/DateTime columns for X-Axis
+            time_cols = schema_df[schema_df['type'].str.contains('Date|DateTime', case=False)]['name'].tolist()
+            # Find Numeric columns for Y-Axis
+            num_cols = schema_df[schema_df['type'].str.contains('Int|Float', case=False)]['name'].tolist()
+            # Find String columns for Grouping/Categorizing
+            cat_cols = ["None"] + schema_df[schema_df['type'].str.contains('String', case=False)]['name'].tolist()
 
-st.subheader("Live Raw Data Pipeline (Max 100)")
-raw_df = get_raw_records()
-st.dataframe(raw_df, use_container_width=True)
+            if not time_cols or not num_cols:
+                st.info(f"Table '{chart_table}' must have at least one DateTime column and one Numeric column to build a time-series chart.")
+            else:
+                # 3. Chart Controls
+                ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns(4)
+                with ctrl_col1: x_axis = st.selectbox("X-Axis (Time):", time_cols)
+                with ctrl_col2: y_axis = st.selectbox("Y-Axis (Metric):", num_cols)
+                with ctrl_col3: color_by = st.selectbox("Group By (Color):", cat_cols)
+                with ctrl_col4: row_limit = st.slider("Lookback Window (Rows):", 100, 10000, 1000, step=100)
+                
+                # Manual Refresh Button for "Real-Time" fetching
+                if st.button("  Refresh Data Now"):
+                    get_ch_chart_data.clear() # Clears the cache to force a fresh DB pull
 
-st.markdown("---")
-
-st.subheader("Data Pipeline Runs (PostgreSQL Metadata)")
-pipeline_df = get_pipeline_runs()
-st.dataframe(pipeline_df, use_container_width=True)
+                # 4. Fetch and Plot
+                with st.spinner("Fetching data from ClickHouse..."):
+                    chart_df = get_ch_chart_data(chart_table, x_axis, y_axis, color_by, row_limit)
+                    
+                    if not chart_df.empty:
+                        # Sort chronologically for Plotly line charts
+                        chart_df = chart_df.sort_values(by=x_axis)
+                        
+                        fig = px.line(
+                            chart_df, 
+                            x=x_axis, 
+                            y=y_axis, 
+                            color=None if color_by == "None" else color_by,
+                            template="plotly_dark",
+                            title=f"{y_axis} over time (Last {row_limit} records)"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("No data returned for the selected parameters.")
