@@ -178,9 +178,11 @@ def run_benchmark_pipeline(
         
         print(f"  └─ ✓ Batch complete", flush=True)
     
-    if optimize_counter > 0:
-        print("\n  Running final OPTIMIZE...")
-        optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
+    
+    ##Disable final optimize for faster benchmark runs, can be enabled for more realistic performance numbers on larger datasets
+    #if optimize_counter > 0:
+    #    print("\n  Running final OPTIMIZE...")
+    #    optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
         
     return {
         "total_rows": total_rows_processed,
