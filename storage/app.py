@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import os
 
-st.set_page_config(page_title="ATLAS Dynamic Data Explorer", layout="wide")
+st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide")
 
 # =============================================================================
 # Connection Configuration
@@ -99,7 +99,7 @@ def get_ch_chart_data(table, x_col, y_col, color_col, limit=1000):
 # =============================================================================
 
 st.title(" ATLAS Observability Dashboard")
-st.markdown(" Observability a nd Real-Time Telemetry Visualization Packed in One")
+st.markdown(" Observability and Real-Time Telemetry Visualization Packed in One")
 
 col1, col2 = st.columns(2)
 with col1:
