@@ -446,8 +446,8 @@ services:
 
     user: root
 
-    # ports:
-    #   - "0:4040"
+    ports:
+      - "0:4040"
 
     environment:
       - SPARK_MODE=driver
@@ -659,7 +659,7 @@ services:
     container_name: atlas-analytics
     hostname: analytics
     ports:
-      - "8123:8123" # ClickHouse HTTP interface (queries, dashboards)
+      - "9001:8123" # ClickHouse HTTP interface (queries, dashboards)
       - "9000:9000" # ClickHouse Native TCP interface
       - "5432:5432" # PostgreSQL
       - "8501:8501" # Streamlit Dashboard
