@@ -18,37 +18,37 @@ Expected Results:
 ================================================================================
 BATCH 1/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 15.01s | Postgres Upsert Time: 0.20s | Throughput: 126,220 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 14.29s | Postgres Upsert Time: 0.22s | Throughput: 134,513 rows/s
 
 ================================================================================
 BATCH 2/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 19.17s | Postgres Upsert Time: 0.27s | Throughput: 100,422 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 13.48s | Postgres Upsert Time: 0.21s | Throughput: 142,340 rows/s
 
 ================================================================================
 BATCH 3/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 14.81s | Postgres Upsert Time: 0.14s | Throughput: 130,442 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 15.52s | Postgres Upsert Time: 0.16s | Throughput: 123,964 rows/s
 
 ================================================================================
 BATCH 4/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 18.65s | Postgres Upsert Time: 0.22s | Throughput: 103,426 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 8.30s | Postgres Upsert Time: 0.23s | Throughput: 224,136 rows/s
 
 ================================================================================
 BATCH 5/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 13.97s | Postgres Upsert Time: 0.28s | Throughput: 134,753 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 19.70s | Postgres Upsert Time: 0.19s | Throughput: 98,403 rows/s
 
 ================================================================================
 BATCH 6/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 13.97s | Postgres Upsert Time: 0.16s | Throughput: 136,681 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 9.32s | Postgres Upsert Time: 0.22s | Throughput: 197,089 rows/s
 
 ================================================================================
 BATCH 7/7:
 ================================================================================
-  Rows written: 2,000,000 | ClickHouse Insert Time: 15.01s | Postgres Upsert Time: 0.25s | Throughput: 126,423 rows/s
+  Rows written: 2,000,000 | ClickHouse Insert Time: 12.28s | Postgres Upsert Time: 0.18s | Throughput: 153,878 rows/s
 
 --------------------------------------------------------------------------------
 [FINAL] Verifying storage results & MV Lag...
@@ -63,17 +63,17 @@ BATCH 7/7:
   Overall Performance:
   - Total batches processed: 7
   - Total rows processed:    14,000,000
-  - Total elapsed time:      115.74s
-  - Throughput:              120,962.6 rows/sec
+  - Total elapsed time:      97.48s
+  - Throughput:              143,616.6 rows/sec
 
   ClickHouse Insert Latency (seconds):
-  - Min: 13.97s, Max: 19.17s, Mean: 15.80s, P50: 15.01s, P95: 19.01s, P99: 19.13s
+  - Min: 8.30s, Max: 19.70s, Mean: 13.27s, P50: 13.48s, P95: 18.45s, P99: 19.45s
 
   PostgreSQL Upsert Latency (seconds):
-  - Min: 0.14s, Max: 0.28s, Mean: 0.22s, P50: 0.22s, P95: 0.27s, P99: 0.28s
+  - Min: 0.16s, Max: 0.23s, Mean: 0.20s, P50: 0.21s, P95: 0.23s, P99: 0.23s
 
   Materialized View Lag (seconds):
-  - Min: 0.38s, Max: 0.63s, Mean: 0.52s
+  - Min: 0.36s, Max: 0.61s, Mean: 0.45s
 
 ================================================================================
   ATLAS STORAGE LAYER BENCHMARK COMPLETE

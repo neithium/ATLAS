@@ -58,18 +58,28 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 -- -----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_device_platform ON device_registry(platform_customer_id);
 CREATE INDEX IF NOT EXISTS idx_device_application ON device_registry(application_customer_id);
+CREATE INDEX IF NOT EXISTS idx_device_id ON device_registry(device_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_status ON pipeline_runs(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_started ON pipeline_runs(started_at);
+
 
 -- -----------------------------------------------------------------------------
 -- Data Load Watermarks Table (Tracks incremental loads into ClickHouse)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS data_load_watermarks (
-    source VARCHAR(100) PRIMARY KEY,
+    source VARCHAR(100),
+    device_id VARCHAR(100) NOT NULL,
     last_metric_time TIMESTAMP WITH TIME ZONE,
     last_loaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    rows_loaded BIGINT DEFAULT 0
+    rows_loaded BIGINT DEFAULT 0,
+    PRIMARY KEY (source, device_id)
 );
+
+-- Watermark indexes: the loader queries by source every cycle and the PK
+-- (source, device_id) already covers the composite lookup, but standalone
+-- device_id queries (e.g. dashboard drilldowns) need a dedicated index.
+CREATE INDEX IF NOT EXISTS idx_watermarks_source ON data_load_watermarks(source);
+CREATE INDEX IF NOT EXISTS idx_watermarks_device ON data_load_watermarks(device_id);
 
 -- -----------------------------------------------------------------------------
 -- Dead Letter Queue (DLQ) Table

@@ -1,0 +1,58 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Storage Layer - ClickHouse Ingestion Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  DEVICES=1000
+  DAYS=3
+  BATCH_SIZE=1000
+  CLICKHOUSE_ENGINE=ReplacingMergeTree
+  POSTGRES_METRICS=Enabled
+
+[1/2] Connecting to Databases & Setting up schema...
+  ✓ Connections established and tables created.
+
+================================================================================
+ATLAS Storage Benchmark - Batch Ingestion Execution
+================================================================================
+Expected Results:
+- Total raw input rows:   864,000
+
+[INIT] Generating base device list...
+BATCH 1/3 - 2026-02-20 (1000 devices) - CH: 8.07s | PG: 0.04s | MV Lag: 0.03s | Throughput: 35,357 rows/s
+BATCH 2/3 - 2026-02-21 (1000 devices) - CH: 8.49s | PG: 0.02s | MV Lag: 0.05s | Throughput: 33,658 rows/s
+BATCH 3/3 - 2026-02-22 (1000 devices) - CH: 8.50s | PG: 0.02s | MV Lag: 0.05s | Throughput: 33,611 rows/s
+--------------------------------------------------------------------------------
+[FINAL COMPACTION] Running OPTIMIZE TABLE FINAL...
+  ✓ Compaction completed in 0.19s
+
+--------------------------------------------------------------------------------
+[FINAL] Verifying storage results & MV Lag...
+--------------------------------------------------------------------------------
+  Running Validation Queries...
+  ✓ ClickHouse Telemetry Check: 336,000 rows inserted
+  ✓ ClickHouse Hourly MV Check: 864,000 grouped rows
+  ✓ ClickHouse Daily MV Check:  864,000 grouped rows
+  ✓ PostgreSQL Metadata Check: 1,000 unique devices updated
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+  Overall Performance:
+  - Total batches processed: 3
+  - Total rows processed:    864,000
+  - Total elapsed time:      9.10s
+  - Throughput:              94,933.7 rows/sec
+
+  ClickHouse Insert Latency (seconds):
+  - Min: 8.07s, Max: 8.50s, Mean: 8.35s, P50: 8.49s, P95: 8.50s, P99: 8.50s
+
+  PostgreSQL Upsert Latency (seconds):
+  - Min: 0.02s, Max: 0.04s, Mean: 0.03s, P50: 0.02s, P95: 0.04s, P99: 0.04s
+
+  Materialized View Optimization (seconds):
+  - Min: 0.03s, Max: 0.05s, Mean: 0.04s
+
+================================================================================
+  ATLAS STORAGE LAYER BENCHMARK COMPLETE
+================================================================================

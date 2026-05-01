@@ -85,41 +85,40 @@ ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, m
 TTL metric_time + INTERVAL 7 DAY DELETE
 SETTINGS index_granularity = 8192;
 
--- -----------------------------------------------------------------------------
--- Buffer Table (High-throughput intermediary)
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS atlas.telemetry_refined_buffer AS atlas.telemetry_refined
-ENGINE = Buffer(
-    atlas, telemetry_refined, 16,
-    10, 100,            -- min / max time (seconds) to flush
-    10000, 1000000,     -- min / max rows to flush
-    10000000, 100000000 -- min / max bytes to flush
-);
+-- NOTE: Buffer table removed. The Buffer engine is in-memory only — if the
+-- ClickHouse container crashes between insert and flush, buffered data is lost
+-- with no recovery path. The delta_loader inserts directly into
+-- telemetry_refined, which is the safe default for the batch path.
+-- Re-introduce a Buffer table only when the Kafka fast-path engine is enabled.
 
 -- -----------------------------------------------------------------------------
 -- Hourly Aggregation Materialized View
 -- -----------------------------------------------------------------------------
--- MergeTree (not SummingMergeTree) because SummingMergeTree sums ALL numeric
--- columns on background merges, which corrupts avg/min/max aggregates.
--- The loader inserts once per cycle so duplicate rollup rows are not expected.
+-- AggregatingMergeTree ensures that when ClickHouse background-merges parts,
+-- the aggregate states are combined correctly (not duplicated). This is
+-- critical when the loader retries, backfills, or reprocesses data — plain
+-- MergeTree would silently store duplicate rollup rows.
+--
+-- Query pattern:  SELECT avgMerge(avg_metric_value) ... GROUP BY ...
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS atlas.telemetry_hourly
 (
-    platform_customer_id String,
+    platform_customer_id    String,
     application_customer_id String,
-    device_id String,
-    metric_id String,
-    hour DateTime,
-    avg_metric_value Float64,
-    max_metric_value Float64,
-    min_metric_value Float64,
-    record_count UInt64,
-    avg_amb_temp Float64
-) ENGINE = MergeTree()
+    device_id               String,
+    metric_id               String,
+    hour                    DateTime,
+    avg_metric_value        AggregateFunction(avg, Float64),
+    max_metric_value        AggregateFunction(max, Float64),
+    min_metric_value        AggregateFunction(min, Float64),
+    record_count            AggregateFunction(count, Float64),
+    avg_amb_temp            AggregateFunction(avg, Float64)
+) ENGINE = AggregatingMergeTree()
 PARTITION BY toYYYYMM(hour)
 ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, hour);
 
 -- Materialized view: aggregates raw MetricValue per hour per device
+-- Uses State combinators so values are stored as mergeable aggregate states.
 CREATE MATERIALIZED VIEW IF NOT EXISTS atlas.telemetry_hourly_mv
 TO atlas.telemetry_hourly
 AS SELECT
@@ -128,32 +127,33 @@ AS SELECT
     device_id,
     metric_id,
     toStartOfHour(metric_time) AS hour,
-    avg(MetricValue) AS avg_metric_value,
-    max(MetricValue) AS max_metric_value,
-    min(MetricValue) AS min_metric_value,
-    count() AS record_count,
-    avg(amb_temp) AS avg_amb_temp
+    avgState(MetricValue)      AS avg_metric_value,
+    maxState(MetricValue)      AS max_metric_value,
+    minState(MetricValue)      AS min_metric_value,
+    countState(MetricValue)    AS record_count,
+    avgState(amb_temp)         AS avg_amb_temp
 FROM atlas.telemetry_refined
 GROUP BY platform_customer_id, application_customer_id, device_id, metric_id, hour;
 
 -- -----------------------------------------------------------------------------
 -- Daily Aggregation Materialized View (Validation against Spark)
 -- -----------------------------------------------------------------------------
--- MergeTree for same reason as hourly — protects avg/min/max from merge corruption.
+-- Same AggregatingMergeTree rationale as hourly — correct merge semantics.
+-- TTL retains 3 years of daily rollups for long-term trend analysis.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS atlas.telemetry_daily
 (
-    platform_customer_id String,
+    platform_customer_id    String,
     application_customer_id String,
-    device_id String,
-    metric_id String,
-    day Date,
-    avg_metric_value Float64,
-    max_metric_value Float64,
-    min_metric_value Float64,
-    record_count UInt64,
-    avg_amb_temp Float64
-) ENGINE = MergeTree()
+    device_id               String,
+    metric_id               String,
+    day                     Date,
+    avg_metric_value        AggregateFunction(avg, Float64),
+    max_metric_value        AggregateFunction(max, Float64),
+    min_metric_value        AggregateFunction(min, Float64),
+    record_count            AggregateFunction(count, Float64),
+    avg_amb_temp            AggregateFunction(avg, Float64)
+) ENGINE = AggregatingMergeTree()
 PARTITION BY toYYYYMM(day)
 ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, day)
 TTL day + INTERVAL 3 YEAR DELETE;
@@ -167,10 +167,10 @@ AS SELECT
     device_id,
     metric_id,
     toDate(metric_time) AS day,
-    avg(MetricValue) AS avg_metric_value,
-    max(MetricValue) AS max_metric_value,
-    min(MetricValue) AS min_metric_value,
-    count() AS record_count,
-    avg(amb_temp) AS avg_amb_temp
+    avgState(MetricValue)   AS avg_metric_value,
+    maxState(MetricValue)   AS max_metric_value,
+    minState(MetricValue)   AS min_metric_value,
+    countState(MetricValue) AS record_count,
+    avgState(amb_temp)      AS avg_amb_temp
 FROM atlas.telemetry_refined
 GROUP BY platform_customer_id, application_customer_id, device_id, metric_id, day;
