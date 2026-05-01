@@ -35,9 +35,7 @@ volumes:
   spark-checkpoint:
   delta-refined:
   raw-telemetry:
-  # Shared volumes for Lakehouse module
-  raw-volume:
-  refined-volume:
+  # Shared volumes for Lakehouse module (NOTE: bind mounts are defined per-service)
   # Streaming checkpoint volume
   streaming-checkpoint:
   # Kafka volumes for 3-node cluster
@@ -448,8 +446,8 @@ services:
 
     user: root
 
-    # ports:
-    #   - "0:4040"
+    ports:
+      - "0:4040"
 
     environment:
       - SPARK_MODE=driver
@@ -521,9 +519,9 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      # Shared volumes for inter-container data flow
-      - raw-volume:/raw
-      - refined-volume:/refined
+      # Shared volumes for inter-container data flow (bind mounts to /Users/Public/atlas-data)
+      - C:/Users/Public/atlas-data/raw:/raw
+      - C:/Users/Public/atlas-data/refined:/refined
       - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
@@ -661,9 +659,10 @@ services:
     container_name: atlas-analytics
     hostname: analytics
     ports:
-      - "8123:8123" # ClickHouse HTTP interface (queries, dashboards)
+      - "9001:8123" # ClickHouse HTTP interface (queries, dashboards)
       - "9000:9000" # ClickHouse Native TCP interface
       - "5432:5432" # PostgreSQL
+      - "8501:8501" # Streamlit Dashboard
     env_file: .env.example
     environment:
       # Override hosts for internal (same-container) connections.
@@ -677,7 +676,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       # READ from the same refined-volume that Lakehouse writes to.
       # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
-      - refined-volume:/data/refined:ro
+      - C:/Users/Public/atlas-data/refined:/data/refined:ro
       # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
@@ -733,8 +732,8 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - raw-volume:/raw
-      - refined-volume:/refined
+      - C:/Users/Public/atlas-data/raw:/raw
+      - C:/Users/Public/atlas-data/refined:/refined
       - ./delta_lake/data:/app/data
       - ./delta_lake:/app/notebooks
       - ./schema:/app/schema:ro
@@ -776,8 +775,8 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      - raw-volume:/raw
-      - refined-volume:/refined
+      - C:/Users/Public/atlas-data/raw:/raw
+      - C:/Users/Public/atlas-data/refined:/refined
       - ./delta_lake/data:/app/data
       - ./delta_lake/streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
       - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
@@ -835,7 +834,7 @@ services:
     ports:
       - "9999:9999"   # Socket port for streaming
     volumes:
-      - raw-volume:/raw
+      - C:/Users/Public/atlas-data/raw:/raw
       - ./delta_lake/streaming_data_producer.py:/app/streaming_data_producer.py
       - ./schema:/app/schema:ro
     environment:
@@ -867,49 +866,3 @@ services:
           --devices $$DEVICE_COUNT \
           --rate $$RECORDS_PER_SECOND
       "
-# ===========================================================================
-  # SPARK STANDALONE CLUSTER (POC)
-  # ===========================================================================
-  atlas-spark-master:
-    image: bitnamilegacy/spark:3.5
-    container_name: atlas-spark-master
-    profiles:
-      - cluster-poc
-    user: root
-    environment:
-      - SPARK_MODE=master
-      - SPARK_DAEMON_USER=root
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    ports:
-      - "8081:8080"
-      - "7077:7077"
-    volumes:
-      - ./delta_lake:/app
-      - refined-volume:/refined
-      - raw-volume:/raw
-    networks:
-      - atlas-network
-
-  atlas-spark-worker-local:
-    image: bitnamilegacy/spark:3.5
-    container_name: atlas-spark-worker-local
-    profiles:
-      - cluster-poc
-    user: root
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_DAEMON_USER=root
-      - SPARK_MASTER_URL=spark://atlas-spark-master:7077
-      - SPARK_WORKER_MEMORY=4G
-      - SPARK_WORKER_CORES=4
-    volumes:
-      - ./delta_lake:/app
-      - refined-volume:/refined
-      - raw-volume:/raw
-    networks:
-      - atlas-network
-    depends_on:
-      - atlas-spark-master
