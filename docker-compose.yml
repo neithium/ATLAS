@@ -35,9 +35,7 @@ volumes:
   spark-checkpoint:
   delta-refined:
   raw-telemetry:
-  # Shared volumes for Lakehouse module
-  raw-volume:
-  refined-volume:
+  # Shared volumes for Lakehouse module (NOTE: bind mounts are defined per-service)
   # Streaming checkpoint volume
   streaming-checkpoint:
   # Kafka volumes for 3-node cluster
@@ -92,7 +90,7 @@ services:
       - KAFKA_BOOTSTRAP=broker1:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=false
+      - ENABLE_POLLER=true 
       - SCALE_SIZE=80000
     networks:
       - atlas-network
@@ -165,9 +163,9 @@ services:
     container_name: broker1
     hostname: broker1
     ports:
-      - "9092:9092"
-      - "9093:9093"
-      - "9094:9094"
+      - "9062:9092"
+      - "9063:9093"
+      - "9064:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=1
@@ -243,10 +241,10 @@ services:
     hostname: broker2
     profiles:
       - full-cluster
-    # ports:
-    #   - "9065:9092"
-    #   - "9066:9093"
-    #   - "9067:9094"
+    ports:
+      - "9065:9092"
+      - "9066:9093"
+      - "9067:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=2
@@ -272,7 +270,7 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
       - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=${KAFKA_AUTO_CREATE_TOPICS:-true}
 
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
@@ -291,7 +289,7 @@ services:
 
     mem_limit: 2g
     mem_reservation: 1g
-    restart: unless-stopped
+    restart: always
     volumes:
       - kafka-data-2:/bitnami/kafka
     networks:
@@ -318,10 +316,10 @@ services:
     hostname: broker3
     profiles:
       - full-cluster
-    # ports:
-    #   - "9068:9092"
-    #   - "9069:9093"
-    #   - "9070:9094"
+    ports:
+      - "9068:9092"
+      - "9069:9093"
+      - "9070:9094"
     environment:
       # Node Identity
       - KAFKA_CFG_NODE_ID=3
@@ -347,7 +345,7 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=2
       - KAFKA_CFG_MIN_INSYNC_REPLICAS=2
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=${KAFKA_AUTO_CREATE_TOPICS:-true}
 
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
@@ -366,7 +364,7 @@ services:
 
     mem_limit: 2g
     mem_reservation: 1g
-    restart: unless-stopped
+    restart: always
     volumes:
       - kafka-data-3:/bitnami/kafka
     networks:
@@ -383,7 +381,7 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
-      # ============================================
+  # ============================================
   # Kafka Topic Initialization (runs once on startup)
   # ============================================
   kafka-init:
@@ -462,8 +460,8 @@ services:
 
     user: root
 
-    # ports:
-    #   - "0:4040"
+    ports:
+      - "0:4040"
 
     environment:
       - SPARK_MODE=driver
@@ -490,8 +488,8 @@ services:
       echo '⏳ Waiting for Kafka to stabilize...' &&
       sleep 40 &&
 
-      echo '🚀 Starting Generator...' &&
-      python3 /app/jobs/json_generator.py &
+      # echo '🚀 Starting Generator...' &&
+      # python3 /app/jobs/json_generator.py &
 
       echo '🚀 Starting Kafka Streaming...' &&
       spark-submit \
@@ -535,17 +533,20 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      # Shared volumes for inter-container data flow
-      - raw-volume:/raw
-      - refined-volume:/refined
+      # Shared volumes for inter-container data flow (bind mounts to /Users/Public/atlas-data)
+      - C:/Users/Public/atlas-data/raw:/raw
+      - C:/Users/Public/atlas-data/refined:/refined
       - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
       - ./delta_lake/generate_data.py:/app/generate_data.py
-      - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
+      - ./delta_lake/delta_core.py:/app/delta_core.py
+      - ./delta_lake/run_benchmark.py:/app/run_benchmark.py
+      - ./delta_lake/run_livewire.py:/app/run_livewire.py
       # Schema reference
       - ./schema:/app/schema:ro
     environment:
+      - PYTHONUNBUFFERED=1
       - SPARK_MODE=client
       - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=4g
@@ -613,9 +614,9 @@ services:
         if [ \"$$RUN_PIPELINE\" = 'y' ] || [ \"$$RUN_PIPELINE\" = 'Y' ]; then
           echo \"[2/3] Running deduplication pipeline (mode=$$PIPELINE_MODE)...\" &&
           if [ \"$$PIPELINE_MODE\" = 'livewire' ]; then
-            python3 delta_merge_pipeline.py --input /stream_raw --output /refined --mode livewire --optimize-every $$OPTIMIZE_EVERY;
+            python3 run_livewire.py;
           else
-            python3 delta_merge_pipeline.py --input /raw --output /refined --mode $$PIPELINE_MODE --optimize-every $$OPTIMIZE_EVERY;
+            python3 run_benchmark.py;
           fi;
         else
           echo \"[2/3] Skipping pipeline (RUN_PIPELINE=$$RUN_PIPELINE)\";
@@ -623,7 +624,7 @@ services:
         echo '' &&
         if [ \"$$RUN_VACUUM\" = 'y' ] || [ \"$$RUN_VACUUM\" = 'Y' ]; then
           echo '[3/3] Running VACUUM to clean old Delta log files...' &&
-          python3 delta_merge_pipeline.py --output /refined --vacuum --vacuum-retention-days $$VACUUM_RETENTION_DAYS;
+          python3 -c \"from run_benchmark import create_spark_session; from delta_core import vacuum_old_files; spark = create_spark_session('Vacuum'); vacuum_old_files(spark, '/refined', $$VACUUM_RETENTION_DAYS * 24)\" ;
         else
           echo \"[3/3] Skipping vacuum (RUN_VACUUM=$$RUN_VACUUM)\";
         fi &&
@@ -672,9 +673,10 @@ services:
     container_name: atlas-analytics
     hostname: analytics
     ports:
-      - "8123:8123" # ClickHouse HTTP interface (queries, dashboards)
+      - "9001:8123" # ClickHouse HTTP interface (queries, dashboards)
       - "9000:9000" # ClickHouse Native TCP interface
       - "5432:5432" # PostgreSQL
+      - "8501:8501" # Streamlit Dashboard
     env_file: .env.example
     environment:
       # Override hosts for internal (same-container) connections.
@@ -688,7 +690,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       # READ from the same refined-volume that Lakehouse writes to.
       # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
-      - refined-volume:/data/refined:ro
+      - C:/Users/Public/atlas-data/refined:/data/refined:ro
       # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
@@ -744,8 +746,8 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - raw-volume:/raw
-      - refined-volume:/refined
+      - C:/Users/Public/atlas-data/raw:/raw
+      - C:/Users/Public/atlas-data/refined:/refined
       - ./delta_lake/data:/app/data
       - ./delta_lake:/app/notebooks
       - ./schema:/app/schema:ro
@@ -787,8 +789,8 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      - raw-volume:/raw
-      - refined-volume:/refined
+      - C:/Users/Public/atlas-data/raw:/raw
+      - C:/Users/Public/atlas-data/refined:/refined
       - ./delta_lake/data:/app/data
       - ./delta_lake/streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
       - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
@@ -846,7 +848,7 @@ services:
     ports:
       - "9999:9999"   # Socket port for streaming
     volumes:
-      - raw-volume:/raw
+      - C:/Users/Public/atlas-data/raw:/raw
       - ./delta_lake/streaming_data_producer.py:/app/streaming_data_producer.py
       - ./schema:/app/schema:ro
     environment:

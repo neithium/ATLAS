@@ -47,6 +47,8 @@ processor = BatchSpanProcessor(otlp_exporter)
 provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer(__name__)
+# Thread pool for synchronous background tasks (like Kafka flushing)
+_executor = ThreadPoolExecutor(max_workers=20)
 
 # Adjust path: Ensure we can import schema_builder from the ingestion/ root
 V2_ROOT = Path(__file__).resolve().parent.parent
@@ -429,7 +431,7 @@ async def _export_stream_task(device_ids: List[str], start_time: datetime, end_t
     
     pool = await get_db_pool()
     batch_size = 100
-    semaphore = asyncio.Semaphore(5)  # ⬇️ Reduced to 5
+    semaphore = asyncio.Semaphore(20)  # Increased from 30 to 60 for better parallelism
     
     async def process_batch(batch_ids):
         nonlocal processed
@@ -561,7 +563,7 @@ async def _export_first_task(device_ids: List[str], count: int = 2016):
     t_batches_start = time.monotonic()
     batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
     # Increased from Semaphore(30) to 60 for more parallelism
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(20)
     
     async def process_batch_with_semaphore(batch_ids):
         async with semaphore:
@@ -575,7 +577,7 @@ async def _export_first_task(device_ids: List[str], count: int = 2016):
     # Flush with non-blocking AIOKafka flush
     t_flush_start = time.monotonic()
     try:
-        await kafka_prod.flush()
+        await asyncio.wait_for(kafka_prod.flush(), timeout=300)
         t_flush_elapsed = time.monotonic() - t_flush_start
         log.info(f"✅ [KAFKA] Historical-batch flush successful for {processed} messages (flush took {t_flush_elapsed:.2f}s)")
     except Exception as e:

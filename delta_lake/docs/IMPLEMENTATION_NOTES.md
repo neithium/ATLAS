@@ -738,9 +738,30 @@ Here is the revised, highly detailed engineering log restricted *strictly* to to
 
  
 - docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=10 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse   
+- docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=1000 -e BATCH_SIZE=1000 -e NUM_DAYS=7 -e START_DATE=2026-03-01 atlas-lakehouse  
 
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=75000 -e BATCH_SIZE=1000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse   
 
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=75000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=85000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
  
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=50000 -e BATCH_SIZE=10000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
 
+docker compose run -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=5  -e BATCH_SIZE=10000 -e NUM_DAYS=2 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=9 atlas-lakehouse
 # Benchmark mode with vacuum
 docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e RUN_VACUUM=y spark
+
+
+## note to myself: to trigger the api via post 
+ingestion api : curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPCUST0010/telemetry/export?days=7 
+
+
+
+curl.exe -X POST "http://localhost:80/pcid/PLATCUST005/acid/APPCUST0010/telemetry/export?days=7"
+
+--- 5000 acid, 5000 pcid,  55 000 devices, 288 datapoints per day, 
+docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=55000 -e BATCH_SIZE=11000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=20 atlas-lakehouse
+
+--- force recreate analytics if streamlit fails updating itself:
+
+docker compose up -d atlas-analytics --build --force-recreate -V

@@ -18,7 +18,7 @@ async def verify():
     consumer = AIOKafkaConsumer(
         'raw-server-metrics',
         bootstrap_servers='broker1:9092',
-        auto_offset_reset='latest',
+        auto_offset_reset='earliest',
         consumer_timeout_ms=15000
     )
     await consumer.start()
