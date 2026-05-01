@@ -7,7 +7,7 @@ from aiokafka import AIOKafkaConsumer
 
 async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     topic = "raw-server-metrics"
-    bootstrap = "127.0.0.1:9094"
+    bootstrap = "127.0.0.1:9064"
     
     # 1. Setup targets
     if heavy_pcid:

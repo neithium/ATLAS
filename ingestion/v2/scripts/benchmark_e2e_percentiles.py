@@ -8,7 +8,7 @@ from aiokafka import AIOKafkaConsumer
 async def run_percentile_benchmark(platform_count: int):
     # 1. Setup
     topic = "raw-server-metrics"
-    bootstrap = "127.0.0.1:9094"
+    bootstrap = "127.0.0.1:9064"
     devices_per_platform = 11
     total_expected = platform_count * devices_per_platform
     

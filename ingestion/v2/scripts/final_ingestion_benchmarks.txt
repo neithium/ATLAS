@@ -19,3 +19,18 @@ System Throughput:   120,594 data points / sec
 
 --- 100 Platforms CLEAN RUN PERCENTILES ---
 P50: 15.109s | P90: 24.359s | P99: 25.718s
+
+--- 500 Platforms CLEAN RUN PERCENTILES ---
+P50: 177.562s | P90: 292.656s | P99: 337.000s
+
+--- 100 Platforms CLEAN RUN PERCENTILES ---
+P50: 14.484s | P90: 25.063s | P99: 27.172s
+
+--- 10 Platforms CLEAN RUN PERCENTILES ---
+P50: 1.219s | P90: 1.891s | P99: 1.891s
+
+--- 50 Platforms CLEAN RUN PERCENTILES ---
+P50: 6.593s | P90: 10.937s | P99: 12.109s
+
+--- 200 Platforms CLEAN RUN PERCENTILES ---
+P50: 63.094s | P90: 85.843s | P99: 86.859s
