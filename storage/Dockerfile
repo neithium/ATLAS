@@ -54,6 +54,7 @@ RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 COPY supervisord.conf /etc/supervisor/conf.d/atlas.conf
 COPY entrypoint.sh /app/entrypoint.sh
 COPY loader-start.sh /app/loader-start.sh
+COPY app.py /app/app.py
 RUN chmod +x /app/entrypoint.sh /app/loader-start.sh
 
 # ---------- Directories ----------
@@ -62,7 +63,7 @@ RUN mkdir -p /app/init-scripts /var/lib/clickhouse /var/lib/postgresql/data \
     && chown postgres:postgres /var/lib/postgresql/data
 
 # ---------- Ports ----------
-# 8123: ClickHouse HTTP | 9000: ClickHouse Native TCP | 5432: PostgreSQL
-EXPOSE 8123 9000 5432
+# 8123: ClickHouse HTTP | 9000: ClickHouse Native TCP | 5432: PostgreSQL | 8501: Streamlit
+EXPOSE 8123 9000 5432 8501
 
 ENTRYPOINT ["/app/entrypoint.sh"]

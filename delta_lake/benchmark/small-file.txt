@@ -1,0 +1,221 @@
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO SparkContext: Created broadcast 174657 from broadcast at DAGScheduler.scala:1580
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO DAGScheduler: Submitting 1 missing tasks from ResultStage 139718 (MapPartitionsRDD[558898] at RangePartitionId(metric_time#8468101, 1000) sampling) (first 15 tasks are for partitions Vector(0))
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO FileScanRDD: Reading File path: file:/refined/report_type=thermal_metrics/partition_date=2026-02-23/platform_customer_id=PLATCUST0392/application_customer_id=APPCUST0392/device_id=SRV-004310/part-01643-66d57d1c-cf8c-404b-9536-fc678b556ffd.c000.zstd.parquet, range: 0-4614, partition values: [thermal_metrics,2026-02-23,PLATCUST0392,APPCUST0392,SRV-004310]
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO TaskSchedulerImpl: Adding task set 139718.0 with 1 tasks resource profile 0
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174465_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.2 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174489_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.3 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO CodecPool: Got brand-new decompressor [.zstd]
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174519_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.3 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174529_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.3 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174499_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.4 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174535_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.4 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174520_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.4 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174114_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.5 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174100_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.5 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174109_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.5 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174123_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.6 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174451_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.6 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO Executor: Finished task 0.0 in stage 139707.0 (TID 106905). 2035 bytes result sent to driver
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO BlockManagerInfo: Removed broadcast_174449_piece0 on lakehouse:42069 in memory (size: 36.4 KiB, free: 1035.6 MiB)
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO TaskSetManager: Starting task 0.0 in stage 139718.0 (TID 106915) (lakehouse, executor driver, partition 0, PROCESS_LOCAL, 9194 bytes) 
+2026-04-29 21:10:05
+
+
+26/04/29 15:40:05 INFO TaskSetManager: Finished task 0.0 in stage 139707.0 (TID 106905) in 391 ms on lakehouse (executor driver) (1/1
+
+
+26/04/29 15:40:20 INFO DAGScheduler: Missing parents: List()
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO DAGScheduler: Submitting ResultStage 140029 (MapPartitionsRDD[560086] at count at <unknown>:0), which has no missing parents
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO MemoryStore: Block broadcast_175027 stored as values in memory (estimated size 12.5 KiB, free 1020.6 MiB)
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO MemoryStore: Block broadcast_175027_piece0 stored as bytes in memory (estimated size 5.9 KiB, free 1020.6 MiB)
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO BlockManagerInfo: Added broadcast_175027_piece0 in memory on lakehouse:42069 (size: 5.9 KiB, free: 1037.4 MiB)
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO SparkContext: Created broadcast 175027 from broadcast at DAGScheduler.scala:1580
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO DAGScheduler: Submitting 1 missing tasks from ResultStage 140029 (MapPartitionsRDD[560086] at count at <unknown>:0) (first 15 tasks are for partitions Vector(0))
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO TaskSchedulerImpl: Adding task set 140029.0 with 1 tasks resource profile 0
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO TaskSetManager: Starting task 0.0 in stage 140029.0 (TID 107211) (lakehouse, executor driver, partition 0, NODE_LOCAL, 8241 bytes) 
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO Executor: Running task 0.0 in stage 140029.0 (TID 107211)
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO ShuffleBlockFetcherIterator: Getting 1 (60.0 B) non-empty blocks including 1 (60.0 B) local and 0 (0.0 B) host-local and 0 (0.0 B) push-merged-local and 0 (0.0 B) remote blocks
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO ShuffleBlockFetcherIterator: Started 0 remote fetches in 0 ms
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO CodeGenerator: Code generated in 3.09306 ms
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO Executor: Finished task 0.0 in stage 140029.0 (TID 107211). 3995 bytes result sent to driver
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO TaskSetManager: Finished task 0.0 in stage 140029.0 (TID 107211) in 8 ms on lakehouse (executor driver) (1/1)
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO TaskSchedulerImpl: Removed TaskSet 140029.0, whose tasks have all completed, from pool 
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO DAGScheduler: ResultStage 140029 (count at <unknown>:0) finished in 0.010 s
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO DAGScheduler: Job 105019 is finished. Cancelling potential speculative or zombie tasks for this job
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO TaskSchedulerImpl: Killing all running tasks in stage 140029: Stage finished
+2026-04-29 21:10:20
+
+
+26/04/29 15:40:20 INFO DAGScheduler: Job 105019 finished: count at <unknown>:0, took 0.010545 s
+2026-04-29 21:10:21
+
+
+{'total_rows': 10080000, 'num_days': 1, 'all_file_dates': ['2026-03-01']}
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO SparkContext: SparkContext is stopping with exitCode 0.
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO SparkUI: Stopped Spark web UI at http://lakehouse:4040⁠
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO MapOutputTrackerMasterEndpoint: MapOutputTrackerMasterEndpoint stopped!
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO MemoryStore: MemoryStore cleared
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO BlockManager: BlockManager stopped
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO BlockManagerMaster: BlockManagerMaster stopped
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO OutputCommitCoordinator$OutputCommitCoordinatorEndpoint: OutputCommitCoordinator stopped!
+2026-04-29 21:10:21
+
+
+26/04/29 15:40:21 INFO SparkContext: Successfully stopped SparkContext
+2026-04-29 21:10:22
+
+
+2026-04-29 21:10:22
+
+
+26/04/29 15:40:22 INFO ShutdownHookManager: Shutdown hook called
+2026-04-29 21:10:22
+
+
+[3/3] Skipping vacuum (RUN_VACUUM=n)
+2026-04-29 21:10:22
+
+
+2026-04-29 21:10:22
+
+
+Done!
+2026-04-29 21:10:22
+
+
+KEEP_ALIVE enabled: container will stay running.

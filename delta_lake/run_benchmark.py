@@ -17,10 +17,8 @@ from pyspark.sql.functions import col
 
 def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmark") -> SparkSession:
     """
-    Create SparkSession with dynamic profile support: 
-    Supports 'local' (Monolith) or 'cluster' (Distributed POC) via EXECUTION_MODE env var.
+    Create SparkSession for local execution
     """
-    execution_mode = os.environ.get('EXECUTION_MODE', 'local').lower()
     
     builder = (
         SparkSession.builder
@@ -45,29 +43,14 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.databricks.delta.autoCompact.enabled", "false")
         .config("spark.databricks.delta.properties.defaults.targetFileSize", str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
         .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
+        # Local Profile (Default): Vertical Monolith inside Lakehouse container
+        .master("local[*]")
+        .config("spark.executor.instances", "1")
+        .config("spark.executor.cores", "6")
+        .config("spark.executor.memory", "5g")
     )
     
-    if execution_mode == 'cluster':
-        # Cluster Profile: Remote distributed spark setup
-        builder = (
-            builder
-            .master("spark://atlas-spark-master:7077")
-            .config("spark.executor.instances", "1")
-            .config("spark.executor.cores", "2")
-            .config("spark.executor.memory", "1g")
-            .config("spark.jars.ivy", "/tmp/.ivy2")
-        )
-    else:
-        # Local Profile (Default): Vertical Monolith inside Lakehouse container
-        builder = (
-            builder
-            .master("local[*]")
-            .config("spark.executor.instances", "1")
-            .config("spark.executor.cores", "6")
-            .config("spark.executor.memory", "5g")
-        )
-    
-    if os.getenv("SPARK_MASTER") and execution_mode != 'cluster':
+    if os.getenv("SPARK_MASTER"):
         # Override local if explicit master passed via env var
         builder = builder.master(os.getenv("SPARK_MASTER"))
     
@@ -137,7 +120,7 @@ def run_benchmark_pipeline(
     for idx, file_date in enumerate(file_dates_to_process, start=1):
         batch_start = time.perf_counter()
         
-        print(f"\n  ┌─ Batch {idx}/{len(file_dates_to_process)}: file_date={file_date}")
+        print(f"\n  ┌─ Batch {idx}/{len(file_dates_to_process)}: file_date={file_date}", flush=True)
         
         read_start = time.perf_counter()
         batch_df = (
@@ -149,7 +132,7 @@ def run_benchmark_pipeline(
         row_count = prepared_df.count()
         read_elapsed = time.perf_counter() - read_start
         
-        print(f"  │  Rows: {row_count:,} | Read: {read_elapsed:.2f}s")
+        print(f"  │  Rows: {row_count:,} | Read: {read_elapsed:.2f}s", flush=True)
         
         merge_elapsed = 0
         if not table_initialized:
@@ -162,9 +145,9 @@ def run_benchmark_pipeline(
             )
             merge_elapsed = time.perf_counter() - init_start
             table_initialized = True
-            print(f"  │  Action: INIT | Time: {merge_elapsed:.2f}s")
+            print(f"  │  Action: INIT | Time: {merge_elapsed:.2f}s", flush=True)
         else:
-            print(f"  │  Merging day i against accumulated days 0..i-1...")
+            print(f"  │  Merging day i against accumulated days 0..i-1...", flush=True)
             merge_start = time.perf_counter()
             execute_merge_deduplication(
                 spark=spark,
@@ -172,12 +155,12 @@ def run_benchmark_pipeline(
                 source_df=prepared_df
             )
             merge_elapsed = time.perf_counter() - merge_start
-            print(f"  │  MERGE Time: {merge_elapsed:.2f}s")
+            print(f"  │  MERGE Time: {merge_elapsed:.2f}s", flush=True)
         
         batch_elapsed = time.perf_counter() - batch_start
         throughput = row_count / batch_elapsed if batch_elapsed > 0 else 0
         
-        print(f"  │  Batch total: {batch_elapsed:.2f}s | Throughput: {throughput:,.0f} rows/s")
+        print(f"  │  Batch total: {batch_elapsed:.2f}s | Throughput: {throughput:,.0f} rows/s", flush=True)
         
         tracker.record_batch(batch_elapsed, merge_elapsed, read_elapsed, row_count)
         total_rows_processed += row_count
@@ -187,17 +170,19 @@ def run_benchmark_pipeline(
         
         optimize_counter += 1
         if optimize_counter >= PipelineConfig.OPTIMIZE_EVERY_N_BATCHES:
-            print(f"  │  Running OPTIMIZE...")
+            print(f"  │  Running OPTIMIZE...", flush=True)
             opt_start = time.perf_counter()
             optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
-            print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s")
+            print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s", flush=True)
             optimize_counter = 0
         
-        print(f"  └─ ✓ Batch complete")
+        print(f"  └─ ✓ Batch complete", flush=True)
     
-    if optimize_counter > 0:
-        print("\n  Running final OPTIMIZE...")
-        optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
+    
+    ##Disable final optimize for faster benchmark runs, can be enabled for more realistic performance numbers on larger datasets
+    #if optimize_counter > 0:
+    #    print("\n  Running final OPTIMIZE...")
+    #    optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
         
     return {
         "total_rows": total_rows_processed,
@@ -211,8 +196,8 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="ATLAS Benchmark Pipeline")
     parser.add_argument("--generate-data", action="store_true", help="Generate benchmark data before running pipeline")
-    parser.add_argument("--devices", type=int, default=2000, help="Number of devices for data generation")
-    parser.add_argument("--days", type=int, default=3, help="Number of daily batches to generate")
+    parser.add_argument("--devices", type=int, default=1000, help="Number of devices for data generation")
+    parser.add_argument("--days", type=int, default=4, help="Number of daily batches to generate")
     parser.add_argument("--batch-size", type=int, default=1000, help="Device batch size")
     args = parser.parse_args()
 
