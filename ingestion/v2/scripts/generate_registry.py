@@ -11,13 +11,10 @@ def generate_registry(scale=80000, output_path="device_configs.json"):
     
     devices = {}
     
-    # Customer Hierarchy Constants
-    PLATCUST_COUNT = 5 
-    APPCUST_PER_PLAT = 10 
-    
-    # Calculate intervals to avoid division by zero
-    plat_interval = max(1, scale // PLATCUST_COUNT)
-    app_interval = max(1, scale // (PLATCUST_COUNT * APPCUST_PER_PLAT))
+    # New Customer Hierarchy (1:1 PCID-to-ACID mapping)
+    PCID_COUNT = 5000
+    DEVICES_PER_ACID = 11
+    total_scale = PCID_COUNT * DEVICES_PER_ACID
     
     # Regional DC Locations for Regional Diversity
     LOCATIONS = [
@@ -28,58 +25,46 @@ def generate_registry(scale=80000, output_path="device_configs.json"):
         {"city": "Delhi", "state": "NCR", "country": "India", "name": "Atlas-DC-05"}
     ]
     
-    for i in range(scale):
-        dev_id = f"PLAT1-DEV-{i//1000:04}-{i%1000:03}"
+    global_counter = 0
+    for p_idx in range(1, PCID_COUNT + 1):
+        pcid = f"PLATCUST{p_idx:04}"
+        acid = f"APPCUST{p_idx:04}"  # 1:1 Mapping
         
-        # Calculate Hierarchical PCID/ACID
-        p_idx = (i // plat_interval) + 1
-        a_idx = (i // app_interval) % APPCUST_PER_PLAT + 1
-        
-        pcid = f"PLATCUST{p_idx:03}"
-        acid = f"APPCUST{a_idx:04}"
-        
-        # Select Geographic Location (Rotation)
-        loc = LOCATIONS[i % len(LOCATIONS)]
-        
-        devices[dev_id] = {
-            # Hierarchical Mapping
-            "platform_customer_id": pcid,
-            "application_customer_id": acid,
-            "device_id": dev_id,
+        for d_idx in range(1, DEVICES_PER_ACID + 1):
+            dev_id = f"PLAT{p_idx:04}-DEV-{d_idx:03}"
             
-            # Asset Metadata (Matches Input Schema)
-            "server_name": f"host-{i:06}",
-            "model": "PowerEdge R750",
-            "processor_vendor": "Intel",
-            "server_generation": "15G",
-            "tags": "production,critical",
-            "status": True,
-            "report_type": "telemetry_live",
-            "metric_type": "power_metrics",
-            "error_reason": "",
+            # Select Geographic Location (Rotation)
+            loc = LOCATIONS[global_counter % len(LOCATIONS)]
             
-            # Geographical Metadata
-            "location_id": f"LOC-{i % len(LOCATIONS) + 1:02}",
-            "location_name": loc["name"],
-            "location_city": loc["city"],
-            "location_state": loc["state"],
-            "location_country": loc["country"],
-            
-            # Inventory Metadata (Nested Block)
-            "inventory_data": {
-                "cpu_count": 2,
-                "socket_count": 2,
-                "cpu_inventory": [
-                    {"model": "Intel Xeon Platinum 8380", "speed": 2300, "total_cores": 40}
-                ],
-                "memory_inventory": [
-                    {"memory_size": 32, "operating_freq": 3200, "memory_device_type": "DDR4"}
-                ]
+            devices[dev_id] = {
+                "platform_customer_id": pcid,
+                "application_customer_id": acid,
+                "device_id": dev_id,
+                "server_name": f"host-{global_counter:06}",
+                "model": "PowerEdge R750",
+                "processor_vendor": "Intel",
+                "server_generation": "15G",
+                "tags": "production,critical",
+                "status": True,
+                "report_type": "telemetry_live",
+                "metric_type": "power_metrics",
+                "error_reason": "",
+                "location_id": f"LOC-{global_counter % len(LOCATIONS) + 1:02}",
+                "location_name": loc["name"],
+                "location_city": loc["city"],
+                "location_state": loc["state"],
+                "location_country": loc["country"],
+                "inventory_data": {
+                    "cpu_count": 2,
+                    "socket_count": 2,
+                    "cpu_inventory": [{"model": "Intel Xeon Platinum 8380", "speed": 2300, "total_cores": 40}],
+                    "memory_inventory": [{"memory_size": 32, "operating_freq": 3200, "memory_device_type": "DDR4"}]
+                }
             }
-        }
-        
-        if i % 10000 == 0 and i > 0:
-            print(f"  - Synchronized {i:,} entries...")
+            
+            global_counter += 1
+            if global_counter % 10000 == 0:
+                print(f"  - Synchronized {global_counter:,} entries...")
 
     with open(output_path, "wb") as f:
         f.write(orjson.dumps(devices))

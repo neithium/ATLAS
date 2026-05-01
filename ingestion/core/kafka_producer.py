@@ -56,11 +56,10 @@ async def init_kafka():
                 compression_type="lz4",
                 linger_ms=50,                  # Batch optimization
                 max_request_size=8388608,       # 8MB for large device bursts
+                buffer_memory=134217728,        # 128MB buffer to handle 10k device bursts
                 request_timeout_ms=120000,      # 2 minutes timeout
                 connections_max_idle_ms=540000,
-                value_serializer=lambda v: v if isinstance(v, bytes) else (
-                    json.dumps(v) if isinstance(v, dict) else str(v).encode('utf-8')
-                )
+                value_serializer=lambda v: v if isinstance(v, (bytes, bytearray)) else json.dumps(v)
             )
             await _producer.start()
             log.info(f"🛰️ [KAFKA] Connected to {KAFKA_BOOTSTRAP_SERVERS}, topic: {KAFKA_TOPIC}")

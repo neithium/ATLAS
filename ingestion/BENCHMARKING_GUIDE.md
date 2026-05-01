@@ -31,7 +31,23 @@ Kicks off the background worker to hydrate 48-field records and push to Kafka.
 - **URL:** `http://localhost:8001/pcid/{platform_id}/acid/{app_id}/telemetry/latest/export`
 - **Example:** `http://localhost:8001/pcid/PLATCUST0001/acid/APPCUST0001/telemetry/latest/export`
 
-### 2. Service Health Check
+### 2. Register New Device
+Dynamically adds a new device to the fleet registry without restarting services.
+- **Method:** `POST`
+- **URL:** `http://localhost:8001/register/device`
+- **Payload Example:**
+  ```json
+  {
+    "device_id": "NEW-DEVICE-001",
+    "platform_customer_id": "PLATCUST10K",
+    "application_customer_id": "APPCUST10K",
+    "server_name": "host-001",
+    "location_city": "Mumbai",
+    "location_country": "India"
+  }
+  ```
+
+### 3. Service Health Check
 - **Method:** `GET`
 - **URL:** `http://localhost:8001/health`
 
@@ -41,24 +57,35 @@ Kicks off the background worker to hydrate 48-field records and push to Kafka.
 
 All commands should be run from the root directory `d:\PowerPulse\atlas`.
 
-### 1. End-To-End Latency Test (API -> DB -> Kafka)
-Measures the true time from HTTP trigger to the last message hitting the Kafka broker.
+### 1. Multi-Platform E2E Flow (Total Throughput)
+Measures the total time from API trigger to the last message hitting Kafka for multiple platforms.
 ```powershell
-docker exec atlas-ingestion python3 /app/v2/scripts/benchmark_e2e.py
+# Targets 50 platforms (550 devices)
+python d:\PowerPulse\atlas\ingestion\v2\scripts\benchmark_e2e_multi.py --platforms 50
+
+# Targets the 10k Heavy Hitter
+python d:\PowerPulse\atlas\ingestion\v2\scripts\benchmark_e2e_multi.py --heavy PLATCUST10K
 ```
 
-### 2. Streaming Benchmark (API Latency)
-Measures the API response time and provides P50, P90, and P99 percentiles.
+### 2. Platform-Level Percentiles (Latency Distribution)
+Measures the specific P50, P90, and P99 latency distribution across independent platform flows.
 ```powershell
-# Targets multiple platforms concurrently
-python d:\PowerPulse\atlas\ingestion\v2\scripts\test_concurrent_exports.py --platforms 10
+# Captures latency distribution for 100 platforms
+python d:\PowerPulse\atlas\ingestion\v2\scripts\benchmark_e2e_percentiles.py --platforms 100
 ```
 
-### 3. High-Scale Data Generator (Stress Testing)
-Pre-fills the database with 10,000 devices (20M+ records) for stress testing.
+### 3. API Streaming Trigger (Concurrent Stress Test)
+Stress tests the API triggering mechanism for massive multi-tenant bursts.
 ```powershell
-docker exec atlas-ingestion python3 /app/v2/scripts/generate_4k_test.py
+# Triggers 500 platforms concurrently
+python d:\PowerPulse\atlas\ingestion\v2\scripts\test_concurrent_exports.py --platforms 500
 ```
+
+### 4. Heavy Hitter Targets
+| Fleet Size | PCID Target | Total Data Points |
+| :--- | :--- | :--- |
+| **10,000 Devices** | `PLATCUST10K` | ~20.1 Million |
+| **4,000 Devices** | `PLATCUST9999` | ~8.0 Million |
 
 ---
 
@@ -83,7 +110,7 @@ docker exec atlas-ingestion python3 /app/v2/scripts/check_kafka_msg.py
 ### 2. Kafka Schema Validator
 Samples 50 messages and validates every field against the 48-field Golden Schema.
 ```powershell
-docker exec atlas-ingestion python3 /app/v2/scripts/verify_kafka_schema_consistency.py
+docker exec atlas-ingestion python3 /app/ingestion/validate_schema.py --sample-count=50
 ```
 
 ### 3. Clear Kafka Topic (Factory Reset)

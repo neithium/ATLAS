@@ -24,12 +24,12 @@ def run_7day_analysis():
     print("🚀 STORAGE ANALYTICS: 7-Day Rolling Analysis")
     print("="*50)
     
-    start_time = time.time()
+    start_time = time.monotonic()
     
     # 1. FETCH: Spark reads from MinIO
     try:
         # Note: We use the endpoint 'ingestion' as defined in docker-compose
-        path = "s3a://telemetry-archive/production/"
+        path = "s3a://telemetry-archive/production/year=2026/month=04/day=28/full_7day/"
         print(f"📡 Fetching data from: {path}")
         
         df = spark.read.parquet(path)
@@ -44,7 +44,7 @@ def run_7day_analysis():
             # Simple aggregation to prove it's working
             df_minimal.groupBy("device_id").agg(avg("watts").alias("avg_pwr")).show(5)
             
-        end_time = time.time()
+        end_time = time.monotonic()
         print(f"\n✅ Total Fetch + Aggregate Time: {end_time - start_time:.2f} seconds")
         print("="*50 + "\n")
 
