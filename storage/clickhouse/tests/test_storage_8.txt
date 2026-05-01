@@ -1,0 +1,74 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Storage Layer - ClickHouse Ingestion Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  DEVICES=80000
+  DAYS=1
+  BATCH_SIZE=10000
+  CLICKHOUSE_ENGINE=ReplacingMergeTree
+  POSTGRES_METRICS=Enabled
+
+[1/2] Connecting to Databases & Setting up schema...
+  ✓ Connections established and tables created.
+
+================================================================================
+ATLAS Storage Benchmark - Batch Ingestion Execution
+================================================================================
+Expected Results:
+- Total raw input rows:   23,040,000
+
+[INIT] Generating base device list...
+[START] Submitting batches to worker pool...
+  -> Queuing BATCH 1/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 2/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 3/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 4/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 5/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 6/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 7/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 8/8 - 2026-02-20 (10000 devices)
+
+[WAIT] Processing batches concurrently (waiting for results)...
+BATCH 1/8 - 2026-02-20 (10000 devices) - CH: 46.25s | PG: 50.82s | MV Lag: 0.03s | Throughput: 29,662 rows/s
+BATCH 2/8 - 2026-02-20 (10000 devices) - CH: 48.14s | PG: 0.57s | MV Lag: 0.05s | Throughput: 59,056 rows/s
+BATCH 3/8 - 2026-02-20 (10000 devices) - CH: 50.32s | PG: 0.62s | MV Lag: 0.05s | Throughput: 56,475 rows/s
+BATCH 4/8 - 2026-02-20 (10000 devices) - CH: 51.71s | PG: 0.53s | MV Lag: 0.05s | Throughput: 55,074 rows/s
+BATCH 5/8 - 2026-02-20 (10000 devices) - CH: 48.51s | PG: 0.61s | MV Lag: 0.05s | Throughput: 58,572 rows/s
+BATCH 6/8 - 2026-02-20 (10000 devices) - CH: 48.66s | PG: 0.57s | MV Lag: 0.06s | Throughput: 58,430 rows/s
+BATCH 7/8 - 2026-02-20 (10000 devices) - CH: 46.89s | PG: 0.77s | MV Lag: 0.06s | Throughput: 60,354 rows/s
+BATCH 8/8 - 2026-02-20 (10000 devices) - CH: 48.41s | PG: 0.92s | MV Lag: 0.06s | Throughput: 58,305 rows/s
+--------------------------------------------------------------------------------
+[FINAL COMPACTION] Running OPTIMIZE TABLE FINAL...
+  ✓ Compaction completed in 3.63s
+
+--------------------------------------------------------------------------------
+[FINAL] Verifying storage results & MV Lag...
+--------------------------------------------------------------------------------
+  Running Validation Queries...
+  ✓ ClickHouse Telemetry Check: 23,040,000 rows inserted
+  ✓ ClickHouse Hourly MV Check: 23,040,000 grouped rows
+  ✓ ClickHouse Daily MV Check:  23,040,000 grouped rows
+  ✓ PostgreSQL Metadata Check: 80,000 unique devices updated
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+  Overall Performance:
+  - Total batches processed: 8
+  - Total rows processed:    23,040,000
+  - Total elapsed time:      102.71s
+  - Throughput:              224,326.5 rows/sec
+
+  ClickHouse Insert Latency (seconds):
+  - Min: 46.25s, Max: 51.71s, Mean: 48.61s, P50: 48.46s, P95: 51.23s, P99: 51.61s
+
+  PostgreSQL Upsert Latency (seconds):
+  - Min: 0.53s, Max: 50.82s, Mean: 6.93s, P50: 0.62s, P95: 33.35s, P99: 47.33s
+
+  Materialized View Optimization (seconds):
+  - Min: 0.03s, Max: 0.06s, Mean: 0.05s
+
+================================================================================
+  ATLAS STORAGE LAYER BENCHMARK COMPLETE
+================================================================================

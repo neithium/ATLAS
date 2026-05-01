@@ -1,0 +1,80 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Storage Layer - ClickHouse Ingestion Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  BATCH_COUNT=7
+  ROWS_PER_BATCH=2000000
+  CLICKHOUSE_ENGINE=ReplacingMergeTree
+  POSTGRES_METRICS=Enabled
+
+[1/2] Generating mock storage benchmark data ...
+================================================================================
+ATLAS Storage Benchmark - Batch Ingestion Simulation
+================================================================================
+Expected Results:
+- Total raw input rows:   14,000,000
+
+================================================================================
+BATCH 1/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 16.58s | Postgres Upsert Time: 0.20s | Throughput: 116,391 rows/s
+
+================================================================================
+BATCH 2/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 14.07s | Postgres Upsert Time: 0.23s | Throughput: 136,183 rows/s
+
+================================================================================
+BATCH 3/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 14.76s | Postgres Upsert Time: 0.29s | Throughput: 128,959 rows/s
+
+================================================================================
+BATCH 4/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 10.83s | Postgres Upsert Time: 0.16s | Throughput: 172,534 rows/s
+
+================================================================================
+BATCH 5/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 16.06s | Postgres Upsert Time: 0.17s | Throughput: 119,430 rows/s
+
+================================================================================
+BATCH 6/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 14.08s | Postgres Upsert Time: 0.26s | Throughput: 136,101 rows/s
+
+================================================================================
+BATCH 7/7:
+================================================================================
+  Rows written: 2,000,000 | ClickHouse Insert Time: 16.57s | Postgres Upsert Time: 0.22s | Throughput: 115,130 rows/s
+
+--------------------------------------------------------------------------------
+[FINAL] Verifying storage results & MV Lag...
+--------------------------------------------------------------------------------
+  Running Validation Queries...
+  ✓ Duplicate Check: Passed
+  ✓ Materialized View Integrity: Passed
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+  Overall Performance:
+  - Total batches processed: 7
+  - Total rows processed:    14,000,000
+  - Total elapsed time:      107.82s
+  - Throughput:              129,843.8 rows/sec
+
+  ClickHouse Insert Latency (seconds):
+  - Min: 10.83s, Max: 16.58s, Mean: 14.71s, P50: 14.76s, P95: 16.58s, P99: 16.58s
+
+  PostgreSQL Upsert Latency (seconds):
+  - Min: 0.16s, Max: 0.29s, Mean: 0.22s, P50: 0.22s, P95: 0.28s, P99: 0.29s
+
+  Materialized View Lag (seconds):
+  - Min: 0.36s, Max: 0.60s, Mean: 0.47s
+
+================================================================================
+  ATLAS STORAGE LAYER BENCHMARK COMPLETE
+================================================================================

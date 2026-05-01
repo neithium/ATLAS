@@ -111,7 +111,7 @@ def run_benchmark_pipeline(
         if os.path.exists(PipelineConfig.REFINED_PATH):
             shutil.rmtree(PipelineConfig.REFINED_PATH, ignore_errors=True)
 
-    optimize_counter = 0
+    optimize_counter = 0                            
     
     print("\n" + "-" * 80)
     print("[STEP 3] Processing file batches with incremental MERGE...")
