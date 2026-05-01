@@ -47,6 +47,9 @@ EOF
     # Start temporarily to create user and database
     su -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w start" postgres
 
+    # Set password for postgres superuser (required for md5 auth over TCP)
+    su -c "psql -c \"ALTER USER postgres WITH PASSWORD '${POSTGRES_PASSWORD:-atlas_secure_pwd}';\"" postgres
+
     su -c "psql -c \"CREATE USER ${POSTGRES_USER:-atlas} WITH PASSWORD '${POSTGRES_PASSWORD:-atlas_secure_pwd}';\"" postgres
     su -c "psql -c \"CREATE DATABASE ${POSTGRES_DB:-atlas_metadata} OWNER ${POSTGRES_USER:-atlas};\"" postgres
     su -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB:-atlas_metadata} TO ${POSTGRES_USER:-atlas};\"" postgres
@@ -67,6 +70,10 @@ fi
 mkdir -p /var/lib/clickhouse /var/lib/clickhouse/preprocessed_configs /var/log/clickhouse-server
 chown -R clickhouse:clickhouse /var/lib/clickhouse /var/log/clickhouse-server
 
+# Ensure ClickHouse config is readable and preprocessed dir is writable
+chmod 644 /etc/clickhouse-server/config.xml 2>/dev/null || true
+chown -R clickhouse:clickhouse /etc/clickhouse-server/ 2>/dev/null || true
+
 # ---------- Generate ClickHouse user config from .env.example credentials ---
 mkdir -p /etc/clickhouse-server/users.d
 cat > /etc/clickhouse-server/users.d/atlas.xml <<EOF
@@ -77,6 +84,7 @@ cat > /etc/clickhouse-server/users.d/atlas.xml <<EOF
             <access_management>1</access_management>
             <networks>
                 <ip>::/0</ip>
+                <ip>0.0.0.0/0</ip>
             </networks>
             <profile>default</profile>
             <quota>default</quota>
@@ -85,10 +93,27 @@ cat > /etc/clickhouse-server/users.d/atlas.xml <<EOF
 </clickhouse>
 EOF
 
+# ---------- ClickHouse: force IPv4-only listening ----------
+# The stock config.xml ships listen_host :: (IPv6) which crashes with
+# exit 210 when the container has no IPv6 support.
+if [ -f /app/override-listen.xml ]; then
+    cp /app/override-listen.xml /etc/clickhouse-server/config.d/override-listen.xml
+    echo "[entrypoint] Installed ClickHouse IPv4-only override."
+fi
+
 # ---------- Fix volume ownership on every start ----------
 # Docker named volumes may be owned by root; services need their dirs.
-chown -R clickhouse:clickhouse /var/lib/clickhouse /var/log/clickhouse-server
+chown -R clickhouse:clickhouse /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server/
 chown -R postgres:postgres /var/lib/postgresql/data
+
+# ---------- Fix postgres superuser password on existing installs ----------
+# If PG was already initialized without a postgres password, set it now.
+if [ -s "$PGDATA/PG_VERSION" ]; then
+    echo "[entrypoint] Ensuring postgres superuser has a password..."
+    su -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w start" postgres 2>/dev/null
+    su -c "psql -c \"ALTER USER postgres WITH PASSWORD '${POSTGRES_PASSWORD:-atlas_secure_pwd}';\"" postgres 2>/dev/null
+    su -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w stop" postgres 2>/dev/null
+fi
 
 echo "[entrypoint] Starting supervisord..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/atlas.conf
