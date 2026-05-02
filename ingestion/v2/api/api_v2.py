@@ -116,15 +116,30 @@ _scheduler = AsyncIOScheduler()
 CACHED_REGISTRY = {}
 REGISTRY_LOADED = False
 
+# Device-Level Telemetry Query Cache
+# Key: device_id, Value: (timestamp, readings_list)
+# Prevents redundant DB queries when multiple requests fetch same device data
+DEVICE_TELEMETRY_CACHE = {}
+DEVICE_CACHE_TTL = 60  # Cache device results for 60 seconds (across multiple requests)
+DEVICE_CACHE_LOCK = asyncio.Lock()
+
+# Request-Level Deduplication: Allows concurrent requests for same PCID/ACID to share work
+# Key: f"{pcid}:{acid}:{count}", Value: asyncio.Event that completes when export done
+EXPORT_IN_PROGRESS = {}
+EXPORT_PROGRESS_LOCK = asyncio.Lock()
+EXPORT_RESULT_CACHE = {}  # Stores result from first request for concurrent waiters
+
 # System Guard: Prevents thread exhaustion under heavy burst loads
-GLOBAL_EXPORT_SEM = asyncio.Semaphore(50)  # Reverted to 50 (100 was overloading I/O)
+# Increased to 200 to handle 500+ concurrent platform requests
+# DB pool supports 150 max connections, but tasks don't all need simultaneous DB access
+GLOBAL_EXPORT_SEM = asyncio.Semaphore(200)
 
 async def get_db_pool():
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(
             host=TSDB_HOST, port=TSDB_PORT, user=TSDB_USER, password=TSDB_PASS, database=TSDB_NAME,
-            min_size=30, max_size=150,  # Increased for higher parallelism (Semaphore 60)
+            min_size=50, max_size=200,  # Increased to match GLOBAL_EXPORT_SEM (200)
             max_cached_statement_lifetime=3600,
             max_cacheable_statement_size=65536
         )
@@ -145,10 +160,96 @@ HIERARCHY_LOCK = asyncio.Lock()
 GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # Max 2 parallel export jobs total
 
 # =============================================================================
+# DEVICE TELEMETRY CACHE HELPERS
+# =============================================================================
+async def _get_cached_device_readings(device_id: str, count: int) -> Optional[list]:
+    """Check if device readings are cached and still valid."""
+    async with DEVICE_CACHE_LOCK:
+        cache_key = f"{device_id}:{count}"
+        if cache_key in DEVICE_TELEMETRY_CACHE:
+            cached_time, cached_readings = DEVICE_TELEMETRY_CACHE[cache_key]
+            age = time.time() - cached_time
+            if age < DEVICE_CACHE_TTL:
+                log.debug(f"✅ [DEVICE-CACHE-HIT] {device_id} (age: {age:.1f}s)")
+                return cached_readings
+            else:
+                # Expired, remove it
+                del DEVICE_TELEMETRY_CACHE[cache_key]
+        return None
+
+async def _cache_device_readings(device_id: str, count: int, readings: list) -> None:
+    """Store device readings in cache."""
+    async with DEVICE_CACHE_LOCK:
+        cache_key = f"{device_id}:{count}"
+        DEVICE_TELEMETRY_CACHE[cache_key] = (time.time(), readings)
+        log.debug(f"💾 [DEVICE-CACHE-STORE] {device_id} ({len(readings)} readings)")
+
+async def _clear_device_cache_pattern(pattern: str = None) -> int:
+    """Clear device cache entries matching pattern or all."""
+    async with DEVICE_CACHE_LOCK:
+        if pattern:
+            expired = [k for k in list(DEVICE_TELEMETRY_CACHE.keys()) if pattern in k]
+            for k in expired:
+                del DEVICE_TELEMETRY_CACHE[k]
+            return len(expired)
+        else:
+            count = len(DEVICE_TELEMETRY_CACHE)
+            DEVICE_TELEMETRY_CACHE.clear()
+            return count
+
+# =============================================================================
+# REQUEST-LEVEL DEDUPLICATION (Prevent concurrent requests from doing same work)
+# =============================================================================
+async def _check_export_in_progress(export_key: str) -> Optional[dict]:
+    """
+    Check if this export is already in progress.
+    If yes, return the result if ready, otherwise indicate waiting needed.
+    """
+    async with EXPORT_PROGRESS_LOCK:
+        if export_key in EXPORT_IN_PROGRESS:
+            # Export already happening for this hierarchy
+            return {"is_waiting": True}
+        else:
+            # This is the first request for this hierarchy
+            EXPORT_IN_PROGRESS[export_key] = asyncio.Event()
+            return {"is_waiting": False}
+
+async def _wait_for_export(export_key: str, timeout: float = 120) -> Optional[dict]:
+    """Wait for in-progress export to complete and return its result."""
+    try:
+        async with EXPORT_PROGRESS_LOCK:
+            if export_key not in EXPORT_IN_PROGRESS:
+                return EXPORT_RESULT_CACHE.get(export_key)
+            event = EXPORT_IN_PROGRESS[export_key]
+        
+        log.info(f"⏳ [DEDUP] Concurrent request waiting for {export_key} export to complete...")
+        await asyncio.wait_for(event.wait(), timeout=timeout)
+        log.info(f"✅ [DEDUP] Export {export_key} completed. Returning cached result.")
+        return EXPORT_RESULT_CACHE.get(export_key)
+    except asyncio.TimeoutError:
+        log.warning(f"⚠️  [DEDUP] Timeout waiting for {export_key}")
+        return None
+
+async def _mark_export_complete(export_key: str, result: dict) -> None:
+    """Mark export as complete and store result for waiting requests."""
+    async with EXPORT_PROGRESS_LOCK:
+        EXPORT_RESULT_CACHE[export_key] = result
+        if export_key in EXPORT_IN_PROGRESS:
+            EXPORT_IN_PROGRESS[export_key].set()
+            log.info(f"🔔 [DEDUP] Export {export_key} done. Signaling {export_key} waiters.")
+        
+        # Cleanup
+        if export_key in EXPORT_IN_PROGRESS:
+            del EXPORT_IN_PROGRESS[export_key]
+
+# =============================================================================
 # THROTTLING WRAPPER
 # =============================================================================
 async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
     """Wrapper to enforce global system limits and automatic cleanup of hierarchical locks."""
+    # Extract export_key if provided (for deduplication tracking)
+    export_key = kwargs.pop("export_key", None)
+    
     with tracer.start_as_current_span("queue_wait", attributes={"hierarchy": h_key}):
         async with GLOBAL_THROTTLE_SEM:
             try:
@@ -613,48 +714,69 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
         
         pool = await get_db_pool()
         batch_size = 100
-        semaphore = asyncio.Semaphore(5)  # ⬇️ Reduced to 5 to prevent network buffer overflow
+        semaphore = asyncio.Semaphore(20)  # Increased from 5 for better parallelism within each export
         
         async def process_batch(batch_ids):
             nonlocal processed
-            async with pool.acquire() as conn:
-                with tracer.start_as_current_span("latest_db_query"):
-                    query = """
-                        SELECT d.id, 
-                        (SELECT json_agg(r) FROM (
-                            SELECT * FROM (
-                                SELECT 
-                                    metric_time AS "Time", 
-                                    avg_watts AS "Average", 
-                                    peak_watts AS "Peak", 
-                                    min_watts AS "Minimum",
-                                    amb_temp AS "AmbTemp",
-                                    cpu_avg_freq AS "CpuAvgFreq",
-                                    cpu_max AS "CpuMax",
-                                    cpu_pwr_sav_lim AS "CpuPwrSavLim",
-                                    cpu_util AS "CpuUtil",
-                                    cpu_watts AS "CpuWatts",
-                                    gpu_watts AS "GpuWatts"
-                                FROM telemetry_live 
-                                WHERE device_id = d.id 
-                                ORDER BY metric_time DESC 
-                                LIMIT $2
-                            ) sub ORDER BY "Time" ASC
-                        ) r) AS readings 
-                        FROM UNNEST($1::text[]) AS d(id)
-                    """
-                    rows = await conn.fetch(query, batch_ids, count)
             
-            if not rows: return
+            # --- PHASE 1: Check cache for each device ---
+            cache_hits = {}
+            cache_misses = []
             
-            with tracer.start_as_current_span("latest_serialization_and_send"):
-                for r in rows:
-                    did, json_readings = r[0], r[1]
-                    if json_readings:
-                        if isinstance(json_readings, str):
-                            json_readings = orjson.loads(json_readings)
-                        await _process_and_send(did, json_readings, DEVICES, kafka_prod)
-                        processed += 1
+            for did in batch_ids:
+                cached_readings = await _get_cached_device_readings(did, count)
+                if cached_readings:
+                    cache_hits[did] = cached_readings
+                else:
+                    cache_misses.append(did)
+            
+            # --- PHASE 2: Query DB only for cache misses (REDUCED DB LOAD) ---
+            if cache_misses:
+                async with pool.acquire() as conn:
+                    with tracer.start_as_current_span("latest_db_query", attributes={"cache_misses": len(cache_misses)}):
+                        query = """
+                            SELECT d.id, 
+                            (SELECT json_agg(r) FROM (
+                                SELECT * FROM (
+                                    SELECT 
+                                        metric_time AS "Time", 
+                                        avg_watts AS "Average", 
+                                        peak_watts AS "Peak", 
+                                        min_watts AS "Minimum",
+                                        amb_temp AS "AmbTemp",
+                                        cpu_avg_freq AS "CpuAvgFreq",
+                                        cpu_max AS "CpuMax",
+                                        cpu_pwr_sav_lim AS "CpuPwrSavLim",
+                                        cpu_util AS "CpuUtil",
+                                        cpu_watts AS "CpuWatts",
+                                        gpu_watts AS "GpuWatts"
+                                    FROM telemetry_live 
+                                    WHERE device_id = d.id 
+                                    ORDER BY metric_time DESC 
+                                    LIMIT $2
+                                ) sub ORDER BY "Time" ASC
+                            ) r) AS readings 
+                            FROM UNNEST($1::text[]) AS d(id)
+                        """
+                        rows = await conn.fetch(query, cache_misses, count)
+                
+                # Cache new results
+                if rows:
+                    for r in rows:
+                        did, json_readings = r[0], r[1]
+                        if json_readings:
+                            if isinstance(json_readings, str):
+                                json_readings = orjson.loads(json_readings)
+                            cache_hits[did] = json_readings
+                            await _cache_device_readings(did, count, json_readings)
+            
+            # --- PHASE 3: Send all results (cached + freshly queried) to Kafka ---
+            if cache_hits:
+                with tracer.start_as_current_span("latest_serialization_and_send", attributes={"results": len(cache_hits)}):
+                    for did, json_readings in cache_hits.items():
+                        if json_readings:
+                            await _process_and_send(did, json_readings, DEVICES, kafka_prod)
+                            processed += 1
 
         batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
         with tracer.start_as_current_span("latest_batch_processing"):
@@ -771,26 +893,53 @@ async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tas
 
 @app.post("/pcid/{pcid}/acid/{acid}/telemetry/latest/export")
 async def trigger_latest_telemetry_export(pcid: str, acid: str, background_tasks: BackgroundTasks, count: int = 2016):
-    """Latest-Batch Fetch: Triggers Kafka Ingestion for EXACTLY N latest points (Sync Mode)."""
+    """Latest-Batch Fetch: Triggers Kafka Ingestion for EXACTLY N latest points (Sync Mode).
+    
+    Deduplicates concurrent requests: if multiple requests arrive for the same PCID/ACID,
+    only the first does the work; others wait for it to complete and return the same result.
+    """
     with tracer.start_as_current_span("api_trigger_latest_export", attributes={"pcid": pcid, "acid": acid}):
         try:
-            registry_path = "/app/device_configs.json"
+            export_key = f"{pcid}:{acid}:{count}"
+            h_key = f"{pcid}:{acid}"
+            
+            # --- REQUEST-LEVEL DEDUPLICATION: Check if already processing ---
+            progress_status = await _check_export_in_progress(export_key)
+            if progress_status["is_waiting"]:
+                log.info(f"⏳ [DEDUP] Concurrent request for {export_key}, waiting for first request...")
+                result = await _wait_for_export(export_key)
+                if result:
+                    return result
+                # If timeout, fall through and try to trigger ourselves
+            
+            # --- First request: Do the actual work ---
             with tracer.start_as_current_span("api_registry_cache_access"):
                 device_ids = [did for did, meta in CACHED_REGISTRY.items() 
                               if meta["platform_customer_id"] == pcid and meta["application_customer_id"] == acid]
             
             if not device_ids:
-                return {"status": "Empty Hierarchy"}
+                response = {"status": "Empty Hierarchy"}
+                await _mark_export_complete(export_key, response)
+                return response
             
             # --- Hierarchical Lock Check ---
-            h_key = f"{pcid}:{acid}"
             async with HIERARCHY_LOCK:
                 if h_key in ACTIVE_HIERARCHIES:
-                    return {"status": "error", "message": f"Latest Sync already active for {h_key}"}
+                    response = {"status": "error", "message": f"Latest Sync already active for {h_key}"}
+                    await _mark_export_complete(export_key, response)
+                    return response
                 ACTIVE_HIERARCHIES.add(h_key)
 
-            background_tasks.add_task(_handle_throttled_export, _export_latest_task, h_key, device_ids, count)
-            return {"status": "Latest Sync Accepted", "requested_points": count, "device_count": len(device_ids), "hierarchy": h_key}
+            # Create response and store for concurrent waiters
+            response = {"status": "Latest Sync Accepted", "requested_points": count, "device_count": len(device_ids), "hierarchy": h_key}
+            
+            # Schedule background task and store result
+            background_tasks.add_task(_handle_throttled_export, _export_latest_task, h_key, device_ids, count, export_key=export_key)
+            
+            # Mark export as complete (result ready for concurrent requests)
+            await _mark_export_complete(export_key, response)
+            
+            return response
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -893,6 +1042,25 @@ async def health():
             "registry": "ok" if Path(REGISTRY_PATH).exists() else "missing"
         }
     }
+
+@app.get("/cache/stats")
+async def cache_stats():
+    """Get cache statistics."""
+    async with DEVICE_CACHE_LOCK:
+        return {
+            "device_telemetry_cache": len(DEVICE_TELEMETRY_CACHE),
+            "cache_ttl_seconds": DEVICE_CACHE_TTL
+        }
+
+@app.post("/cache/clear")
+async def clear_device_cache(device_id: str = None):
+    """Clear device telemetry cache (optionally by device_id pattern)."""
+    if device_id:
+        cleared = await _clear_device_cache_pattern(device_id)
+        return {"status": "success", "cleared": cleared, "pattern": device_id}
+    else:
+        cleared = await _clear_device_cache_pattern()
+        return {"status": "success", "cleared": cleared, "message": "All device cache cleared"}
 
 if __name__ == "__main__":
     import uvicorn
