@@ -72,6 +72,20 @@ docker exec atlas-ingestion python3 /app/v2/scripts/manual_archive.py
 
 ---
 
+## 📊 Batch Processing Benchmark (Spark + MinIO)
+
+### 1. 7-Day Rolling Analytics (Optimized)
+Pulls archived Parquet silos from MinIO and performs a full-fleet power aggregation. 
+- **Dependency:** Must run `Archival Operations` first to ensure data exists in the `telemetry-archive` bucket.
+- **Performance:** Bypasses Maven Central dependency checks (jars are pre-baked into the image).
+```powershell
+docker exec atlas-processor spark-submit /app/jobs/spark_minio_reader.py
+or
+docker exec atlas-processor spark-submit --packages org.apache.hadoop:hadoop-aws:3.3.4 /app/jobs/spark_minio_reader.py
+```
+
+---
+
 ## 🔍 Verification Tools
 
 ### 1. Kafka Message Inspector

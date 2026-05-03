@@ -5,15 +5,14 @@ import argparse
 import orjson
 from aiokafka import AIOKafkaConsumer
 
-async def run_percentile_benchmark(platform_count: int):
+async def run_percentile_benchmark(platform_count: int, bootstrap: str):
     # 1. Setup
     topic = "raw-server-metrics"
-    bootstrap = "127.0.0.1:9064"
     devices_per_platform = 11
     total_expected = platform_count * devices_per_platform
     
     # Load registry
-    with open("d:/PowerPulse/atlas/ingestion/device_configs.json", "rb") as f:
+    with open("/app/device_configs.json", "rb") as f:
         registry = orjson.loads(f.read())
     
     # Target standard platforms
@@ -108,12 +107,13 @@ async def run_percentile_benchmark(platform_count: int):
     print("="*60 + "\n")
 
     # Append to file
-    with open("d:/PowerPulse/atlas/ingestion/v2/scripts/final_ingestion_benchmarks.txt", "a") as f:
+    with open("/app/v2/scripts/final_ingestion_benchmarks.txt", "a") as f:
         f.write(f"\n--- {platform_count} Platforms CLEAN RUN PERCENTILES ---\n")
         f.write(f"P50: {p50:.3f}s | P90: {p90:.3f}s | P99: {p99:.3f}s\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--platforms", type=int, default=50)
+    parser.add_argument("--broker", default="broker1:9092")
     args = parser.parse_args()
-    asyncio.run(run_percentile_benchmark(args.platforms))
+    asyncio.run(run_percentile_benchmark(args.platforms, args.broker))

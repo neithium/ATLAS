@@ -29,7 +29,7 @@ def run_7day_analysis():
     # 1. FETCH: Spark reads from MinIO
     try:
         # Note: We use the endpoint 'ingestion' as defined in docker-compose
-        path = "s3a://telemetry-archive/production/year=2026/month=04/day=28/full_7day/"
+        path = "s3a://telemetry-archive/production/year=2026/month=05/day=02/full_7day/"
         print(f"📡 Fetching data from: {path}")
         
         df = spark.read.parquet(path)

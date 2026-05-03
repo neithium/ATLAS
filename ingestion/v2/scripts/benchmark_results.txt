@@ -298,3 +298,76 @@ Date: 2026-05-01 22:42:06
    System Throughput: 138,929 points/sec
 ============================================================
 
+============================================================
+STREAMING BENCHMARK: 11 DEVICES (10 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 11 devices processed in 0.250s
+LATENCY   : Min: 0.125s | Avg: 0.188s | Max: 0.234s
+PERCENTILE: Median (p50): 0.188s | p90: 0.234s | p99: 0.234s
+SUCCESS   : 10/10 platforms
+============================================================
+
+============================================================
+STREAMING BENCHMARK: 11 DEVICES (100 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 11 devices processed in 30.156s
+LATENCY   : Min: 0.234s | Avg: 1.305s | Max: 30.140s
+PERCENTILE: Median (p50): 1.047s | p90: 1.610s | p99: 30.140s
+SUCCESS   : 99/100 platforms
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1 | Total Devices: 10000
+Date: 2026-05-02 16:03:58
+------------------------------------------------------------
+   Total Time:        346.578s
+   Devices Received:  10000/10000
+   System Throughput: 58,169 points/sec
+============================================================
+
+============================================================
+STREAMING BENCHMARK: 11 DEVICES (100 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 11 devices processed in 30.187s
+LATENCY   : Min: 0.281s | Avg: 1.780s | Max: 30.141s
+PERCENTILE: Median (p50): 1.297s | p90: 1.829s | p99: 30.141s
+SUCCESS   : 98/100 platforms
+============================================================
+
+============================================================
+STREAMING BENCHMARK: 11 DEVICES (100 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 11 devices processed in 1.656s
+LATENCY   : Min: 0.219s | Avg: 0.986s | Max: 1.625s
+PERCENTILE: Median (p50): 1.046s | p90: 1.516s | p99: 1.625s
+SUCCESS   : 100/100 platforms
+============================================================
+
+============================================================
+STREAMING BENCHMARK: 11 DEVICES (10 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 11 devices processed in 4.110s
+LATENCY   : Min: 3.781s | Avg: 3.953s | Max: 4.094s
+PERCENTILE: Median (p50): 4.016s | p90: 4.094s | p99: 4.094s
+SUCCESS   : 10/10 platforms
+============================================================
+
+============================================================
+STREAMING BENCHMARK: 11 DEVICES (10 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 11 devices processed in 0.453s
+LATENCY   : Min: 0.156s | Avg: 0.322s | Max: 0.453s
+PERCENTILE: Median (p50): 0.328s | p90: 0.453s | p99: 0.453s
+SUCCESS   : 10/10 platforms
+============================================================
+
+============================================================
+STREAMING BENCHMARK: 2000 DEVICES (3 Platforms)
+------------------------------------------------------------
+THROUGHPUT: 2000 devices processed in 0.219s
+LATENCY   : Min: 0.047s | Avg: 0.148s | Max: 0.203s
+PERCENTILE: Median (p50): 0.203s | p90: 0.203s | p99: 0.203s
+SUCCESS   : 6/6 platforms
+============================================================
+

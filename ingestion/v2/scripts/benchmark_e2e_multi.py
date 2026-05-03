@@ -9,27 +9,38 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     topic = "raw-server-metrics"
     bootstrap = "127.0.0.1:9064"
     
-    # 1. Setup targets
+    # 1. Load registry to find correct ACID and device counts
+    import orjson
+    with open("d:/PowerPulse/atlas/ingestion/device_configs.json", "rb") as f:
+        registry = orjson.loads(f.read())
+    
+    # Map PCID to its first found ACID and count devices
+    pcid_to_acid = {}
+    pcid_to_count = {}
+    for meta in registry.values():
+        p = meta['platform_customer_id']
+        a = meta['application_customer_id']
+        if p not in pcid_to_acid:
+            pcid_to_acid[p] = a
+        pcid_to_count[p] = pcid_to_count.get(p, 0) + 1
+
+    # 2. Setup targets
     if heavy_pcid:
         pcids = [heavy_pcid]
-        if heavy_pcid == "PLATCUST10K":
-            expected_per_platform = 10000
-        else:
-            # Fallback check for any other heavy hitter
-            expected_per_platform = 4000 # Default for "4k" request if we mock it
-        platform_count = 1
+        total_expected = pcid_to_count.get(heavy_pcid, 0)
+        if total_expected == 0:
+             print(f"Warning: {heavy_pcid} not found in registry!")
     else:
         pcids = [f"PLATCUST{i:04d}" for i in range(1, platform_count + 1)]
-        expected_per_platform = 11
+        total_expected = sum(pcid_to_count.get(p, 0) for p in pcids)
         
-    total_expected = platform_count * expected_per_platform
-    
     print(f"\n" + "="*60)
     print(f"--- MULTI-PLATFORM E2E BENCHMARK (API -> DB -> KAFKA) ---")
     if heavy_pcid:
         print(f"Target: Heavy Hitter {heavy_pcid} ({total_expected} devices)")
     else:
         print(f"Target: {platform_count} Platforms ({total_expected} devices total)")
+    print("="*60)
     print("="*60)
     
     # 2. Setup Kafka Consumer
@@ -61,18 +72,7 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     consume_task = asyncio.create_task(consume_messages())
     
     # 4. Trigger API Exports
-    # Load registry to find correct ACID
-    import orjson
-    with open("d:/PowerPulse/atlas/ingestion/device_configs.json", "rb") as f:
-        registry = orjson.loads(f.read())
-    
-    # Map PCID to its first found ACID
-    pcid_to_acid = {}
-    for meta in registry.values():
-        p = meta['platform_customer_id']
-        a = meta['application_customer_id']
-        if p not in pcid_to_acid:
-            pcid_to_acid[p] = a
+    # (Registry already loaded above)
 
     async def trigger_export(client, pcid):
         acid = pcid_to_acid.get(pcid, "APPCUST0001")

@@ -19,16 +19,22 @@ import time
 import uuid
 import io
 import pandas as pd
+import datetime
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
-from concurrent.futures import ThreadPoolExecutor
+from typing import List, Optional, Any
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import asyncpg
 import orjson
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Body
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Body, Query
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from minio import Minio
 from aiokafka import AIOKafkaProducer
+import redis.asyncio as redis
+
+# Config
+REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
 # ── OPENTELEMETRY TRACING SETUP ──────────────────────────────────────────
 from opentelemetry import trace
@@ -71,6 +77,8 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "raw-server-metrics")
 
 MINIO_HOST = os.getenv("MINIO_HOST", "127.0.0.1:9000").replace("ingestion:", "127.0.0.1:")
+if ":" not in MINIO_HOST:
+    MINIO_HOST = f"{MINIO_HOST}:9000"
 MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 
@@ -108,12 +116,36 @@ class DeviceRegistration(BaseModel):
 # Global resource pools
 _kafka: Optional[AIOKafkaProducer] = None
 _pool: Optional[asyncpg.Pool] = None
-_executor = ThreadPoolExecutor(max_workers=10)
+_redis: Optional[Any] = None
+_minio: Optional[Minio] = None
+_executor = ThreadPoolExecutor(max_workers=200)
+_cpu_pool = ProcessPoolExecutor(max_workers=10)
 _scheduler = AsyncIOScheduler()
+
+# Redis Index Key: idx:telemetry:{pcid}:{acid} -> Set of available hours (YYYYMMDDHH)
+REDIS_INDEX_PREFIX = "idx:telemetry"
+
+# Database Schema Columns (for vectorized hydration)
+DB_COLUMNS = [
+    "metric_time", "device_id", "platform_customer_id", "application_customer_id",
+    "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
+    "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts",
+    "server_name", "model", "processor_vendor", "server_generation",
+    "report_type", "metric_type", "status", "error_reason", "tags",
+    "location_id", "location_city", "location_state", "location_country", "location_name"
+]
+
+# Metric-Only Columns (Strips redundant metadata for lean exports)
+METRIC_COLUMNS = [
+    "metric_time", "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max",
+    "cpu_pwr_sav_lim", "cpu_util", "cpu_watts", "gpu_watts", "min_watts",
+    "peak_watts", "status", "error_reason"
+]
 
 # Production-Grade Performance Caching
 # Eliminates the 1.2s "Cold Start" per request at 80,000 device scale
 CACHED_REGISTRY = {}
+REGISTRY_DF = pd.DataFrame()
 REGISTRY_LOADED = False
 
 # System Guard: Prevents thread exhaustion under heavy burst loads
@@ -142,7 +174,7 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # Max 2 parallel export jobs total
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # Throttled for stability under 500-platform bursts
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -215,105 +247,183 @@ def _build_full_record(r, did: str, meta: dict) -> dict:
     )
 
 # =============================================================================
-# AUTOMATED DAILY ARCHIVAL JOB (Streaming Batch Architecture)
+# HOURLY CACHE JOB (Optimized for API Exports)
 # =============================================================================
-async def daily_archival_job():
-    """Scheduled Task: Streams 7-day rolling data to MinIO in small batches to avoid CPU/memory spikes."""
+async def hourly_cache_job():
+    """Scheduled Task: Streams the last hour of data into the PCID/ACID partitioned cache."""
     now = datetime.now(timezone.utc)
-    end = now.replace(second=0, microsecond=0)
-    start = end - timedelta(days=7)
+    end = now.replace(minute=0, second=0, microsecond=0)
+    start = end - timedelta(hours=1)
     
-    log.info(f"🕰️ [SCHEDULER] Triggering Daily 7-Day Streaming Archival: {start.strftime('%Y-%m-%d %H:%M')} to {end.strftime('%Y-%m-%d %H:%M')}...")
+    log.info(f"🕰️ [CACHE] Refreshing Hourly Cache: {start.strftime('%H:%M')} to {end.strftime('%H:%M')}...")
     
     try:
         with open(REGISTRY_PATH, "rb") as f:
             DEVICES = orjson.loads(f.read())
         
         all_device_ids = list(DEVICES.keys())
-        log.info(f"📊 [SCHEDULER] Streaming archival for {len(all_device_ids)} devices...")
-        
         pool = await get_db_pool()
-        s3 = Minio("127.0.0.1:9000", access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
+        s3 = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
         
-        # Ensure buckets exist upfront
+        if not s3.bucket_exists("telemetry-cache"):
+            s3.make_bucket("telemetry-cache")
+        
+        # Incremental Streaming
+        STREAM_BATCH = 2000
+        total_records = 0
+        base_path = f"date={start.strftime('%Y-%m-%d')}/hour={start.strftime('%H')}/"
+        
+        for i in range(0, len(all_device_ids), STREAM_BATCH):
+            batch_devices = all_device_ids[i:i + STREAM_BATCH]
+            async with pool.acquire() as conn:
+                records = await conn.fetch(
+                    "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3)", 
+                    start, end, batch_devices
+                )
+            
+            if not records: continue
+            
+            log.info(f"📦 [CACHE] Processing batch of {len(records)} records...")
+            
+            # 🏎️ VECTORIZED HYDRATION (No loops!)
+            # 1. Convert DB Records to DataFrame (Raw metrics only)
+            df_raw = pd.DataFrame(records, columns=DB_COLUMNS)
+            
+            # 2. Vectorized Merge with Registry for Customer Info
+            # This handles PCID/ACID mapping at C-speed via pandas merge
+            df = df_raw.merge(
+                REGISTRY_DF[['device_id', 'platform_customer_id', 'application_customer_id', 'server_name', 'model']], 
+                on="device_id", 
+                how="left",
+                suffixes=('', '_reg')
+            )
+            
+            # Use registry values if DB values are missing/null (fallback)
+            df['platform_customer_id'] = df['platform_customer_id'].fillna(df['platform_customer_id_reg'])
+            df['application_customer_id'] = df['application_customer_id'].fillna(df['application_customer_id_reg'])
+            df['server_name'] = df['server_name'].fillna(df['server_name_reg'])
+            df['model'] = df['model'].fillna(df['model_reg'])
+            
+            # Select relevant columns for cache (Raw Metrics + Keys)
+            final_cols = [
+                "metric_time", "device_id", "platform_customer_id", "application_customer_id",
+                "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
+                "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts"
+            ]
+            df_final = df[final_cols]
+            
+            for (pcid, acid), group_df in df_final.groupby(['platform_customer_id', 'application_customer_id']):
+                cache_buf = io.BytesIO()
+                group_df.to_parquet(cache_buf, engine='pyarrow', index=False, compression='snappy')
+                cache_content = cache_buf.getvalue()
+                
+                cache_fname = f"{base_path}pcid={pcid}/acid={acid}/cache.parquet"
+                s3.put_object("telemetry-cache", cache_fname, io.BytesIO(cache_content), len(cache_content))
+                
+                # 📝 Update Redis Index (Instant Discovery Heartbeat)
+                rd = await get_redis()
+                hour_key = start.strftime('%Y%m%d%H')
+                index_key = f"{REDIS_INDEX_PREFIX}:{pcid}:{acid}"
+                await rd.sadd(index_key, hour_key)
+                
+                total_records += len(group_df)
+            
+            del df_raw, df, df_final, records
+
+        log.info(f"✅ [CACHE] Hourly refresh complete. Total records partitioned: {total_records:,}")
+        
+    except Exception as e:
+        log.error(f"💥 [CACHE] Hourly Refresh Failed: {str(e)}")
+
+# =============================================================================
+# DAILY LONG-TERM ARCHIVAL JOB (Consolidated Data Lake)
+# =============================================================================
+async def daily_archival_job():
+    """Scheduled Task: Streams 24h of consolidated data to Raw and Archive buckets."""
+    now = datetime.now(timezone.utc)
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = end - timedelta(days=1)
+    
+    log.info(f"🕰️ [ARCHIVE] Consolidating Daily Data Lake: {start.strftime('%Y-%m-%d')}...")
+    
+    try:
+        with open(REGISTRY_PATH, "rb") as f:
+            DEVICES = orjson.loads(f.read())
+        
+        all_device_ids = list(DEVICES.keys())
+        pool = await get_db_pool()
+        s3 = get_minio()
+        
         for bucket in ["telemetry-raw", "telemetry-archive"]:
             if not s3.bucket_exists(bucket):
                 s3.make_bucket(bucket)
         
-        # Streaming: 1000 devices per batch to keep memory flat
         STREAM_BATCH = 1000
-        total_bytes = 0
         total_records = 0
-        devices_with_data = 0
-        batch_counter = 0
-        base_path = f"production/year={end.year}/month={end.month:02d}/day={end.day:02d}/full_7day/"
+        date_str = start.strftime('%Y-%m-%d')
         
         for i in range(0, len(all_device_ids), STREAM_BATCH):
             batch_devices = all_device_ids[i:i + STREAM_BATCH]
-            
             async with pool.acquire() as conn:
                 records = await conn.fetch(
-                    "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3) ORDER BY device_id, metric_time ASC", 
+                    "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3)", 
                     start, end, batch_devices
                 )
             
-            if not records:
-                continue
+            if not records: continue
             
-            devices_with_data += len(set(r[1] for r in records))
-            
-            # Hydrate → Parquet → Upload → Free (streaming cycle)
             hydrated = [_build_full_record(r, r[1], DEVICES) for r in records]
             df = pd.DataFrame(hydrated)
             pq_buf = io.BytesIO()
             df.to_parquet(pq_buf, engine='pyarrow', index=False, compression='snappy')
             content = pq_buf.getvalue()
             
-            total_bytes += len(content)
-            total_records += len(records)
-            
-            fname = f"archive_batch_{batch_counter}.parquet"
+            fname = f"date={date_str}/batch_{i//STREAM_BATCH}.parquet"
             for bucket in ["telemetry-raw", "telemetry-archive"]:
-                s3.put_object(bucket, base_path + fname, io.BytesIO(content), len(content))
+                s3.put_object(bucket, fname, io.BytesIO(content), len(content))
             
-            log.info(f"📤 Batch {batch_counter}: {len(records)} records streamed ({len(content)/1024:.0f} KB)")
-            
-            # Free memory before next batch
+            total_records += len(records)
             del hydrated, df, pq_buf, content, records
-            batch_counter += 1
 
-        print("\n" + "█" * 60)
-        print(f"🚀 [SIGNAL] DAILY STREAMING ARCHIVAL COMPLETED")
-        print(f"📋 PERIOD: {start.strftime('%Y-%m-%d %H:%M')} - {end.strftime('%Y-%m-%d %H:%M')}")
-        print(f"📦 SILOS: telemetry-raw & telemetry-archive")
-        print(f"🎯 TOTAL REGISTERED: {len(all_device_ids)}")
-        print(f"📊 DEVICES WITH DATA: {devices_with_data}")
-        print(f"📝 TOTAL RECORDS: {total_records:,}")
-        print(f"💾 DATA VOLUME: {total_bytes/1024/1024:.2f} MB")
-        print(f"📦 BATCHES STREAMED: {batch_counter}")
-        print("█" * 60 + "\n")
+        log.info(f"✅ [ARCHIVE] Daily consolidation complete. Total records archived: {total_records:,}")
         
     except Exception as e:
-        log.error(f"💥 [SCHEDULER] Archival Failed: {str(e)}")
+        log.error(f"💥 [ARCHIVE] Daily Consolidation Failed: {str(e)}")
 
 # =============================================================================
 # LIFECYCLE MANAGEMENT
 # =============================================================================
+def load_registry():
+    global CACHED_REGISTRY, REGISTRY_LOADED, REGISTRY_DF
+    if REGISTRY_LOADED: return
+    
+    try:
+        with open(REGISTRY_PATH, "rb") as f:
+            CACHED_REGISTRY = orjson.loads(f.read())
+            
+        # Build Vectorized Registry for Archival Performance
+        registry_list = []
+        for did, meta in CACHED_REGISTRY.items():
+            registry_list.append({
+                "device_id": did,
+                "platform_customer_id": meta.get("platform_customer_id"),
+                "application_customer_id": meta.get("application_customer_id"),
+                "server_name": meta.get("server_name"),
+                "model": meta.get("model")
+            })
+        REGISTRY_DF = pd.DataFrame(registry_list)
+        
+        REGISTRY_LOADED = True
+        log.info(f"✅ [CACHE] Registry pre-loaded with {len(CACHED_REGISTRY)} devices.")
+    except Exception as e:
+        log.error(f"❌ [CACHE] Failed to load registry: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     global _kafka, CACHED_REGISTRY, REGISTRY_LOADED
     
     # 1. Hot-Load Registry Cache (Crucial for <30s Latency)
-    try:
-        if os.path.exists(REGISTRY_PATH):
-            with open(REGISTRY_PATH, "rb") as f:
-                CACHED_REGISTRY = orjson.loads(f.read())
-            REGISTRY_LOADED = True
-            log.info(f"✅ [CACHE] Registry pre-loaded with {len(CACHED_REGISTRY)} devices.")
-        else:
-            log.warning("⚠️  [CACHE] Registry file missing! API is in limited mode.")
-    except Exception as e:
-        log.error(f"❌ [CACHE] Failed to load registry: {e}")
+    load_registry()
 
     # 2. Initialize Infrastructure
     await get_kafka()
@@ -323,10 +433,22 @@ async def startup_event():
     
     await get_db_pool()
     
-    _scheduler.add_job(daily_archival_job, 'cron', hour=23, minute=59, misfire_grace_time=600, coalesce=True)
+    # 3. Initialize MinIO Buckets Upfront
+    try:
+        s3 = get_minio()
+        for bucket in ["telemetry-raw", "telemetry-archive", "telemetry-cache"]:
+            if not s3.bucket_exists(bucket):
+                s3.make_bucket(bucket)
+                log.info(f"🪣 [MINIO] Bucket created: {bucket}")
+    except Exception as e:
+        log.error(f"❌ [MINIO] Bucket initialization failed: {e}")
+    
+    # Schedule: Dual-Tier Archival Strategy
+    _scheduler.add_job(hourly_cache_job, 'cron', minute=0, misfire_grace_time=600, coalesce=True)
+    _scheduler.add_job(daily_archival_job, 'cron', hour=0, minute=10, misfire_grace_time=3600, coalesce=True)
     _scheduler.start()
     
-    log.info("🚀 [SYSTEM] Silo-Systems Online (Archival Scheduler ACTIVE - Production: Daily at 23:59 UTC)")
+    log.info("🚀 [SYSTEM] Silo-Systems Online (Dual-Tier Archival ACTIVE: Hourly Cache + Daily Long-term)")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -347,16 +469,16 @@ async def get_kafka():
         try:
             _kafka = AIOKafkaProducer(
                 bootstrap_servers=KAFKA_BOOTSTRAP,
-                value_serializer=lambda v: orjson.dumps(v),
-                compression_type=None,
-                linger_ms=1,                   # ⬇️ Absolute minimum for wire-speed syncs
-                max_batch_size=10485760,       # ⬇️ 10MB (Safe for broker)
-                max_request_size=10485760,      # ⬇️ 10MB
+                value_serializer=lambda v: v if isinstance(v, bytes) else orjson.dumps(v),
+                compression_type="snappy",     # 📦 Snappy for massive bandwidth reduction
+                linger_ms=5,                   # ⬇️ Reduced from 25ms to 5ms for lower local latency
+                max_batch_size=10485760,       # ⬆️ Increased to 10MB to match large telemetry exports
+                max_request_size=10485760,      # ⬆️ Increased to 10MB
                 request_timeout_ms=300000,     # ⬆️ 5-minute timeout for heavy flushes
-                acks=0                         # ⚡ 'Extreme Speed' - No ack wait to hit <30s
+                acks=1                         # ⚖️ Balanced - Wait for leader ack to prevent socket flooding
             )
             # Startup handled in main.py
-            log.info(f"🛰️  [KAFKA] Production Producer Initialized (AIOKafka)")
+            log.info(f"🛰️  [KAFKA] Production Producer Initialized (AIOKafka + Snappy)")
         except Exception as e:
             log.error(f"❌ [KAFKA] Initialisation Failed: {e}")
             _kafka = AIOKafkaProducer(
@@ -365,6 +487,31 @@ async def get_kafka():
                 compression_type=None
             )
     return _kafka
+
+async def get_redis():
+    global _redis
+    if _redis is None:
+        _redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    return _redis
+
+def get_minio():
+    global _minio
+    if _minio is None:
+        import urllib3
+        # 🚀 CUSTOM POOL: Expanded for 168+ parallel hourly downloads
+        http_client = urllib3.PoolManager(
+            retries=False,
+            maxsize=300,
+            num_pools=10
+        )
+        _minio = Minio(
+            MINIO_HOST, 
+            access_key=MINIO_ACCESS, 
+            secret_key=MINIO_SECRET, 
+            secure=False,
+            http_client=http_client
+        )
+    return _minio
 
 # =============================================================================
 # DATABASE DATA ACCESS LAYER (DAL)
@@ -392,348 +539,338 @@ async def query_tsdb_latest(device_id: str, limit: int = 2016):
 # =============================================================================
 BULK_BATCH_SIZE = 400  # 🎯 Dialed back to the 'Sweet Spot' for 1601 device sync
 
-def _build_power_detail(r):
-    """Builds a single PowerDetail entry from a DB row."""
-    # Compute is_fresh dynamically: True if within last 24 hours
-    metric_time = r.get('metric_time')
-    if metric_time:
-        # Ensure metric_time has timezone info for comparison
-        if hasattr(metric_time, 'replace') and metric_time.tzinfo is None:
-            metric_time = metric_time.replace(tzinfo=timezone.utc)
-        is_fresh = metric_time > (datetime.now(timezone.utc) - timedelta(days=1))
-    else:
-        is_fresh = False
-    
-    return {
-        "AmbTemp": float(r.get('amb_temp', 25)),
-        "Average": float(r.get('avg_watts', 0)),
-        "CpuAvgFreq": int(r.get('cpu_avg_freq', 3400000)),
-        "CpuMax": int(r.get('cpu_max', 4200000)),
-        "CpuPwrSavLim": int(r.get('cpu_pwr_sav_lim', 250)),
-        "CpuUtil": int(r.get('cpu_util', 50)),
-        "CpuWatts": int(r.get('cpu_watts', 200)),
-        "GpuWatts": int(r.get('gpu_watts', 50)),
-        "Minimum": int(r.get('min_watts', 250)),
-        "Peak": int(r.get('peak_watts', 400)),
-        "Time": r['metric_time'].isoformat() if hasattr(r.get('metric_time'), 'isoformat') else str(r.get('metric_time', '')),
-        "is_fresh": is_fresh
+def _serialize_record(did, readings, meta):
+    """CPU-Bound: Runs in ProcessPool to bypass GIL."""
+    payload = {
+        "device_id": did,
+        "report_id": meta.get('report_id', 'STITCHED-' + str(int(time.time()))),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": True,
+        "model": meta.get('model', 'Unknown'),
+        "tags": meta.get('tags', ''),
+        "report_type": "telemetry_live",
+        "server_name": meta.get('server_name', 'Unknown'),
+        "error_reason": "",
+        "location_id": meta.get('location_id', ''),
+        "location_city": meta.get('location_city', ''),
+        "location_name": meta.get('location_name', ''),
+        "location_state": meta.get('location_state', ''),
+        "location_country": meta.get('location_country', ''),
+        "processor_vendor": meta.get('processor_vendor', ''),
+        "server_generation": meta.get('server_generation', ''),
+        "platform_customer_id": meta.get('platform_customer_id', ''),
+        "application_customer_id": meta.get('application_customer_id', ''),
+        "metric_type": "power_metrics",
+        "data": {
+            "PowerDetail": readings
+        }
     }
+    return orjson.dumps(payload)
 
-async def _export_stream_task(device_ids: List[str], start_time: datetime, end_time: datetime):
-    """Heavyworker: High-Speed Parallel Query + 48-field hydration + batch Kafka push."""
-    t_total_start = time.monotonic()
+async def _process_and_send(did, readings, DEVICES, kafka_prod):
+    """Async wrapper that delegates serialization to CPU pool."""
+    meta = DEVICES.get(did, {})
+    loop = asyncio.get_event_loop()
+    
+    # 🏎️ Parallel Serialization (Offloaded to separate CPU core)
+    payload_bytes = await loop.run_in_executor(_cpu_pool, _serialize_record, did, readings, meta)
+    
+    # 🛰️ Kafka Delivery
+    await kafka_prod.send(KAFKA_TOPIC, payload_bytes, key=did.encode())
+
+async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: str = None, acid: str = None, device_ids: List[str] = None):
+    """
+    Hybrid Export Task:
+    1. Checks MinIO Cache for historical data (if PCID/ACID provided).
+    2. Fetches remaining 'Fresh' data from TimescaleDB.
+    3. Streams the combined result to Kafka.
+    """
+    t_start = time.monotonic()
     kafka_prod = await get_kafka()
-    processed = 0
-    log.info(f"🚀 [WORKER] Batch-Streaming {len(device_ids)} devices for stream export...")
+    processed_records = 0
     
-    with tracer.start_as_current_span("registry_access"):
-        DEVICES = CACHED_REGISTRY
+    DEVICES = CACHED_REGISTRY
+    h_label = f"{pcid}:{acid}" if pcid and acid else "manual-export"
     
-    pool = await get_db_pool()
-    batch_size = 100
-    semaphore = asyncio.Semaphore(20)  # Increased from 30 to 60 for better parallelism
+    # Discovery Logic
+    if not device_ids:
+        if pcid and acid:
+            target_ids = [did for did, meta in DEVICES.items() 
+                          if meta.get('platform_customer_id') == pcid and meta.get('application_customer_id') == acid]
+        else:
+            log.warning(f"⚠️ [WORKER] Missing hierarchy info")
+            return
+    else:
+        target_ids = device_ids
     
-    async def process_batch(batch_ids):
-        nonlocal processed
-        async with semaphore:
-            async with pool.acquire() as conn:
-                with tracer.start_as_current_span("phase1_db_query"):
-                    rows = await conn.fetch(
-                        "SELECT * FROM telemetry_live WHERE device_id = ANY($1) AND metric_time >= $2 AND metric_time < $3 ORDER BY device_id, metric_time ASC",
-                        batch_ids, start_time, end_time
-                    )
+    if not target_ids:
+        log.warning(f"⚠️ [WORKER] No devices found for {h_label}")
+        return
+
+    # Initialize MinIO Client
+    s3 = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
+
+    # 1. CACHE PATH (MinIO) - Only if we have PCID/ACID
+    missing_slots = [start_time.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i) 
+                     for i in range(int((end_time - start_time).total_seconds() // 3600) + 1)]
+    
+    if pcid and acid:
+        with tracer.start_as_current_span("cache_fetch"):
+            cached_records, found_slots = await _fetch_from_cache(s3, pcid, acid, start_time, end_time)
+            if cached_records:
+                log.info(f"🎯 [CACHE] Found {len(cached_records)} records in MinIO for {pcid}:{acid}")
+                df_cached = pd.DataFrame(cached_records)
+                # If we are targeting specific device_ids, filter the cache
+                if device_ids:
+                    df_cached = df_cached[df_cached['device_id'].isin(device_ids)]
+                
+                for did, group in df_cached.groupby('device_id'):
+                    readings = group.to_dict('records')
+                    await _process_and_send(did, readings, DEVICES, kafka_prod)
+                    processed_records += len(readings)
+                
+                # Update missing slots
+                missing_slots = [s for s in missing_slots if s not in found_slots]
+    
+    # 2. HOT PATH (TimescaleDB Fallback)
+    if missing_slots:
+        log.info(f"🔌 [HOT PATH] Fetching {len(missing_slots)} hourly slots from TimescaleDB...")
+        pool = await get_db_pool()
+        db_start = min(missing_slots)
+        db_end = end_time
+        
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM telemetry_live WHERE device_id = ANY($1) AND metric_time >= $2 AND metric_time < $3 ORDER BY device_id, metric_time ASC",
+                target_ids, db_start, db_end
+            )
             
-            if not rows: return
-            
-            with tracer.start_as_current_span("phase1_hydration"):
+            if rows:
                 current_did = None
                 device_readings = []
                 for r in rows:
                     did = r[1]
                     if current_did is None: current_did = did
                     if did != current_did:
-                        try:
-                            await _process_and_send(current_did, device_readings, DEVICES, kafka_prod)
-                            processed += 1
-                        except Exception as e:
-                            log.error(f"❌ Stream device {current_did} failed: {e}")
+                        await _process_and_send(current_did, device_readings, DEVICES, kafka_prod)
+                        processed_records += len(device_readings)
                         current_did = did
                         device_readings = []
-                    device_readings.append(r)
+                    device_readings.append({k: r[k] for k in METRIC_COLUMNS if k in r})
                 
                 if current_did and device_readings:
-                    try:
-                        await _process_and_send(current_did, device_readings, DEVICES, kafka_prod)
-                        processed += 1
-                    except Exception as e:
-                        log.error(f"❌ Stream final device {current_did} failed: {e}")
+                    await _process_and_send(current_did, device_readings, DEVICES, kafka_prod)
+                    processed_records += len(device_readings)
+
+    await kafka_prod.flush()
+    t_total = time.monotonic() - t_start
+    log.info(f"✅ [HYBRID] Export Complete for {h_label} | Total Points: {processed_records:,} | Time: {t_total:.2f}s")
+
+async def _fetch_from_cache_df(s3, pcid, acid, start_time: datetime, end_time: datetime):
+    """Memory Optimized: Returns (DataFrame, found_slots)"""
+    rd = await get_redis()
+    index_key = f"{REDIS_INDEX_PREFIX}:{pcid}:{acid}"
+    available_hours = await rd.smembers(index_key)
     
-    # Launch all batches concurrently
-    t_phase1_start = time.monotonic()
-    batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
-    with tracer.start_as_current_span("phase1_batch_processing"):
-        await asyncio.gather(*(process_batch(b) for b in batches))
-    
-    with tracer.start_as_current_span("phase1_kafka_flush"):
+    current = start_time.replace(minute=0, second=0, microsecond=0)
+    target_hours = []
+    while current < end_time:
+        hour_str = current.strftime('%Y%m%d%H')
+        if hour_str in available_hours:
+            target_hours.append(current)
+        current += timedelta(hours=1)
+
+    if not target_hours:
+        return pd.DataFrame(), []
+
+    def download_parquet(h):
+        path = f"date={h.strftime('%Y-%m-%d')}/hour={h.strftime('%H')}/pcid={pcid}/acid={acid}/cache.parquet"
         try:
-            await kafka_prod.flush()
-            log.info(f"✅ [KAFKA] Stream-batch flush successful for {processed} messages")
-        except Exception as e:
-            log.warning(f"⚠️  [KAFKA] Flush timeout: {e}")
-    t_phase1 = time.monotonic() - t_phase1_start
+            response = s3.get_object("telemetry-cache", path)
+            try:
+                return pd.read_parquet(io.BytesIO(response.read()), engine='pyarrow')
+            finally:
+                response.close()
+                response.release_conn()
+        except:
+            return None
+
+    loop = asyncio.get_event_loop()
+    dfs = await asyncio.gather(*[
+        loop.run_in_executor(_executor, download_parquet, h) for h in target_hours
+    ])
     
-    # Second Phase is usually similar to first but for latest 7d window
-    # To keep this trace clean, we've focused tracing on Phase 1
-    t_total = time.monotonic() - t_total_start
-    log.info(f"⏱️  [TIMING] TOTAL: {t_total:.2f}s | {len(device_ids)} devices")
-    log.info(f"✅ [WORKER] Export Complete: {processed} devices processed.")
+    final_dfs = [df for df in dfs if df is not None]
+    if not final_dfs:
+        return pd.DataFrame(), []
+        
+    return pd.concat(final_dfs), target_hours
+
+async def _fetch_from_cache(s3, pcid, acid, start_time: datetime, end_time: datetime):
+    """Legacy/Simple: Returns (records, found_slots)"""
+    df, slots = await _fetch_from_cache_df(s3, pcid, acid, start_time, end_time)
+    if df.empty:
+        return [], []
+    return df.to_dict('records'), slots
 
 async def _export_first_task(device_ids: List[str], count: int = 2016):
     """Historical Task: Parallel Batch Engine (The Fastest Possible Strategy)."""
-    t_start = time.monotonic()
-    kafka_prod = await get_kafka()
-    processed = 0
-    log.info(f"📜 [WORKER] Parallel-Batch Fetching OLDEST {count} points for {len(device_ids)} devices...")
-    
-    # Track timings
-    t_registry_start = time.monotonic()
-    with open(REGISTRY_PATH, "rb") as f:
-        DEVICES = orjson.loads(f.read())
-    t_registry = time.monotonic() - t_registry_start
-    
-    pool = await get_db_pool()
-    batch_size = 100  # Per-device LIMIT queries are most efficient with smaller batches
-    
-    # Detailed timing stats
-    timing_stats = {"query_time": 0.0, "process_time": 0.0}
-    
-    async def process_batch(batch_ids):
-        nonlocal processed
-        t_batch_start = time.monotonic()
-        async with pool.acquire() as conn:
-            # Optimized JSON Aggregation: Pushes array assembly into Postgres
-            # This avoids the overhead of fetching 201,600 individual rows
-            query = """
-                SELECT d.id, 
-                (SELECT json_agg(r) FROM (
-                    SELECT 
-                        metric_time AS "Time", 
-                        avg_watts AS "Average", 
-                        peak_watts AS "Peak", 
-                        min_watts AS "Minimum",
-                        amb_temp AS "AmbTemp",
-                        cpu_avg_freq AS "CpuAvgFreq",
-                        cpu_max AS "CpuMax",
-                        cpu_pwr_sav_lim AS "CpuPwrSavLim",
-                        cpu_util AS "CpuUtil",
-                        cpu_watts AS "CpuWatts",
-                        gpu_watts AS "GpuWatts"
-                    FROM telemetry_live 
-                    WHERE device_id = d.id 
-                    ORDER BY metric_time ASC 
-                    LIMIT $2
-                ) r) AS readings 
-                FROM UNNEST($1::text[]) AS d(id)
-            """
-            rows = await conn.fetch(query, batch_ids, count)
-        
-        t_query_end = time.monotonic()
-        timing_stats['query_time'] += (t_query_end - t_batch_start)
-        
-        if not rows: return
-        
-        for r in rows:
-            did, json_readings = r[0], r[1]
-            if json_readings:
-                # asyncpg returns json_agg as a string; must parse to Python list
-                if isinstance(json_readings, str):
-                    json_readings = orjson.loads(json_readings)
-                
-                # Integrity Guard: Validate requested vs actual count
-                actual_count = len(json_readings) if json_readings else 0
-                if actual_count < count:
-                    log.warning(f"⚠️  [DATA GAP] Device {did}: Requested {count} points, but only found {actual_count} in DB.")
-                
-                await _process_and_send(did, json_readings, DEVICES, kafka_prod)
-                processed += 1
-        
-        timing_stats['process_time'] += (time.monotonic() - t_query_end)
-
-    # Launch all batches concurrently with increased parallelism
-    t_batches_start = time.monotonic()
-    batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
-    # Increased from Semaphore(30) to 60 for more parallelism
-    semaphore = asyncio.Semaphore(20)
-    
-    async def process_batch_with_semaphore(batch_ids):
-        async with semaphore:
-            await process_batch(batch_ids)
-            # Periodic flush to prevent OOM
-            await kafka_prod.flush()
-    
-    await asyncio.gather(*(process_batch_with_semaphore(b) for b in batches))
-    t_batches_elapsed = time.monotonic() - t_batches_start
-    
-    # Flush with non-blocking AIOKafka flush
-    t_flush_start = time.monotonic()
-    try:
-        await asyncio.wait_for(kafka_prod.flush(), timeout=300)
-        t_flush_elapsed = time.monotonic() - t_flush_start
-        log.info(f"✅ [KAFKA] Historical-batch flush successful for {processed} messages (flush took {t_flush_elapsed:.2f}s)")
-    except Exception as e:
-        t_flush_elapsed = time.monotonic() - t_flush_start
-        log.warning(f"⚠️  [KAFKA] Flush timeout (flush may still complete): {type(e).__name__} - {e}")
-    
-    # Print detailed timing breakdown
-    t_total = time.monotonic() - t_start
-    num_batches = len([device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)])
-    avg_query_per_batch = timing_stats['query_time'] / num_batches if num_batches > 0 else 0
-    avg_process_per_batch = timing_stats['process_time'] / num_batches if num_batches > 0 else 0
-    
-    log.info(f"⏱️  [TIMING BREAKDOWN]")
-    log.info(f"  Registry load:           {t_registry:.2f}s ({100*t_registry/t_total:.1f}%)")
-    log.info(f"  Batch processing:        {t_batches_elapsed:.2f}s ({100*t_batches_elapsed/t_total:.1f}%) [Semaphore(60)]")
-    log.info(f"    ├─ Avg query/batch:    {avg_query_per_batch:.3f}s (total accumulated: {timing_stats['query_time']:.2f}s)")
-    log.info(f"    └─ Avg process/batch:  {avg_process_per_batch:.3f}s (total accumulated: {timing_stats['process_time']:.2f}s)")
-    log.info(f"  Kafka flush:             {t_flush_elapsed:.2f}s ({100*t_flush_elapsed/t_total:.1f}%)")
-    log.info(f"  Total:                   {t_total:.2f}s | {processed} devices | {len(device_ids)} requested | {int(len(device_ids)*count/t_total):.0f} events/sec")
-    
-    log.info(f"✅ [WORKER] Historical-First Complete: {processed} devices processed.")
-
-async def _export_latest_task(device_ids: List[str], count: int = 2016):
-    """Latest-Batch Task: High-Speed Parallel Fetch of newest N points."""
-    with tracer.start_as_current_span("export_latest_task", attributes={"device_count": len(device_ids)}):
+    with tracer.start_as_current_span("export_historical_task_streaming", attributes={"device_count": len(device_ids)}):
         t_start = time.monotonic()
         kafka_prod = await get_kafka()
         processed = 0
-        log.info(f"⚡ [WORKER] Parallel-Batch Fetching LATEST {count} points for {len(device_ids)} devices...")
+        log.info(f"🌊 [STREAM] Parallel Streaming Fetch for OLDEST {count} points for {len(device_ids)} devices...")
         
-        with tracer.start_as_current_span("registry_access"):
-            DEVICES = CACHED_REGISTRY
-        
+        DEVICES = CACHED_REGISTRY
         pool = await get_db_pool()
-        batch_size = 100
-        semaphore = asyncio.Semaphore(5)  # ⬇️ Reduced to 5 to prevent network buffer overflow
-        
-        async def process_batch(batch_ids):
+        batch_size = 200
+        semaphore = asyncio.Semaphore(4)
+
+        async def process_batch_historical(batch_ids):
             nonlocal processed
             async with pool.acquire() as conn:
-                with tracer.start_as_current_span("latest_db_query"):
+                async with conn.transaction():
                     query = """
-                        SELECT d.id, 
-                        (SELECT json_agg(r) FROM (
-                            SELECT * FROM (
-                                SELECT 
-                                    metric_time AS "Time", 
-                                    avg_watts AS "Average", 
-                                    peak_watts AS "Peak", 
-                                    min_watts AS "Minimum",
-                                    amb_temp AS "AmbTemp",
-                                    cpu_avg_freq AS "CpuAvgFreq",
-                                    cpu_max AS "CpuMax",
-                                    cpu_pwr_sav_lim AS "CpuPwrSavLim",
-                                    cpu_util AS "CpuUtil",
-                                    cpu_watts AS "CpuWatts",
-                                    gpu_watts AS "GpuWatts"
-                                FROM telemetry_live 
-                                WHERE device_id = d.id 
-                                ORDER BY metric_time DESC 
-                                LIMIT $2
-                            ) sub ORDER BY "Time" ASC
-                        ) r) AS readings 
-                        FROM UNNEST($1::text[]) AS d(id)
+                        SELECT 
+                            device_id,
+                            metric_time, 
+                            avg_watts, 
+                            peak_watts, 
+                            min_watts,
+                            amb_temp,
+                            cpu_avg_freq,
+                            cpu_max,
+                            cpu_pwr_sav_lim,
+                            cpu_util,
+                            cpu_watts,
+                            gpu_watts,
+                            status,
+                            error_reason
+                        FROM telemetry_live 
+                        WHERE device_id = ANY($1)
+                        ORDER BY device_id, metric_time ASC
                     """
-                    rows = await conn.fetch(query, batch_ids, count)
-            
-            if not rows: return
-            
-            with tracer.start_as_current_span("latest_serialization_and_send"):
-                for r in rows:
-                    did, json_readings = r[0], r[1]
-                    if json_readings:
-                        if isinstance(json_readings, str):
-                            json_readings = orjson.loads(json_readings)
-                        await _process_and_send(did, json_readings, DEVICES, kafka_prod)
+                    cursor = conn.cursor(query, batch_ids)
+                    
+                    current_did = None
+                    device_readings = []
+                    
+                    async for row in cursor:
+                        did = row['device_id']
+                        if current_did is None: current_did = did
+                        
+                        if did != current_did:
+                            if device_readings:
+                                await _process_and_send(current_did, device_readings[:count], DEVICES, kafka_prod)
+                                processed += 1
+                            current_did = did
+                            device_readings = []
+                        
+                        if len(device_readings) < count:
+                            device_readings.append({k: row[k] for k in METRIC_COLUMNS if k in row})
+
+                    if current_did and device_readings:
+                        await _process_and_send(current_did, device_readings[:count], DEVICES, kafka_prod)
                         processed += 1
 
         batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
-        with tracer.start_as_current_span("latest_batch_processing"):
-            async def run_with_sem(b):
-                async with semaphore:
-                    await process_batch(b)
-                    # Periodic flush to prevent OOM on both producer and broker
-                    await kafka_prod.flush()
-            await asyncio.gather(*(run_with_sem(b) for b in batches))
-
-        with tracer.start_as_current_span("latest_kafka_flush"):
-            await kafka_prod.flush()
+        
+        async def run_with_sem(b):
+            async with semaphore:
+                await process_batch_historical(b)
+                await kafka_prod.flush()
+        
+        await asyncio.gather(*(run_with_sem(b) for b in batches))
+        await kafka_prod.flush()
 
         t_total = time.monotonic() - t_start
-        est_payload_mb = (processed * count * 2) / 1024
-        log.info(f"✅ [WORKER] Latest-Batch Complete: {processed} devices in {t_total:.2f}s | Throughput: {est_payload_mb/t_total:.2f} MB/s")
+        log.info(f"✅ [STREAM] Completed {processed} historical devices in {t_total:.2f}s")
 
-async def _process_and_send(did, readings, DEVICES, kafka_prod):
-    """
-    Helper for fast single-device processing.
-    Sends the FULL 48-field Golden Schema to Kafka matching input_schema.py.
-    Uses unified schema builder for consistency.
-    """
-    meta = DEVICES.get(did, {})
-    
-    # Build PowerDetail array from all readings
-    # Optimized: We pass a 1-hour temporal cutoff to achieve high-precision 'is_fresh' flagging
-    fresh_cutoff = None
-    if readings:
-        try:
-            # Detect key based on query type (JSON vs Raw)
-            key = "Time" if "Time" in readings[0] else "metric_time"
-            
-            # O(1) temporal detection from pre-sorted DB tail
-            last_val = readings[-1][key]
-            
-            # Use 1-hour window (12 points) for freshness as requested
-            if isinstance(last_val, datetime):
-                fresh_cutoff = (last_val - timedelta(hours=1)).isoformat()
-            elif isinstance(last_val, str):
-                # Handle string timestamps from json_agg
-                # Basic string manipulation for speed: just parse and subtract
-                try:
-                    # Remove timezone +00:00/Z for simple parsing if needed, 
-                    # but ISO strings are directly comparable if they share format.
-                    # Best: Parse properly to ensure 1-hour subtraction
-                    from dateutil.parser import parse
-                    last_ts = parse(last_val)
-                    fresh_cutoff = (last_ts - timedelta(hours=1)).isoformat()
-                except:
-                    fresh_cutoff = last_val
-            else:
-                fresh_cutoff = str(last_val)
-                
-        except Exception as e:
-            log.warning(f"⚠️  [is_fresh] Cutoff detection failed for {did}: {e}")
 
-    power_detail_list, avg_watts, max_watts, min_watts = build_batch_power_detail(readings, fresh_cutoff)
-    latest = readings[-1] if readings else {}
-    
-    # Use unified schema builder
-    message = build_48_field_golden_record(
-        device_id=did,
-        reading=latest if isinstance(latest, dict) else {"metric_time": latest[0]} if isinstance(latest, (list, tuple)) else latest,
-        device_metadata=meta,
-        inventory_data=meta.get("inventory_data"),
-        power_detail_list=power_detail_list
-    )
-    
-    # Override aggregates with batch-computed values
-    message["data"]["Average"] = avg_watts
-    message["data"]["Maximum"] = max_watts
-    message["data"]["Minimum"] = min_watts
-    
-    # Send asynchronously (AIOKafka)
-    try:
-        await kafka_prod.send(KAFKA_TOPIC, message, key=did.encode())
-    except Exception as e:
-        log.error(f"❌ [KAFKA] Send error for {did}: {e}")
+async def _export_latest_task(device_ids: List[str], count: int = 2016):
+    """
+    Hybrid Latest Task:
+    1. Calculates the required time window (e.g., 2016 points = 7 days).
+    2. Fetches archived hours from MinIO Cache.
+    3. Fetches the remaining 'fresh' points from TimescaleDB.
+    """
+    with tracer.start_as_current_span("export_latest_task_hybrid", attributes={"device_count": len(device_ids)}):
+        t_start = time.monotonic()
+        kafka_prod = await get_kafka()
+        processed_records = 0
+        
+        DEVICES = CACHED_REGISTRY
+        # Assuming 5-min intervals, calculate required lookback
+        days_lookback = (count // 288) + 1
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=days_lookback)
+        
+        # 1. CACHE PATH (MinIO)
+        pcid, acid = None, None
+        if device_ids:
+            first_meta = DEVICES.get(device_ids[0], {})
+            pcid = first_meta.get('platform_customer_id')
+            acid = first_meta.get('application_customer_id')
+
+        found_slots = []
+        df_cached = pd.DataFrame()
+        if pcid and acid:
+            s3 = get_minio()
+            df_cached, found_slots = await _fetch_from_cache_df(s3, pcid, acid, start_time, end_time)
+
+        # 2. HOT PATH (TimescaleDB)
+        log.info(f"🔌 [HYBRID] Fetching DB tail and merging with {len(df_cached):,} cache records...")
+        pool = await get_db_pool()
+        db_start = max(found_slots) + timedelta(hours=1) if found_slots else start_time
+        db_end = end_time
+        
+        async with pool.acquire() as conn:
+            # Fetch EVERYTHING from DB for this hierarchy in one high-speed query
+            rows = await conn.fetch(
+                "SELECT * FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time >= $3 AND metric_time < $4",
+                pcid, acid, db_start, db_end
+            )
+            df_db = pd.DataFrame(rows, columns=DB_COLUMNS)
+
+        # 3. VECTORIZED STITCHING
+        # Combine, Sort, and deduplicate in one burst
+        df_full = pd.concat([df_cached, df_db])
+        # Force metric_time to datetime objects for sorting
+        df_full['metric_time'] = pd.to_datetime(df_full['metric_time'])
+        df_full = df_full.sort_values(['device_id', 'metric_time'], ascending=[True, False])
+        
+        # 4. JSON-SAFE CONVERSION
+        # Convert Timestamps to ISO strings for high-speed multi-process serialization
+        if not df_full.empty:
+            df_full['metric_time'] = df_full['metric_time'].dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        
+        # 4. CHUNKED DELIVERY (Memory Safe)
+        log.info(f"🌊 [STREAM] Delivering {len(device_ids)} stitched Golden Records...")
+        
+        groups = list(df_full.groupby('device_id'))
+        BATCH_SIZE = 50
+        
+        async def deliver_batch(batch_data):
+            nonlocal processed_records
+            tasks = []
+            for did, group in batch_data:
+                if did in device_ids: # Ensure only requested devices are sent
+                    readings = group.head(count)[METRIC_COLUMNS].to_dict('records')
+                    tasks.append(_process_and_send(did, readings, DEVICES, kafka_prod))
+                    processed_records += len(readings)
+            await asyncio.gather(*tasks)
+
+        for i in range(0, len(groups), BATCH_SIZE):
+            await deliver_batch(groups[i:i+BATCH_SIZE])
+            if i % (BATCH_SIZE * 4) == 0:
+                await kafka_prod.flush()
+
+        await kafka_prod.flush()
+        # Cleanup
+        del df_full, df_cached, df_db, groups
+        
+        t_total = time.monotonic() - t_start
+        log.info(f"✅ [HYBRID LATEST] Vector-Stitched Export Complete | Total Points: {processed_records:,} | Time: {t_total:.2f}s")
 
 # =============================================================================
 # HIERARCHICAL API ENDPOINTS
@@ -747,10 +884,8 @@ async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tas
         
         # Discovery via Registry (High Scale Optimization)
         registry_path = "/app/device_configs.json"
-        with open(registry_path, "rb") as f:
-            registry = orjson.loads(f.read())
-        
-        device_ids = [did for did, meta in registry.items() 
+        # 1. Hot-Load Device IDs from Cache
+        device_ids = [did for did, meta in CACHED_REGISTRY.items() 
                       if meta["platform_customer_id"] == pcid and meta["application_customer_id"] == acid]
         
         if not device_ids:
@@ -763,7 +898,7 @@ async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tas
                 return {"status": "error", "message": f"Export already in progress for {h_key}"}
             ACTIVE_HIERARCHIES.add(h_key)
 
-        background_tasks.add_task(_handle_throttled_export, _export_stream_task, h_key, device_ids, start_time, end_time)
+        background_tasks.add_task(_handle_throttled_export, _export_stream_task, h_key, start_time, end_time, pcid=pcid, acid=acid)
         return {"status": "Archival Stream Accepted", "targeted_devices": len(device_ids), "hierarchy": h_key}
 
     except Exception as e:
@@ -806,7 +941,7 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
         
         # Manual exports use a special key to ensure they don't block hierarchical ones
         m_key = f"manual:{uuid.uuid4().hex[:8]}"
-        background_tasks.add_task(_handle_throttled_export, _export_stream_task, m_key, device_ids, start_time, end_time)
+        background_tasks.add_task(_handle_throttled_export, _export_stream_task, m_key, start_time, end_time, pcid=pcid, acid=acid, device_ids=device_ids)
         return {
             "status": "Manual Stream Started", 
             "requested_devices": len(device_ids),
@@ -821,11 +956,9 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
 async def trigger_historical_first_export(pcid: str, acid: str, background_tasks: BackgroundTasks, count: int = 2016):
     """Triggers export of the OLDEST telemetry for a customer hierarchy."""
     try:
-        with open(REGISTRY_PATH, "rb") as f:
-            registry = orjson.loads(f.read())
-        
+        # 1. Hot-Load Device IDs from Cache
         target_ids = [
-            did for did, meta in registry.items()
+            did for did, meta in CACHED_REGISTRY.items()
             if meta.get('platform_customer_id') == pcid and meta.get('application_customer_id') == acid
         ]
         
@@ -874,7 +1007,26 @@ async def register_new_device(device: DeviceRegistration):
             log.error(f"❌ [REGISTRY] Registration failed for {device.device_id}: {str(e)}")
             raise HTTPException(status_code=500, detail="Internal server error during registration")
 
+@app.post("/telemetry/manual-cache-refresh")
+async def manual_cache_refresh(background_tasks: BackgroundTasks):
+    """Manually trigger the hourly cache refresh job."""
+    background_tasks.add_task(hourly_cache_job)
+    return {"status": "Cache refresh triggered in background", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+@app.post("/telemetry/manual-archive")
+async def manual_archival_trigger(background_tasks: BackgroundTasks):
+    """Manually trigger the daily archival job."""
+    background_tasks.add_task(daily_archival_job)
+    return {"status": "Daily archival job triggered in background", "timestamp": datetime.now(timezone.utc).isoformat()}
+
 @app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "registry_loaded": REGISTRY_LOADED,
+        "device_count": len(CACHED_REGISTRY)
+    }
 async def health():
     # Deep Health Check with Safe Attribute Probing
     try:

@@ -3,17 +3,12 @@ import httpx
 import time
 import argparse
 
-# --- TOGGLE: MULTI-TENANT STRESS TEST (11 devices per platform) ---
-PCIDS = [f"PLATCUST{i:04d}" for i in range(1, 5001)]
-ACIDS = [f"APPCUST{i:04d}" for i in range(1, 5001)]
-
-# --- TOGGLE: SINGLE HEAVY HITTER (10,000 devices per platform) ---
-# PCIDS = [f"PLATCUST10K" for _ in range(1)]
-# ACIDS = [f"APPCUST10K" for _ in range(1)]
-
+# --- TOGGLE: MULTI-TENANT STRESS TEST (2000 devices per platform) ---
+PCIDS = [f"PLATCUST{i:04d}" for i in range(1, 6)]
+ACIDS = [] # Will be populated dynamically for the test
 
 async def trigger_export(client, pcid, acid):
-    url = f"http://localhost:8001/pcid/{pcid}/acid/{acid}/telemetry/latest/export"
+    url = f"http://localhost/pcid/{pcid}/acid/{acid}/telemetry/latest/export"
     start = time.monotonic()
     try:
         response = await client.post(url, timeout=300)
@@ -38,17 +33,25 @@ async def run_benchmark(platform_count: int):
     import orjson
     with open("d:/PowerPulse/atlas/ingestion/device_configs.json", "rb") as f:
         registry = orjson.loads(f.read())
+    
+    # Discovery: Find all ACIDs for the target platforms
+    target_pcids = PCIDS[:platform_count]
+    found_acids = []
+    for pcid in target_pcids:
+        acids = sorted(list(set(meta["application_customer_id"] for meta in registry.values() if meta["platform_customer_id"] == pcid)))
+        for acid in acids:
+            found_acids.append((pcid, acid))
+    
     device_count = len([did for did, meta in registry.items() if meta.get("platform_customer_id") == PCIDS[0]])
     
     print(f"\n" + "="*60)
-    print(f"STREAMING BENCHMARK: {device_count} DEVICES ({platform_count} Platforms)")
+    print(f"STREAMING BENCHMARK: {device_count} DEVICES PER PLATFORM ({len(found_acids)} Requests)")
     print("="*60)
     
     async with httpx.AsyncClient() as client:
         tasks = []
-        for i in range(platform_count):
-            # Rotates through available PCIDs (or uses the same one if len(PCIDS) == 1)
-            tasks.append(trigger_export(client, PCIDS[i % len(PCIDS)], ACIDS[i % len(ACIDS)]))
+        for pcid, acid in found_acids:
+            tasks.append(trigger_export(client, pcid, acid))
         
         t_batch_start = time.monotonic()
         results = await asyncio.gather(*tasks)

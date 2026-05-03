@@ -70,15 +70,15 @@ async def manual_archival_push():
         # ARCHITECTURAL BALANCE:
         # We fetch in 100-device chunks (to keep RAM low)
         # But we write 10 chunks into 1 Parquet file (to solve the Small File Problem)
-        MICRO_BATCH = 100 
-        SILO_SIZE = 1000 
+        MICRO_BATCH = 20 
+        SILO_SIZE = 100 
         
         batch_counter = 0
         base_path = f"production/year={end.year}/month={end.month:02d}/day={end.day:02d}/full_7day/"
         
         log.info(f"🚀 Starting Streamed Archival (Goal: {len(all_device_ids)//SILO_SIZE + 1} Large Silos)...")
         
-        for i in range(0, len(all_device_ids), SILO_SIZE):
+        for i in range(0, min(100, len(all_device_ids)), SILO_SIZE):
             silo_devices = all_device_ids[i:i + SILO_SIZE]
             pq_buf = io.BytesIO()
             writer = None
