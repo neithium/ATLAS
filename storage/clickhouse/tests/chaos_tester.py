@@ -5,7 +5,7 @@ from clickhouse_connect.driver.exceptions import ClickHouseError
 from datetime import datetime
 import os
 
-PG_DSN = os.getenv('PG_DSN', 'dbname=postgres user=postgres password=postgres host=localhost')
+PG_DSN = os.getenv('PG_DSN', 'dbname=atlas_metadata user=atlas password=atlas_secure_pwd host=127.0.0.1')
 
 def test_connection_drop():
     """

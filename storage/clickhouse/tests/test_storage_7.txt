@@ -1,0 +1,32 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Storage Layer - ClickHouse Ingestion Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  DEVICES=80000
+  DAYS=1
+  BATCH_SIZE=10000
+  CLICKHOUSE_ENGINE=ReplacingMergeTree
+  POSTGRES_METRICS=Enabled
+
+[1/2] Connecting to Databases & Setting up schema...
+  ✓ Connections established and tables created.
+
+================================================================================
+ATLAS Storage Benchmark - Batch Ingestion Execution
+================================================================================
+Expected Results:
+- Total raw input rows:   23,040,000
+
+[INIT] Generating base device list...
+[START] Submitting batches to worker pool...
+  -> Queuing BATCH 1/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 2/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 3/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 4/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 5/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 6/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 7/8 - 2026-02-20 (10000 devices)
+  -> Queuing BATCH 8/8 - 2026-02-20 (10000 devices)
+
+[WAIT] Processing batches concurrently (waiting for results)...

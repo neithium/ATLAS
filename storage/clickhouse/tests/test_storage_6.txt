@@ -1,0 +1,158 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Storage Layer - ClickHouse Ingestion Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  DEVICES=50000
+  DAYS=1
+  BATCH_SIZE=1000
+  CLICKHOUSE_ENGINE=ReplacingMergeTree
+  POSTGRES_METRICS=Enabled
+
+[1/2] Connecting to Databases & Setting up schema...
+  ✓ Connections established and tables created.
+
+================================================================================
+ATLAS Storage Benchmark - Batch Ingestion Execution
+================================================================================
+Expected Results:
+- Total raw input rows:   14,400,000
+
+[INIT] Generating base device list...
+[START] Submitting batches to worker pool...
+  -> Queuing BATCH 1/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 2/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 3/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 4/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 5/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 6/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 7/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 8/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 9/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 10/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 11/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 12/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 13/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 14/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 15/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 16/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 17/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 18/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 19/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 20/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 21/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 22/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 23/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 24/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 25/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 26/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 27/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 28/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 29/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 30/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 31/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 32/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 33/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 34/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 35/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 36/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 37/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 38/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 39/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 40/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 41/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 42/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 43/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 44/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 45/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 46/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 47/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 48/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 49/50 - 2026-02-20 (1000 devices)
+  -> Queuing BATCH 50/50 - 2026-02-20 (1000 devices)
+
+[WAIT] Processing batches concurrently (waiting for results)...
+BATCH 1/50 - 2026-02-20 (1000 devices) - CH: 10.47s | PG: 36.63s | MV Lag: 0.23s | Throughput: 6,086 rows/s
+BATCH 2/50 - 2026-02-20 (1000 devices) - CH: 10.53s | PG: 36.15s | MV Lag: 0.45s | Throughput: 6,110 rows/s
+BATCH 3/50 - 2026-02-20 (1000 devices) - CH: 10.57s | PG: 30.48s | MV Lag: 0.25s | Throughput: 6,974 rows/s
+BATCH 4/50 - 2026-02-20 (1000 devices) - CH: 10.55s | PG: 19.61s | MV Lag: 0.19s | Throughput: 9,488 rows/s
+BATCH 5/50 - 2026-02-20 (1000 devices) - CH: 14.86s | PG: 0.65s | MV Lag: 0.05s | Throughput: 18,512 rows/s
+BATCH 6/50 - 2026-02-20 (1000 devices) - CH: 15.35s | PG: 0.02s | MV Lag: 0.05s | Throughput: 18,677 rows/s
+BATCH 7/50 - 2026-02-20 (1000 devices) - CH: 15.55s | PG: 0.02s | MV Lag: 0.05s | Throughput: 18,438 rows/s
+BATCH 8/50 - 2026-02-20 (1000 devices) - CH: 15.93s | PG: 0.02s | MV Lag: 0.05s | Throughput: 18,001 rows/s
+BATCH 9/50 - 2026-02-20 (1000 devices) - CH: 9.26s | PG: 0.02s | MV Lag: 0.05s | Throughput: 30,886 rows/s
+BATCH 10/50 - 2026-02-20 (1000 devices) - CH: 11.63s | PG: 0.02s | MV Lag: 0.05s | Throughput: 24,623 rows/s
+BATCH 11/50 - 2026-02-20 (1000 devices) - CH: 11.80s | PG: 0.04s | MV Lag: 0.05s | Throughput: 24,216 rows/s
+BATCH 12/50 - 2026-02-20 (1000 devices) - CH: 11.60s | PG: 0.02s | MV Lag: 0.05s | Throughput: 24,678 rows/s
+BATCH 13/50 - 2026-02-20 (1000 devices) - CH: 10.00s | PG: 0.02s | MV Lag: 0.06s | Throughput: 28,583 rows/s
+BATCH 14/50 - 2026-02-20 (1000 devices) - CH: 10.72s | PG: 0.04s | MV Lag: 0.05s | Throughput: 26,640 rows/s
+BATCH 15/50 - 2026-02-20 (1000 devices) - CH: 10.22s | PG: 0.02s | MV Lag: 0.06s | Throughput: 27,966 rows/s
+BATCH 16/50 - 2026-02-20 (1000 devices) - CH: 10.74s | PG: 0.02s | MV Lag: 0.05s | Throughput: 26,618 rows/s
+BATCH 17/50 - 2026-02-20 (1000 devices) - CH: 9.41s | PG: 0.02s | MV Lag: 0.05s | Throughput: 30,359 rows/s
+BATCH 18/50 - 2026-02-20 (1000 devices) - CH: 10.58s | PG: 0.02s | MV Lag: 0.06s | Throughput: 27,018 rows/s
+BATCH 19/50 - 2026-02-20 (1000 devices) - CH: 10.91s | PG: 0.04s | MV Lag: 0.06s | Throughput: 26,158 rows/s
+BATCH 20/50 - 2026-02-20 (1000 devices) - CH: 11.61s | PG: 0.03s | MV Lag: 0.05s | Throughput: 24,637 rows/s
+BATCH 21/50 - 2026-02-20 (1000 devices) - CH: 9.15s | PG: 0.04s | MV Lag: 0.06s | Throughput: 31,135 rows/s
+BATCH 22/50 - 2026-02-20 (1000 devices) - CH: 10.65s | PG: 0.03s | MV Lag: 0.06s | Throughput: 26,803 rows/s
+BATCH 23/50 - 2026-02-20 (1000 devices) - CH: 11.19s | PG: 0.03s | MV Lag: 0.07s | Throughput: 25,501 rows/s
+BATCH 24/50 - 2026-02-20 (1000 devices) - CH: 7.84s | PG: 0.04s | MV Lag: 0.06s | Throughput: 36,274 rows/s
+BATCH 25/50 - 2026-02-20 (1000 devices) - CH: 10.86s | PG: 0.03s | MV Lag: 0.05s | Throughput: 26,325 rows/s
+BATCH 26/50 - 2026-02-20 (1000 devices) - CH: 9.44s | PG: 0.08s | MV Lag: 0.06s | Throughput: 30,060 rows/s
+BATCH 27/50 - 2026-02-20 (1000 devices) - CH: 11.03s | PG: 0.02s | MV Lag: 0.06s | Throughput: 25,939 rows/s
+BATCH 28/50 - 2026-02-20 (1000 devices) - CH: 11.55s | PG: 0.09s | MV Lag: 0.06s | Throughput: 24,624 rows/s
+BATCH 29/50 - 2026-02-20 (1000 devices) - CH: 12.71s | PG: 0.05s | MV Lag: 0.05s | Throughput: 22,475 rows/s
+BATCH 30/50 - 2026-02-20 (1000 devices) - CH: 9.44s | PG: 0.02s | MV Lag: 0.05s | Throughput: 30,286 rows/s
+BATCH 31/50 - 2026-02-20 (1000 devices) - CH: 11.33s | PG: 0.02s | MV Lag: 0.05s | Throughput: 25,269 rows/s
+BATCH 32/50 - 2026-02-20 (1000 devices) - CH: 11.48s | PG: 0.02s | MV Lag: 0.05s | Throughput: 24,943 rows/s
+BATCH 33/50 - 2026-02-20 (1000 devices) - CH: 11.92s | PG: 0.02s | MV Lag: 0.06s | Throughput: 24,017 rows/s
+BATCH 34/50 - 2026-02-20 (1000 devices) - CH: 9.87s | PG: 0.04s | MV Lag: 0.05s | Throughput: 28,922 rows/s
+BATCH 35/50 - 2026-02-20 (1000 devices) - CH: 10.58s | PG: 0.02s | MV Lag: 0.06s | Throughput: 27,017 rows/s
+BATCH 36/50 - 2026-02-20 (1000 devices) - CH: 10.82s | PG: 0.02s | MV Lag: 0.05s | Throughput: 26,433 rows/s
+BATCH 37/50 - 2026-02-20 (1000 devices) - CH: 10.64s | PG: 0.02s | MV Lag: 0.06s | Throughput: 26,885 rows/s
+BATCH 38/50 - 2026-02-20 (1000 devices) - CH: 8.39s | PG: 0.06s | MV Lag: 0.06s | Throughput: 33,848 rows/s
+BATCH 39/50 - 2026-02-20 (1000 devices) - CH: 10.47s | PG: 0.09s | MV Lag: 0.05s | Throughput: 27,129 rows/s
+BATCH 40/50 - 2026-02-20 (1000 devices) - CH: 11.00s | PG: 0.02s | MV Lag: 0.05s | Throughput: 26,021 rows/s
+BATCH 41/50 - 2026-02-20 (1000 devices) - CH: 10.38s | PG: 0.03s | MV Lag: 0.05s | Throughput: 27,516 rows/s
+BATCH 42/50 - 2026-02-20 (1000 devices) - CH: 10.26s | PG: 0.02s | MV Lag: 0.06s | Throughput: 27,869 rows/s
+BATCH 43/50 - 2026-02-20 (1000 devices) - CH: 11.26s | PG: 0.03s | MV Lag: 0.06s | Throughput: 25,397 rows/s
+BATCH 44/50 - 2026-02-20 (1000 devices) - CH: 10.94s | PG: 0.07s | MV Lag: 0.06s | Throughput: 26,023 rows/s
+BATCH 45/50 - 2026-02-20 (1000 devices) - CH: 10.15s | PG: 0.07s | MV Lag: 0.05s | Throughput: 28,044 rows/s
+BATCH 46/50 - 2026-02-20 (1000 devices) - CH: 9.42s | PG: 0.02s | MV Lag: 0.05s | Throughput: 30,346 rows/s
+BATCH 47/50 - 2026-02-20 (1000 devices) - CH: 10.32s | PG: 0.03s | MV Lag: 0.06s | Throughput: 27,679 rows/s
+BATCH 48/50 - 2026-02-20 (1000 devices) - CH: 9.71s | PG: 0.05s | MV Lag: 0.06s | Throughput: 29,348 rows/s
+BATCH 49/50 - 2026-02-20 (1000 devices) - CH: 9.17s | PG: 0.04s | MV Lag: 0.06s | Throughput: 31,070 rows/s
+BATCH 50/50 - 2026-02-20 (1000 devices) - CH: 8.40s | PG: 0.05s | MV Lag: 0.06s | Throughput: 33,822 rows/s
+--------------------------------------------------------------------------------
+[FINAL COMPACTION] Running OPTIMIZE TABLE FINAL...
+  ✓ Compaction completed in 3.18s
+
+--------------------------------------------------------------------------------
+[FINAL] Verifying storage results & MV Lag...
+--------------------------------------------------------------------------------
+  Running Validation Queries...
+  ✓ ClickHouse Telemetry Check: 14,400,000 rows inserted
+  ✓ ClickHouse Hourly MV Check: 14,400,000 grouped rows
+  ✓ ClickHouse Daily MV Check:  14,400,000 grouped rows
+  ✓ PostgreSQL Metadata Check: 50,000 unique devices updated
+
+================================================================================
+  LATENCY & THROUGHPUT REPORT
+================================================================================
+  Overall Performance:
+  - Total batches processed: 50
+  - Total rows processed:    14,400,000
+  - Total elapsed time:      140.78s
+  - Throughput:              102,285.0 rows/sec
+
+  ClickHouse Insert Latency (seconds):
+  - Min: 7.84s, Max: 15.93s, Mean: 10.85s, P50: 10.61s, P95: 15.13s, P99: 15.74s
+
+  PostgreSQL Upsert Latency (seconds):
+  - Min: 0.02s, Max: 36.63s, Mean: 2.50s, P50: 0.03s, P95: 25.59s, P99: 36.39s
+
+  Materialized View Optimization (seconds):
+  - Min: 0.05s, Max: 0.45s, Mean: 0.07s
+
+================================================================================
+  ATLAS STORAGE LAYER BENCHMARK COMPLETE
+================================================================================

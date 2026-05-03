@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Force IPv4-only: the default config.xml ships with both
+         0.0.0.0 and :: (IPv6).  Docker containers often lack IPv6
+         support, causing ClickHouse to crash with exit code 210
+         when it tries to bind the interserver port on [::]:9009. -->
+    <listen_host replace="replace">0.0.0.0</listen_host>
+</clickhouse>
