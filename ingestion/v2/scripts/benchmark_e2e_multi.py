@@ -1,4 +1,5 @@
 import asyncio
+import os
 import httpx
 import time
 import argparse
@@ -7,136 +8,135 @@ from aiokafka import AIOKafkaConsumer
 
 async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     topic = "raw-server-metrics"
-    bootstrap = "127.0.0.1:9064"
+    bootstrap = "broker1:9092"
     
     # 1. Load registry to find correct ACID and device counts
     import orjson
-    with open("d:/PowerPulse/atlas/ingestion/device_configs.json", "rb") as f:
+    # Use relative path to work both on host and inside container
+    config_path = os.path.join(os.path.dirname(__file__), "..", "..", "device_configs.json")
+    if not os.path.exists(config_path):
+        # Fallback for container absolute path
+        config_path = "/app/device_configs.json"
+        
+    with open(config_path, "rb") as f:
         registry = orjson.loads(f.read())
     
     # Map PCID to its first found ACID and count devices
     pcid_to_acid = {}
     pcid_to_count = {}
     for meta in registry.values():
-        p = meta['platform_customer_id']
-        a = meta['application_customer_id']
-        if p not in pcid_to_acid:
-            pcid_to_acid[p] = a
-        pcid_to_count[p] = pcid_to_count.get(p, 0) + 1
-
-    # 2. Setup targets
-    if heavy_pcid:
-        pcids = [heavy_pcid]
-        total_expected = pcid_to_count.get(heavy_pcid, 0)
-        if total_expected == 0:
-             print(f"Warning: {heavy_pcid} not found in registry!")
-    else:
-        pcids = [f"PLATCUST{i:04d}" for i in range(1, platform_count + 1)]
-        total_expected = sum(pcid_to_count.get(p, 0) for p in pcids)
-        
-    print(f"\n" + "="*60)
-    print(f"--- MULTI-PLATFORM E2E BENCHMARK (API -> DB -> KAFKA) ---")
-    if heavy_pcid:
-        print(f"Target: Heavy Hitter {heavy_pcid} ({total_expected} devices)")
-    else:
-        print(f"Target: {platform_count} Platforms ({total_expected} devices total)")
-    print("="*60)
-    print("="*60)
+        pcid = meta.get('platform_customer_id')
+        acid = meta.get('application_customer_id')
+        if pcid and acid:
+            if pcid not in pcid_to_acid:
+                pcid_to_acid[pcid] = acid
+            pcid_to_count[pcid] = pcid_to_count.get(pcid, 0) + 1
+            
+    # Sort PCIDs by device count descending and pick top platforms
+    sorted_pcids = sorted(pcid_to_count.keys(), key=lambda x: pcid_to_count[x], reverse=True)
     
-    # 2. Setup Kafka Consumer
+    # Selection logic: prioritize heavy platform if requested
+    targets = []
+    if heavy_pcid and heavy_pcid in pcid_to_acid:
+        targets.append((heavy_pcid, pcid_to_acid[heavy_pcid], pcid_to_count[heavy_pcid]))
+        remaining = [p for p in sorted_pcids if p != heavy_pcid]
+        for p in remaining[:platform_count-1]:
+            targets.append((p, pcid_to_acid[p], pcid_to_count[p]))
+    else:
+        for p in sorted_pcids[:platform_count]:
+            targets.append((p, pcid_to_acid[p], pcid_to_count[p]))
+            
+    total_expected = sum(t[2] for t in targets)
+    print(f"🚀 Starting E2E Multi-Platform Benchmark | Platforms: {len(targets)} | Total Devices: {total_expected}")
+    for pcid, acid, count in targets:
+        print(f"  - {pcid} ({acid}): {count} devices")
+    print("-" * 60)
+
+    # 2. Start Kafka Consumer to track end-to-end delivery
     consumer = AIOKafkaConsumer(
         topic,
         bootstrap_servers=bootstrap,
         auto_offset_reset='latest'
     )
     await consumer.start()
-    print("Kafka Consumer Online (Waiting for start signal...)")
-    await asyncio.sleep(2)
     
-    msg_count = 0
-    
-    # 3. Consumer Task
-    async def consume_messages():
-        nonlocal msg_count
-        while msg_count < total_expected:
-            try:
-                # Use a larger timeout for massive bursts
-                msg = await asyncio.wait_for(consumer.getone(), timeout=300.0)
-                msg_count += 1
-                if msg_count % 100 == 0 or msg_count == total_expected:
-                    print(f"   ...received {msg_count}/{total_expected} in Kafka...")
-            except asyncio.TimeoutError:
-                print(f"\n[TIMEOUT] Still waiting for {total_expected - msg_count} messages...")
-                break
+    # Warm up: skip any existing messages
+    try:
+        await asyncio.wait_for(consumer.getmany(timeout_ms=1000), timeout=2.0)
+    except:
+        pass
 
-    consume_task = asyncio.create_task(consume_messages())
-    
-    # 4. Trigger API Exports
-    # (Registry already loaded above)
-
-    async def trigger_export(client, pcid):
-        acid = pcid_to_acid.get(pcid, "APPCUST0001")
-        url = f"http://localhost:8001/pcid/{pcid}/acid/{acid}/telemetry/latest/export"
-        
-        try:
-            resp = await client.post(url, timeout=120)
-            if resp.status_code != 200:
-                print(f"   [!] Trigger failed for {pcid}: {resp.status_code} {resp.text}")
-            return resp.status_code
-        except Exception as e:
-            print(f"   [!] Trigger error for {pcid}: {e}")
-            return 500
-
-    print(f"\nTriggering {platform_count} API requests...")
+    # 3. Trigger API Exports
     t_start = time.monotonic()
-    
-    async with httpx.AsyncClient() as client:
-        trigger_tasks = [trigger_export(client, pcid) for pcid in pcids]
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        trigger_tasks = []
+        for pcid, acid, _ in targets:
+            url = f"http://localhost:8001/pcid/{pcid}/acid/{acid}/telemetry/latest/export"
+            trigger_tasks.append(client.post(url))
+        
+        print(f"📡 Triggering {len(targets)} exports in parallel...")
         responses = await asyncio.gather(*trigger_tasks)
         
-    t_api_trigger = time.monotonic() - t_start
-    success_triggers = sum(1 for s in responses if s == 200)
-    print(f"DONE {success_triggers}/{platform_count} Exports Triggered in {t_api_trigger:.3f}s")
-    print(f"Waiting for data flow to Kafka...")
+        for i, r in enumerate(responses):
+            if r.status_code != 200:
+                print(f"  ❌ Failed to trigger {targets[i][0]}: {r.status_code}")
+            else:
+                print(f"  ✅ Triggered {targets[i][0]}")
+
+    # 4. Wait for Kafka Messages
+    print(f"⌛ Waiting for {total_expected} devices to reach Kafka...")
+    received_count = 0
+    start_wait = time.monotonic()
     
-    # 5. Wait for Kafka Completion
-    await consume_task
-    t_total = time.monotonic() - t_start
+    try:
+        while received_count < total_expected:
+            # Check timeout (5 minutes max)
+            if time.monotonic() - start_wait > 300:
+                print("❌ Timeout reached waiting for Kafka messages.")
+                break
+                
+            msg_batch = await consumer.getmany(timeout_ms=1000)
+            for tp, messages in msg_batch.items():
+                received_count += len(messages)
+            
+            if received_count > 0:
+                print(f"  📥 Received {received_count}/{total_expected} ({received_count/total_expected*100:.1f}%)", end="\r")
+    finally:
+        await consumer.stop()
+
+    t_end = time.monotonic()
+    total_time = t_end - t_start
     
-    await consumer.stop()
-    
-    # 6. Report
-    points_per_device = 2016
-    total_points = msg_count * points_per_device
-    throughput = total_points / t_total if t_total > 0 else 0
-    
+    # 5. Report Results
+    print("\n" + "=" * 60)
+    print("E2E MULTI-PLATFORM BENCHMARK")
+    print(f"Platforms: {len(targets)} | Total Devices: {total_expected}")
+    print(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("-" * 60)
-    print(f"FINAL E2E RESULTS ({platform_count} Platforms):")
-    print(f"   Total Time:        {t_total:.3f}s")
-    print(f"   Trigger Overhead:  {t_api_trigger:.3f}s")
-    print(f"   DB + Kafka Sync:   {t_total - t_api_trigger:.3f}s")
-    print(f"   Devices Received:  {msg_count}/{total_expected}")
-    print(f"   System Throughput: {throughput:,.0f} points/sec")
-    print("="*60 + "\n")
+    print(f"   Total Time:        {total_time:.3f}s")
+    print(f"   Devices Received:  {received_count}/{total_expected}")
+    if total_time > 0:
+        throughput = (received_count * 2016) / total_time
+        print(f"   System Throughput: {throughput:,.0f} points/sec")
+    print("=" * 60)
     
-    # Append to results file
-    import os
-    txt_file = "ingestion/v2/scripts/benchmark_results.txt"
-    with open(txt_file, "a", encoding="utf-8") as f:
-        f.write("="*60 + "\n")
+    # Save results to file
+    with open("/app/v2/scripts/benchmark_results.txt", "a") as f:
+        f.write(f"\n============================================================\n")
         f.write(f"E2E MULTI-PLATFORM BENCHMARK\n")
-        f.write(f"Platforms: {platform_count} | Total Devices: {total_expected}\n")
+        f.write(f"Platforms: {len(targets)} | Total Devices: {total_expected}\n")
         f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write("-" * 60 + "\n")
-        f.write(f"   Total Time:        {t_total:.3f}s\n")
-        f.write(f"   Devices Received:  {msg_count}/{total_expected}\n")
-        f.write(f"   System Throughput: {throughput:,.0f} points/sec\n")
-        f.write("="*60 + "\n\n")
+        f.write(f"------------------------------------------------------------\n")
+        f.write(f"   Total Time:        {total_time:.3f}s\n")
+        f.write(f"   Devices Received:  {received_count}/{total_expected}\n")
+        if total_time > 0:
+            f.write(f"   System Throughput: {throughput:,.0f} points/sec\n")
+        f.write(f"============================================================\n")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--platforms", type=int, default=10)
-    parser.add_argument("--heavy", type=str, default=None, help="PCID of heavy hitter (e.g. PLATCUST10K)")
+    parser = argparse.ArgumentParser(description="E2E Multi-Platform Benchmark")
+    parser.add_argument("--platforms", type=int, default=5, help="Number of platforms to test")
+    parser.add_argument("--heavy", type=str, default=None, help="PCID of a heavy platform to include")
     args = parser.parse_args()
     
     asyncio.run(run_e2e_multi_benchmark(args.platforms, args.heavy))

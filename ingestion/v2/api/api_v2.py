@@ -31,6 +31,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from minio import Minio
 from aiokafka import AIOKafkaProducer
 import redis.asyncio as redis
+import pyarrow as pa
+import pyarrow.compute as pc
+
 
 # Config
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
@@ -119,7 +122,20 @@ _pool: Optional[asyncpg.Pool] = None
 _redis: Optional[Any] = None
 _minio: Optional[Minio] = None
 _executor = ThreadPoolExecutor(max_workers=200)
-_cpu_pool = ProcessPoolExecutor(max_workers=10)
+_cpu_pool_internal = None
+
+def get_cpu_pool():
+    global _cpu_pool_internal
+    if _cpu_pool_internal is None:
+        import multiprocessing
+        # 'spawn' is safer than 'fork' for avoiding deadlocks in async/multi-threaded apps
+        try:
+            multiprocessing.set_start_method('spawn', force=True)
+        except RuntimeError:
+            pass
+        _cpu_pool_internal = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 10))
+    return _cpu_pool_internal
+
 _scheduler = AsyncIOScheduler()
 
 # Redis Index Key: idx:telemetry:{pcid}:{acid} -> Set of available hours (YYYYMMDDHH)
@@ -539,8 +555,88 @@ async def query_tsdb_latest(device_id: str, limit: int = 2016):
 # =============================================================================
 BULK_BATCH_SIZE = 400  # 🎯 Dialed back to the 'Sweet Spot' for 1601 device sync
 
+def process_device_batch_hydration(
+    table: pa.Table, 
+    devices_meta: dict, 
+    count: int
+) -> list:
+    """
+    Vectorized Hydration: Processes a batch of devices via PyArrow.
+    Runs in ProcessPoolExecutor to bypass GIL.
+    """
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import orjson
+    from datetime import datetime, timezone
+    import time
+
+    if table.num_rows == 0: return []
+    
+    # Sort for consistent latest-point slicing
+    indices = pc.sort_indices(table, sort_keys=[("device_id", "ascending"), ("metric_time", "descending")])
+    sorted_table = table.take(indices)
+    
+    # 🏎️ Vectorized String Conversion (for JSON compatibility)
+    if "metric_time" in sorted_table.column_names:
+        # Format as ISO string: 2026-05-03T07:27:31Z
+        ts_col = sorted_table["metric_time"]
+        str_ts = pc.strftime(ts_col, format="%Y-%m-%dT%H:%M:%SZ")
+        sorted_table = sorted_table.set_column(sorted_table.schema.get_field_index("metric_time"), "metric_time", str_ts)
+
+    unique_dids = pc.unique(sorted_table["device_id"]).to_pylist()
+    results = []
+    
+    for did in unique_dids:
+        # 🏎️ Vectorized Slicing
+        mask = pc.equal(sorted_table["device_id"], did)
+        device_table = sorted_table.filter(mask)
+        
+        # Take N latest points
+        if count > 0:
+            device_table = device_table.slice(0, min(count, device_table.num_rows))
+            
+        # 🏎️ Lean Payload: Only select METRIC_COLUMNS
+        # We find which columns actually exist in the table
+        metric_cols = ["metric_time", "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max",
+                       "cpu_pwr_sav_lim", "cpu_util", "cpu_watts", "gpu_watts", "min_watts",
+                       "peak_watts", "status", "error_reason"]
+        available_metrics = [c for c in metric_cols if c in device_table.column_names]
+        device_table = device_table.select(available_metrics)
+            
+        # Convert to Golden Records
+        readings = device_table.to_pylist()
+        meta = devices_meta.get(did, {})
+        
+        payload = {
+            "device_id": did,
+            "report_id": f"STITCHED-{int(time.time())}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": True,
+            "model": meta.get('model', 'Unknown'),
+            "tags": meta.get('tags', ''),
+            "report_type": "telemetry_live",
+            "server_name": meta.get('server_name', 'Unknown'),
+            "error_reason": "",
+            "location_id": meta.get('location_id', ''),
+            "location_city": meta.get('location_city', ''),
+            "location_name": meta.get('location_name', ''),
+            "location_state": meta.get('location_state', ''),
+            "location_country": meta.get('location_country', ''),
+            "processor_vendor": meta.get('processor_vendor', ''),
+            "server_generation": meta.get('server_generation', ''),
+            "platform_customer_id": meta.get('platform_customer_id', ''),
+            "application_customer_id": meta.get('application_customer_id', ''),
+            "metric_type": "power_metrics",
+            "data": { "PowerDetail": readings }
+        }
+        results.append((did, orjson.dumps(payload)))
+        
+    return results
+
 def _serialize_record(did, readings, meta):
     """CPU-Bound: Runs in ProcessPool to bypass GIL."""
+    import orjson
+    from datetime import datetime, timezone
     payload = {
         "device_id": did,
         "report_id": meta.get('report_id', 'STITCHED-' + str(int(time.time()))),
@@ -835,42 +931,62 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
         # 3. VECTORIZED STITCHING
         # Combine, Sort, and deduplicate in one burst
         df_full = pd.concat([df_cached, df_db])
-        # Force metric_time to datetime objects for sorting
-        df_full['metric_time'] = pd.to_datetime(df_full['metric_time'])
-        df_full = df_full.sort_values(['device_id', 'metric_time'], ascending=[True, False])
-        
-        # 4. JSON-SAFE CONVERSION
-        # Convert Timestamps to ISO strings for high-speed multi-process serialization
-        if not df_full.empty:
-            df_full['metric_time'] = df_full['metric_time'].dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-        
-        # 4. CHUNKED DELIVERY (Memory Safe)
-        log.info(f"🌊 [STREAM] Delivering {len(device_ids)} stitched Golden Records...")
-        
-        groups = list(df_full.groupby('device_id'))
-        BATCH_SIZE = 50
-        
-        async def deliver_batch(batch_data):
-            nonlocal processed_records
-            tasks = []
-            for did, group in batch_data:
-                if did in device_ids: # Ensure only requested devices are sent
-                    readings = group.head(count)[METRIC_COLUMNS].to_dict('records')
-                    tasks.append(_process_and_send(did, readings, DEVICES, kafka_prod))
-                    processed_records += len(readings)
-            await asyncio.gather(*tasks)
+        if df_full.empty:
+            log.warning(f"⚠️ [LATEST] No data found for {pcid}:{acid}")
+            async with HIERARCHY_LOCK:
+                ACTIVE_HIERARCHIES.discard(f"{pcid}:{acid}")
+            return
 
-        for i in range(0, len(groups), BATCH_SIZE):
-            await deliver_batch(groups[i:i+BATCH_SIZE])
-            if i % (BATCH_SIZE * 4) == 0:
+        # ── HYBRID OPTIMIZATION: ARROW HYDRATION ────────────────────────────
+        # Instead of grouping in Pandas and sending 1000 separate tasks,
+        # we convert to Arrow and send large device batches.
+        
+        # 1. Convert to Arrow Table (Preserving schema)
+        full_table = pa.Table.from_pandas(df_full)
+        
+        # 2. Batch Delivery via ProcessPool
+        # We process devices in batches of 50 to maximize CPU utilization
+        unique_dids = pc.unique(full_table["device_id"]).to_pylist()
+        DEVICE_BATCH_SIZE = 50
+        cpu_pool = get_cpu_pool()
+        
+        async def process_batch(batch_dids):
+            nonlocal processed_records
+            # Filter table for this batch of devices
+            mask = pc.is_in(full_table["device_id"], value_set=pa.array(batch_dids))
+            
+            # 🏎️ IPC OPTIMIZATION: Create a fresh table with only batch data 
+            # to avoid accidental serialization of the parent table's shared buffers.
+            raw_batch = full_table.filter(mask)
+            batch_table = pa.Table.from_batches(raw_batch.to_batches())
+            
+            # Offload to CPU Pool
+            loop = asyncio.get_running_loop()
+            batch_meta = {did: DEVICES.get(did, {}) for did in batch_dids}
+            
+            # This is the "Hot Path": No pickling of large lists in main thread
+            results = await loop.run_in_executor(
+                cpu_pool, process_device_batch_hydration,
+                batch_table, batch_meta, count
+            )
+            
+            # Send results to Kafka
+            if results:
+                tasks = [kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()) for did, payload in results]
+                await asyncio.gather(*tasks)
+                processed_records += len(results)
+
+        # 3. Stream Batches
+        log.info(f"🌊 [ARROW] Delivering {len(unique_dids)} devices via vectorized hydration...")
+        for i in range(0, len(unique_dids), DEVICE_BATCH_SIZE):
+            await process_batch(unique_dids[i : i + DEVICE_BATCH_SIZE])
+            if i % (DEVICE_BATCH_SIZE * 4) == 0:
                 await kafka_prod.flush()
 
         await kafka_prod.flush()
-        # Cleanup
-        del df_full, df_cached, df_db, groups
         
         t_total = time.monotonic() - t_start
-        log.info(f"✅ [HYBRID LATEST] Vector-Stitched Export Complete | Total Points: {processed_records:,} | Time: {t_total:.2f}s")
+        log.info(f"✅ [HYBRID LATEST] Vector-Hydrated Export Complete | Devices: {processed_records:,} | Time: {t_total:.2f}s")
 
 # =============================================================================
 # HIERARCHICAL API ENDPOINTS
