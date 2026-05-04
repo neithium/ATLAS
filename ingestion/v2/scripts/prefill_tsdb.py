@@ -85,8 +85,8 @@ class PrefillEngine:
             "device_id": self.device_ids,
             "platform_customer_id": [self.devices[did]["platform_customer_id"] for did in self.device_ids],
             "application_customer_id": [self.devices[did]["application_customer_id"] for did in self.device_ids],
-            "server_name": [self.devices[did]["server_name"] for did in self.device_ids],
-            "model": [self.devices[did]["model"] for did in self.device_ids],
+            "server_name": [self.devices[did].get("server_name", f"SRV-{did[-4:]}") for did in self.device_ids],
+            "model": [self.devices[did].get("model", "PowerEdge R750") for did in self.device_ids],
             "processor_vendor": [self.devices[did].get("processor_vendor", "Intel") for did in self.device_ids],
             "server_generation": [self.devices[did].get("server_generation", "15G") for did in self.device_ids],
             "location_id": [self.devices[did].get("location_id", "LOC-01") for did in self.device_ids],
@@ -158,8 +158,14 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
         
         for h in range(24):
             hour_dt = day_start + timedelta(hours=h)
-            h_start = time.perf_counter()
             
+            # Resume Check: Skip if this hour already has data
+            cur.execute("SELECT 1 FROM telemetry_live WHERE metric_time = %s LIMIT 1", (hour_dt,))
+            if cur.fetchone():
+                log.info(f"⏭️ Skipping {date_str} H{h:02} (already has data)")
+                continue
+            
+            h_start = time.perf_counter()
             hour_dfs = []
             for s in range(READINGS_PER_HOUR):
                 slot_dt = hour_dt + timedelta(seconds=INTERVAL_SEC * s)

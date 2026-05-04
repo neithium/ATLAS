@@ -1,43 +1,34 @@
-"""
-# =============================================================================
-# ATLAS - Time-Sliced Archival Engine
-# =============================================================================
-# Logic: Incremental 1-hour Batching
-# Target: Production Multi-Silo (Raw + Archive)
-# Schema: 48-Field Golden Schema
-# =============================================================================
-"""
-
 import sys
 import os
 import asyncio
+import time
 from datetime import datetime, timezone, timedelta
 import io
 import pandas as pd
-import uuid
-from minio import Minio
+import pyarrow as pa
+import pyarrow.parquet as pq
 import asyncpg
 import orjson
 import logging
+import gc
 
 # Adjust path for V2/V3 structure
 sys.path.append("/app")
+from schema_builder import build_48_field_golden_record, build_batch_power_detail
 
 # =============================================================================
 # INFRASTRUCTURE CONFIGURATION
 # =============================================================================
-TSDB_HOST = "127.0.0.1"  # Force local connection inside container
+TSDB_HOST = "127.0.0.1"
 TSDB_PORT = "5432"
 TSDB_USER = "postgres"
 TSDB_PASS = "postgres"
 TSDB_NAME = "postgres"
 TS_CONN_STR = f"postgresql://{TSDB_USER}:{TSDB_PASS}@{TSDB_HOST}:{TSDB_PORT}/{TSDB_NAME}"
 
-MINIO_HOST = "127.0.0.1:9000"
-MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-
 REGISTRY_PATH = "/app/device_configs.json"
+RAW_LOCAL = "/app/data/raw"
+ARCHIVE_LOCAL = "/app/data/archive"
 
 # =============================================================================
 # CORE ARCHIVAL LOGIC
@@ -46,9 +37,9 @@ async def run_time_sliced_archive():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger("archiver")
     
-    # Target Window: April 4th (Fixed for Validation)
-    target_day = datetime(2026, 4, 4, tzinfo=timezone.utc)
-    start = target_day.replace(hour=0, minute=0, second=0)
+    # Target Window: May 3rd (Known good data)
+    target_day = datetime(2026, 5, 3, tzinfo=timezone.utc)
+    start = target_day.replace(hour=23, minute=0, second=0)
     end = start + timedelta(hours=1)
     
     log.info(f"⏳ [SLICE] Starting 1-hour archival: {start.isoformat()} to {end.isoformat()}")
@@ -56,74 +47,92 @@ async def run_time_sliced_archive():
     # 1. Load Device Metadata for Hydration
     with open(REGISTRY_PATH, "rb") as f:
         DEVICES = orjson.loads(f.read())
+    all_device_ids = list(DEVICES.keys())
 
     try:
         # 2. Database Connectivity
-        log.info("📡 [DB] Connecting to TimescaleDB...")
-        conn = await asyncpg.connect(TS_CONN_STR)
+        pool = await asyncpg.create_pool(TS_CONN_STR, min_size=5, max_size=10)
         
-        device_rows = await conn.fetch(
-            "SELECT DISTINCT device_id FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2", 
-            start, end
-        )
+        # 🏎️ LARGE SILO STRATEGY (Target: 128MB+)
+        # For 1-hour slices (12 points/device), we need ~20,000+ devices per silo to reach 128MB
+        SILO_SIZE = 20000 
+        MICRO_BATCH = 2000
         
-        if not device_rows:
-            log.warning(f"⚠️ [DB] No telemetry data found for window {start} to {end}.")
-            await conn.close()
-            return
+        hive_path = f"production/year={start.year}/month={start.month:02d}/day={start.day:02d}/hour={start.hour:02d}/"
+        raw_dir = os.path.join(RAW_LOCAL, hive_path)
+        archive_dir = os.path.join(ARCHIVE_LOCAL, hive_path)
+        os.makedirs(raw_dir, exist_ok=True)
+        os.makedirs(archive_dir, exist_ok=True)
 
-        # 3. Batching & Hydration (Memory-Safe Strategy)
-        full_device_ids = [r['device_id'] for r in device_rows]
-        device_ids = full_device_ids[:100] # Limit to top 100 for this validation run
-        log.info(f"📊 [FLEET] Processing {len(device_ids)} active devices...")
-
-        s3 = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
+        log.info(f"🚀 Starting Streamed Slice Archival (Devices: {len(all_device_ids)})...")
         
-        # Parallel Fetch the records for the batch
-        records = await conn.fetch(
-            "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3)", 
-            start, end, device_ids
-        )
-
-        if records:
-            # 4. Golden Schema Transformation
-            hydrated = []
-            for r in records:
-                did = r['device_id']
-                meta = DEVICES.get(did, {})
-                hydrated.append({
-                    "device_id": did,
-                    "report_id": "ARCHIVE-" + str(uuid.uuid4())[:8],
-                    "created_at": r['metric_time'].isoformat(),
-                    "status": True,
-                    "model": meta.get('model', 'PowerEdge R750'),
-                    "data": {
-                        "Id": did,
-                        "Average": r.get('avg_watts', 0),
-                        "PowerDetail": [{"Time": r['metric_time'].isoformat(), "CpuUtil": r.get('cpu_util', 0)}]
-                    },
-                    "inventory_data": {"cpu_count": 2}
-                })
-
-            # 5. Columnar Conversion (Parquet)
-            df = pd.DataFrame(hydrated)
+        for i in range(0, len(all_device_ids), SILO_SIZE):
+            silo_devices = all_device_ids[i:i + SILO_SIZE]
             pq_buf = io.BytesIO()
-            df.to_parquet(pq_buf, engine='pyarrow', index=False, compression='snappy')
-            file_bytes = pq_buf.getvalue()
-
-            # 6. Multi-Silo Push (Hive-Partitioned)
-            folder_path = f"production/year={start.year}/month={start.month:02d}/day={start.day:02d}/hour={start.hour:02d}/"
-            file_name = f"telemetry_slice_{start.strftime('%H%M%S')}.parquet"
+            writer = None
+            silo_records_count = 0
             
-            # Silo 1: Raw Analytics
-            s3.put_object("telemetry-raw", folder_path + file_name, data=io.BytesIO(file_bytes), length=len(file_bytes))
+            t_silo_start = time.monotonic()
             
-            # Silo 2: Long-term Archive
-            s3.put_object("telemetry-archive", folder_path + file_name, data=io.BytesIO(file_bytes), length=len(file_bytes))
+            for j in range(0, len(silo_devices), MICRO_BATCH):
+                micro_devices = silo_devices[j:j + MICRO_BATCH]
+                async with pool.acquire() as conn:
+                    records = await conn.fetch(
+                        "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3) ORDER BY device_id, metric_time ASC", 
+                        start, end, micro_devices
+                    )
+                
+                if not records: continue
 
-            log.info(f"✅ [SUCCESS] Batch uploaded to {folder_path} ({len(file_bytes)/1024:.1f} KB)")
-        
-        await conn.close()
+                # Group by Device and Hydrate using Unified Builder
+                from collections import defaultdict
+                device_groups = defaultdict(list)
+                for r in records:
+                    device_groups[r['device_id']].append(dict(r))
+                
+                hydrated = []
+                for did, raw_readings in device_groups.items():
+                    meta = DEVICES.get(did, {})
+                    pd_list, avg_v, max_v, min_v = build_batch_power_detail(raw_readings)
+                    
+                    payload = build_48_field_golden_record(
+                        device_id=did,
+                        reading=raw_readings[-1],
+                        device_metadata=meta,
+                        inventory_data=meta.get("inventory_data"),
+                        power_detail_list=pd_list
+                    )
+                    payload["data"]["Average"] = avg_v
+                    payload["data"]["Maximum"] = max_v
+                    payload["data"]["Minimum"] = min_v
+                    hydrated.append(payload)
+
+                table = pa.Table.from_pylist(hydrated)
+                if writer is None:
+                    writer = pq.ParquetWriter(pq_buf, table.schema, compression='snappy')
+                
+                writer.write_table(table)
+                silo_records_count += len(table)
+                del records, hydrated, table
+                gc.collect()
+
+            if writer:
+                writer.close()
+                content = pq_buf.getvalue()
+                fname = f"slice_silo_{i//SILO_SIZE}.parquet"
+                
+                # A. LOCAL MIRRORING
+                with open(os.path.join(raw_dir, fname), "wb") as f:
+                    f.write(content)
+                with open(os.path.join(archive_dir, fname), "wb") as f:
+                    f.write(content)
+                
+                t_silo_elapsed = time.monotonic() - t_silo_start
+                log.info(f"✅ Silo {i//SILO_SIZE} Created: {silo_records_count:,} devices | Size: {len(content)/1024/1024:.2f} MB | Time: {t_silo_elapsed:.1f}s")
+                del content, pq_buf
+                gc.collect()
+
+        await pool.close()
         log.info(f"🏁 [DONE] Hourly Migration Finished.")
         
     except Exception as e:
