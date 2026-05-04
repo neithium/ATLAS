@@ -472,7 +472,8 @@ services:
       - ./processing/jobs:/app/jobs
       - ./schema:/app/schema:ro
       - spark-checkpoint:/app/checkpoint
-      - raw-telemetry:/app/data/raw
+      - ./ingestion/data/raw:/app/data/raw
+      - ./ingestion/data/archive:/app/data/archive
       - delta-refined:/app/data/processed
 
     networks:

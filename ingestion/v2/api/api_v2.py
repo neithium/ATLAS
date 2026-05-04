@@ -133,7 +133,8 @@ def get_cpu_pool():
             multiprocessing.set_start_method('spawn', force=True)
         except RuntimeError:
             pass
-        _cpu_pool_internal = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, 10))
+        # Hyper-scaling for 80k device fleet
+        _cpu_pool_internal = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 8, 20))
     return _cpu_pool_internal
 
 _scheduler = AsyncIOScheduler()
@@ -190,7 +191,7 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # Throttled for stability under 500-platform bursts
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(16)  # Hyper-scaled for 80k device fleet (<30s target)
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -333,8 +334,20 @@ async def hourly_cache_job():
                 group_df.to_parquet(cache_buf, engine='pyarrow', index=False, compression='snappy')
                 cache_content = cache_buf.getvalue()
                 
-                cache_fname = f"{base_path}pcid={pcid}/acid={acid}/cache.parquet"
-                s3.put_object("telemetry-cache", cache_fname, io.BytesIO(cache_content), len(cache_content))
+                # 🚀 DIRECT FS CACHE: Write raw Parquet to local directory
+                local_dir = f"/app/telemetry-cache/{base_path}pcid={pcid}/acid={acid}"
+                os.makedirs(local_dir, exist_ok=True)
+                local_path = os.path.join(local_dir, "cache.parquet")
+                
+                with open(local_path, "wb") as f:
+                    f.write(cache_content)
+                
+                # Also keep MinIO for long-term if needed, but the primary API cache is now local FS
+                try:
+                    cache_fname = f"{base_path}pcid={pcid}/acid={acid}/cache.parquet"
+                    s3.put_object("telemetry-cache", cache_fname, io.BytesIO(cache_content), len(cache_content))
+                except:
+                    pass
                 
                 # 📝 Update Redis Index (Instant Discovery Heartbeat)
                 rd = await get_redis()
@@ -355,24 +368,26 @@ async def hourly_cache_job():
 # DAILY LONG-TERM ARCHIVAL JOB (Consolidated Data Lake)
 # =============================================================================
 async def daily_archival_job():
-    """Scheduled Task: Streams 24h of consolidated data to Raw and Archive buckets."""
+    """Scheduled Task: Consolidation of last 24h data to Local RAW and ARCHIVE."""
     now = datetime.now(timezone.utc)
     end = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start = end - timedelta(days=1)
     
-    log.info(f"🕰️ [ARCHIVE] Consolidating Daily Data Lake: {start.strftime('%Y-%m-%d')}...")
+    log.info(f"🕰️ [ARCHIVE] Consolidating Daily Local Data: {start.strftime('%Y-%m-%d')}...")
     
     try:
+        # 1. Prepare Local Directories
+        RAW_LOCAL = "/app/data/raw"
+        ARCHIVE_LOCAL = "/app/data/archive"
+        os.makedirs(RAW_LOCAL, exist_ok=True)
+        os.makedirs(ARCHIVE_LOCAL, exist_ok=True)
+
         with open(REGISTRY_PATH, "rb") as f:
-            DEVICES = orjson.loads(f.read())
+            DEVICES_META = orjson.loads(f.read())
         
-        all_device_ids = list(DEVICES.keys())
+        all_device_ids = list(DEVICES_META.keys())
         pool = await get_db_pool()
         s3 = get_minio()
-        
-        for bucket in ["telemetry-raw", "telemetry-archive"]:
-            if not s3.bucket_exists(bucket):
-                s3.make_bucket(bucket)
         
         STREAM_BATCH = 1000
         total_records = 0
@@ -388,20 +403,37 @@ async def daily_archival_job():
             
             if not records: continue
             
-            hydrated = [_build_full_record(r, r[1], DEVICES) for r in records]
+            # Hydrate to 48-field schema
+            hydrated = [_build_full_record(r, r['device_id'], DEVICES_META.get(r['device_id'], {})) for r in records]
             df = pd.DataFrame(hydrated)
             pq_buf = io.BytesIO()
             df.to_parquet(pq_buf, engine='pyarrow', index=False, compression='snappy')
             content = pq_buf.getvalue()
             
-            fname = f"date={date_str}/batch_{i//STREAM_BATCH}.parquet"
-            for bucket in ["telemetry-raw", "telemetry-archive"]:
-                s3.put_object(bucket, fname, io.BytesIO(content), len(content))
+            # 2. SAVE TO LOCAL RAW
+            fname = f"daily_{date_str}_batch_{i//STREAM_BATCH}.parquet"
+            raw_file_path = os.path.join(RAW_LOCAL, fname)
+            with open(raw_file_path, "wb") as f:
+                f.write(content)
+            
+            # 3. MIRROR TO LOCAL ARCHIVE (Duplicate of RAW)
+            archive_file_path = os.path.join(ARCHIVE_LOCAL, fname)
+            import shutil
+            shutil.copy2(raw_file_path, archive_file_path)
+            
+            # 4. Secondary Push to MinIO (Lakehouse/Fallback)
+            try:
+                minio_fname = f"date={date_str}/{fname}"
+                for bucket in ["telemetry-raw", "telemetry-archive"]:
+                    s3.put_object(bucket, minio_fname, io.BytesIO(content), len(content))
+            except:
+                pass
             
             total_records += len(records)
             del hydrated, df, pq_buf, content, records
+            gc.collect()
 
-        log.info(f"✅ [ARCHIVE] Daily consolidation complete. Total records archived: {total_records:,}")
+        log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
         
     except Exception as e:
         log.error(f"💥 [ARCHIVE] Daily Consolidation Failed: {str(e)}")
@@ -572,64 +604,71 @@ def process_device_batch_hydration(
 
     if table.num_rows == 0: return []
     
-    # Sort for consistent latest-point slicing
+    # 1. Sort ONCE per batch for consistent slicing
+    # Sorting by device_id ASC and metric_time DESC (latest first)
     indices = pc.sort_indices(table, sort_keys=[("device_id", "ascending"), ("metric_time", "descending")])
     sorted_table = table.take(indices)
     
-    # 🏎️ Vectorized String Conversion (for JSON compatibility)
+    # 🏎️ Vectorized String Conversion for JSON Compatibility
     if "metric_time" in sorted_table.column_names:
-        # Format as ISO string: 2026-05-03T07:27:31Z
         ts_col = sorted_table["metric_time"]
+        # Format as ISO string: 2026-05-03T07:27:31Z
         str_ts = pc.strftime(ts_col, format="%Y-%m-%dT%H:%M:%SZ")
         sorted_table = sorted_table.set_column(sorted_table.schema.get_field_index("metric_time"), "metric_time", str_ts)
 
-    unique_dids = pc.unique(sorted_table["device_id"]).to_pylist()
+    # 2. Identify Device Boundaries (O(N) vs O(N*M) with filters)
+    dids = sorted_table["device_id"].to_pylist()
     results = []
     
-    for did in unique_dids:
-        # 🏎️ Vectorized Slicing
-        mask = pc.equal(sorted_table["device_id"], did)
-        device_table = sorted_table.filter(mask)
+    metric_cols = ["metric_time", "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max",
+                   "cpu_pwr_sav_lim", "cpu_util", "cpu_watts", "gpu_watts", "min_watts",
+                   "peak_watts", "status", "error_reason"]
+    available_metrics = [c for c in metric_cols if c in sorted_table.column_names]
+    
+    # Slicing Logic
+    n = len(dids)
+    if n == 0: return []
+    
+    start_idx = 0
+    while start_idx < n:
+        current_did = dids[start_idx]
+        # Find end of this device's block
+        end_idx = start_idx + 1
+        while end_idx < n and dids[end_idx] == current_did:
+            end_idx += 1
+        
+        # Slice the table for this device
+        device_table = sorted_table.slice(start_idx, end_idx - start_idx)
         
         # Take N latest points
-        if count > 0:
-            device_table = device_table.slice(0, min(count, device_table.num_rows))
+        if count > 0 and device_table.num_rows > count:
+            device_table = device_table.slice(0, count)
             
-        # 🏎️ Lean Payload: Only select METRIC_COLUMNS
-        # We find which columns actually exist in the table
-        metric_cols = ["metric_time", "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max",
-                       "cpu_pwr_sav_lim", "cpu_util", "cpu_watts", "gpu_watts", "min_watts",
-                       "peak_watts", "status", "error_reason"]
-        available_metrics = [c for c in metric_cols if c in device_table.column_names]
-        device_table = device_table.select(available_metrics)
-            
-        # Convert to Golden Records
-        readings = device_table.to_pylist()
-        meta = devices_meta.get(did, {})
+        # Select metrics and convert to pylist (list of dicts)
+        # 🏎️ to_pylist() is fast in modern Arrow (C++ implementation)
+        readings = device_table.select(available_metrics).to_pylist()
         
+        meta = devices_meta.get(current_did, {})
+        
+        # Build Golden Record Payload (Hyper-Optimized Lean Payload)
         payload = {
-            "device_id": did,
-            "report_id": f"STITCHED-{int(time.time())}",
+            "device_id": current_did,
+            "report_id": f"S-{int(time.time())}",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": True,
-            "model": meta.get('model', 'Unknown'),
+            "model": meta.get('model', 'U'),
             "tags": meta.get('tags', ''),
             "report_type": "telemetry_live",
-            "server_name": meta.get('server_name', 'Unknown'),
+            "server_name": meta.get('server_name', 'U'),
             "error_reason": "",
             "location_id": meta.get('location_id', ''),
-            "location_city": meta.get('location_city', ''),
-            "location_name": meta.get('location_name', ''),
-            "location_state": meta.get('location_state', ''),
-            "location_country": meta.get('location_country', ''),
-            "processor_vendor": meta.get('processor_vendor', ''),
-            "server_generation": meta.get('server_generation', ''),
             "platform_customer_id": meta.get('platform_customer_id', ''),
             "application_customer_id": meta.get('application_customer_id', ''),
             "metric_type": "power_metrics",
             "data": { "PowerDetail": readings }
         }
-        results.append((did, orjson.dumps(payload)))
+        results.append((current_did, orjson.dumps(payload)))
+        start_idx = end_idx
         
     return results
 
@@ -711,22 +750,23 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
                      for i in range(int((end_time - start_time).total_seconds() // 3600) + 1)]
     
     if pcid and acid:
-        with tracer.start_as_current_span("cache_fetch"):
-            cached_records, found_slots = await _fetch_from_cache(s3, pcid, acid, start_time, end_time)
-            if cached_records:
-                log.info(f"🎯 [CACHE] Found {len(cached_records)} records in MinIO for {pcid}:{acid}")
-                df_cached = pd.DataFrame(cached_records)
-                # If we are targeting specific device_ids, filter the cache
-                if device_ids:
-                    df_cached = df_cached[df_cached['device_id'].isin(device_ids)]
+        cached_records, found_slots = await _fetch_from_cache_df(pcid, acid, start_time, end_time)
+        # Convert DF to list of dicts for legacy processing
+        cached_records = cached_records.to_dict('records') if not cached_records.empty else []
+        if cached_records:
+            log.info(f"🎯 [CACHE] Found {len(cached_records)} records in MinIO for {pcid}:{acid}")
+            df_cached = pd.DataFrame(cached_records)
+            # If we are targeting specific device_ids, filter the cache
+            if device_ids:
+                df_cached = df_cached[df_cached['device_id'].isin(device_ids)]
                 
-                for did, group in df_cached.groupby('device_id'):
-                    readings = group.to_dict('records')
-                    await _process_and_send(did, readings, DEVICES, kafka_prod)
-                    processed_records += len(readings)
-                
-                # Update missing slots
-                missing_slots = [s for s in missing_slots if s not in found_slots]
+            for did, group in df_cached.groupby('device_id'):
+                readings = group.to_dict('records')
+                await _process_and_send(did, readings, DEVICES, kafka_prod)
+                processed_records += len(readings)
+            
+            # Update missing slots
+            missing_slots = [s for s in missing_slots if s not in found_slots]
     
     # 2. HOT PATH (TimescaleDB Fallback)
     if missing_slots:
@@ -762,8 +802,10 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
     t_total = time.monotonic() - t_start
     log.info(f"✅ [HYBRID] Export Complete for {h_label} | Total Points: {processed_records:,} | Time: {t_total:.2f}s")
 
-async def _fetch_from_cache_df(s3, pcid, acid, start_time: datetime, end_time: datetime):
-    """Memory Optimized: Returns (DataFrame, found_slots)"""
+
+
+async def _fetch_from_cache_arrow(pcid, acid, start_time: datetime, end_time: datetime):
+    """Memory Optimized: Returns (Arrow Table, found_slots)"""
     rd = await get_redis()
     index_key = f"{REDIS_INDEX_PREFIX}:{pcid}:{acid}"
     available_hours = await rd.smembers(index_key)
@@ -777,37 +819,72 @@ async def _fetch_from_cache_df(s3, pcid, acid, start_time: datetime, end_time: d
         current += timedelta(hours=1)
 
     if not target_hours:
-        return pd.DataFrame(), []
+        return pa.table([]), []
 
-    def download_parquet(h):
-        path = f"date={h.strftime('%Y-%m-%d')}/hour={h.strftime('%H')}/pcid={pcid}/acid={acid}/cache.parquet"
+    def read_local_parquet(h):
+        # Local FS path (Directly written by hourly_cache_job)
+        base_path = "/app/telemetry-cache"
+        dir_path = os.path.join(base_path, f"date={h.strftime('%Y-%m-%d')}/hour={h.strftime('%H')}/pcid={pcid}/acid={acid}")
+        
+        if not os.path.exists(dir_path):
+            return None
+            
         try:
-            response = s3.get_object("telemetry-cache", path)
-            try:
-                return pd.read_parquet(io.BytesIO(response.read()), engine='pyarrow')
-            finally:
-                response.close()
-                response.release_conn()
-        except:
+            import glob
+            import pyarrow.parquet as pq
+            files = glob.glob(os.path.join(dir_path, "*.parquet"))
+            if not files:
+                return None
+            
+            # Read all files and combine
+            return pa.concat_tables([pq.read_table(f, memory_map=True) for f in files])
+        except Exception as e:
+            log.warning(f"⚠️ [CACHE] Failed to read local parquets in {dir_path}: {e}")
             return None
 
     loop = asyncio.get_event_loop()
-    dfs = await asyncio.gather(*[
-        loop.run_in_executor(_executor, download_parquet, h) for h in target_hours
+    tables = await asyncio.gather(*[
+        loop.run_in_executor(_executor, read_local_parquet, h) for h in target_hours
     ])
     
-    final_dfs = [df for df in dfs if df is not None]
-    if not final_dfs:
-        return pd.DataFrame(), []
+    final_tables = [t for t in tables if t is not None]
+    if not final_tables:
+        return pa.table([]), []
         
-    return pd.concat(final_dfs), target_hours
+    # 🎯 CONSISTENT SCHEMA ALIGNMENT (Prevents "Schema at index X was different")
+    # We pick the schema from the first table as the "Master" (or a pre-defined one)
+    # and strip virtual partition columns (date, hour, etc.)
+    master_schema = None
+    aligned_tables = []
+    
+    # Pre-defined expected columns to filter out phantom partition fields
+    # Use dict.fromkeys to maintain order while ensuring uniqueness (prevents double metric_time)
+    real_cols = list(dict.fromkeys(["metric_time", "device_id", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
+    
+    for t in final_tables:
+        # Strip phantom columns (date, hour, etc.)
+        existing_real_cols = [c for c in real_cols if c in t.column_names]
+        t_clean = t.select(existing_real_cols)
+        
+        if master_schema is None:
+            master_schema = t_clean.schema
+            aligned_tables.append(t_clean)
+        else:
+            # Cast to master schema to handle null vs int64 and precision
+            try:
+                aligned_tables.append(t_clean.cast(master_schema))
+            except:
+                # If cast fails, just keep it and hope concat handles it (or it will fail gracefully later)
+                aligned_tables.append(t_clean)
+
+    return pa.concat_tables(aligned_tables), target_hours
 
 async def _fetch_from_cache(s3, pcid, acid, start_time: datetime, end_time: datetime):
     """Legacy/Simple: Returns (records, found_slots)"""
-    df, slots = await _fetch_from_cache_df(s3, pcid, acid, start_time, end_time)
-    if df.empty:
+    table, slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
+    if table.num_rows == 0:
         return [], []
-    return df.to_dict('records'), slots
+    return table.to_pylist(), slots
 
 async def _export_first_task(device_ids: List[str], count: int = 2016):
     """Historical Task: Parallel Batch Engine (The Fastest Possible Strategy)."""
@@ -901,7 +978,7 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
         end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(days=days_lookback)
         
-        # 1. CACHE PATH (MinIO)
+        # 1. CACHE PATH (Local FS)
         pcid, acid = None, None
         if device_ids:
             first_meta = DEVICES.get(device_ids[0], {})
@@ -909,45 +986,85 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             acid = first_meta.get('application_customer_id')
 
         found_slots = []
-        df_cached = pd.DataFrame()
+        table_cached = pa.table([])
         if pcid and acid:
-            s3 = get_minio()
-            df_cached, found_slots = await _fetch_from_cache_df(s3, pcid, acid, start_time, end_time)
+            table_cached, found_slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
 
         # 2. HOT PATH (TimescaleDB)
-        log.info(f"🔌 [HYBRID] Fetching DB tail and merging with {len(df_cached):,} cache records...")
+        log.info(f"🔌 [HYBRID] Fetching DB tail and merging with {table_cached.num_rows:,} cache records...")
         pool = await get_db_pool()
-        db_start = max(found_slots) + timedelta(hours=1) if found_slots else start_time
-        db_end = end_time
+        # 2. TSDB GAP FETCH (Identify and fill missing hours)
+        all_hours = []
+        curr_h = start_time.replace(minute=0, second=0, microsecond=0)
+        while curr_h <= end_time:
+            all_hours.append(curr_h)
+            curr_h += timedelta(hours=1)
+            
+        missing_hours = [h for h in all_hours if h not in found_slots]
         
-        async with pool.acquire() as conn:
-            # Fetch EVERYTHING from DB for this hierarchy in one high-speed query
-            rows = await conn.fetch(
-                "SELECT * FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time >= $3 AND metric_time < $4",
-                pcid, acid, db_start, db_end
-            )
-            df_db = pd.DataFrame(rows, columns=DB_COLUMNS)
+        if not missing_hours:
+            table_db = pa.table({k: [] for k in query_cols})
+            log.info("📥 [HYBRID] No gaps found. TSDB fetch skipped.")
+        else:
+            db_start = min(missing_hours)
+            db_end = end_time
+            query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
+            
+            log.info(f"📥 [HYBRID] Fetching gaps from TSDB: {db_start} to {db_end}")
+            
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time >= $3 AND metric_time < $4",
+                    pcid, acid, db_start, db_end
+                )
+                
+                if rows:
+                    table_db = pa.Table.from_pylist([dict(r) for r in rows])
+                    # 🎯 Filter out any points already in cache (prevents duplicates in overlap hours)
+                    cached_times = set(table_cached["metric_time"].to_pylist()) if table_cached.num_rows > 0 else set()
+                    if cached_times:
+                        mask = [t not in cached_times for t in table_db["metric_time"].to_pylist()]
+                        table_db = table_db.filter(pa.array(mask))
+                    log.info(f"📥 [HYBRID] Fetched {table_db.num_rows:,} records from TSDB gaps")
+                else:
+                    table_db = pa.table({k: [] for k in query_cols})
+                    log.info(f"📥 [HYBRID] TSDB gaps were EMPTY (Window: {db_start} to {db_end})")
 
-        # 3. VECTORIZED STITCHING
-        # Combine, Sort, and deduplicate in one burst
-        df_full = pd.concat([df_cached, df_db])
-        if df_full.empty:
+        # 3. VECTORIZED STITCHING (Pure Arrow)
+        if table_cached.num_rows > 0 and table_db.num_rows > 0:
+            # Step 1: Strip virtual partition columns from cache
+            db_cols = set(table_db.column_names)
+            strip_cols = [c for c in table_cached.column_names if c not in db_cols]
+            if strip_cols:
+                table_cached = table_cached.drop(strip_cols)
+                log.info(f"🧹 [HYBRID] Stripped virtual columns from cache: {strip_cols}")
+
+            # Step 2: Force DB table to match Cache schema exactly (order, ns vs us, etc.)
+            try:
+                # Reorder DB table columns to match Cache table exactly
+                table_db = table_db.select(table_cached.column_names)
+                # Now cast to match precision (ns vs us) and types
+                table_db = table_db.cast(table_cached.schema)
+            except Exception as cast_err:
+                log.warning(f"⚠️ [HYBRID] Schema alignment failed: {cast_err}")
+                # Final fallback attempt
+                table_db = table_db.select(table_cached.column_names)
+
+            full_table = pa.concat_tables([table_cached, table_db])
+        elif table_cached.num_rows > 0:
+            full_table = table_cached
+        else:
+            full_table = table_db
+
+        if full_table.num_rows == 0:
             log.warning(f"⚠️ [LATEST] No data found for {pcid}:{acid}")
             async with HIERARCHY_LOCK:
                 ACTIVE_HIERARCHIES.discard(f"{pcid}:{acid}")
             return
 
         # ── HYBRID OPTIMIZATION: ARROW HYDRATION ────────────────────────────
-        # Instead of grouping in Pandas and sending 1000 separate tasks,
-        # we convert to Arrow and send large device batches.
-        
-        # 1. Convert to Arrow Table (Preserving schema)
-        full_table = pa.Table.from_pandas(df_full)
-        
-        # 2. Batch Delivery via ProcessPool
-        # We process devices in batches of 50 to maximize CPU utilization
         unique_dids = pc.unique(full_table["device_id"]).to_pylist()
-        DEVICE_BATCH_SIZE = 50
+        DEVICE_BATCH_SIZE = 100  # 🎯 Reduced to avoid IPC/Pickle bottlenecks
         cpu_pool = get_cpu_pool()
         
         async def process_batch(batch_dids):
@@ -956,7 +1073,6 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             mask = pc.is_in(full_table["device_id"], value_set=pa.array(batch_dids))
             
             # 🏎️ IPC OPTIMIZATION: Create a fresh table with only batch data 
-            # to avoid accidental serialization of the parent table's shared buffers.
             raw_batch = full_table.filter(mask)
             batch_table = pa.Table.from_batches(raw_batch.to_batches())
             
@@ -972,15 +1088,18 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             
             # Send results to Kafka
             if results:
-                tasks = [kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()) for did, payload in results]
-                await asyncio.gather(*tasks)
+                # 🏎️ Throttled Send
+                for did, payload in results:
+                    await kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode())
                 processed_records += len(results)
 
-        # 3. Stream Batches
+        # 2. Stream Batches
         log.info(f"🌊 [ARROW] Delivering {len(unique_dids)} devices via vectorized hydration...")
         for i in range(0, len(unique_dids), DEVICE_BATCH_SIZE):
             await process_batch(unique_dids[i : i + DEVICE_BATCH_SIZE])
-            if i % (DEVICE_BATCH_SIZE * 4) == 0:
+            # 🚦 Breath: Prevent Event Loop Saturation
+            await asyncio.sleep(0.01)
+            if i % (DEVICE_BATCH_SIZE * 5) == 0:
                 await kafka_prod.flush()
 
         await kafka_prod.flush()

@@ -21,30 +21,33 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     with open(config_path, "rb") as f:
         registry = orjson.loads(f.read())
     
-    # Map PCID to its first found ACID and count devices
-    pcid_to_acid = {}
-    pcid_to_count = {}
+    # Map all unique PCID/ACID pairs
+    hierarchy_counts = {} # Key: (pcid, acid) -> count
     for meta in registry.values():
         pcid = meta.get('platform_customer_id')
         acid = meta.get('application_customer_id')
         if pcid and acid:
-            if pcid not in pcid_to_acid:
-                pcid_to_acid[pcid] = acid
-            pcid_to_count[pcid] = pcid_to_count.get(pcid, 0) + 1
+            h_key = (pcid, acid)
+            hierarchy_counts[h_key] = hierarchy_counts.get(h_key, 0) + 1
             
-    # Sort PCIDs by device count descending and pick top platforms
-    sorted_pcids = sorted(pcid_to_count.keys(), key=lambda x: pcid_to_count[x], reverse=True)
+    # Sort hierarchies by device count descending
+    sorted_hierarchies = sorted(hierarchy_counts.keys(), key=lambda x: hierarchy_counts[x], reverse=True)
     
     # Selection logic: prioritize heavy platform if requested
     targets = []
-    if heavy_pcid and heavy_pcid in pcid_to_acid:
-        targets.append((heavy_pcid, pcid_to_acid[heavy_pcid], pcid_to_count[heavy_pcid]))
-        remaining = [p for p in sorted_pcids if p != heavy_pcid]
-        for p in remaining[:platform_count-1]:
-            targets.append((p, pcid_to_acid[p], pcid_to_count[p]))
+    if heavy_pcid:
+        # Find all hierarchies for this heavy PCID
+        heavy_hs = [h for h in sorted_hierarchies if h[0] == heavy_pcid]
+        for h in heavy_hs:
+            targets.append((h[0], h[1], hierarchy_counts[h]))
+        
+        remaining = [h for h in sorted_hierarchies if h[0] != heavy_pcid]
+        for h in remaining:
+            if len(targets) >= platform_count: break
+            targets.append((h[0], h[1], hierarchy_counts[h]))
     else:
-        for p in sorted_pcids[:platform_count]:
-            targets.append((p, pcid_to_acid[p], pcid_to_count[p]))
+        for h in sorted_hierarchies[:platform_count]:
+            targets.append((h[0], h[1], hierarchy_counts[h]))
             
     total_expected = sum(t[2] for t in targets)
     print(f"🚀 Starting E2E Multi-Platform Benchmark | Platforms: {len(targets)} | Total Devices: {total_expected}")

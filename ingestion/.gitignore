@@ -24,3 +24,8 @@ ingestion/device_configs.json
 /v2/scripts/verify_kafka_schema.py
 /v2/scripts/check_kafka.py
 /scratch/check_kafka.py
+
+# Local Data and Archives
+/data/
+/archive/
+/telemetry-cache/
