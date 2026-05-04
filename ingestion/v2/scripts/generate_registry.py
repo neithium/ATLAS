@@ -2,20 +2,15 @@ import orjson
 import os
 import argparse
 
-def generate_registry(scale=80000, output_path="device_configs.json"):
+def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="device_configs.json"):
     """
     PowerPulse V3 Registry Bootstrapper (Schema Aligned):
-    Generates a 100% mirrored 80k device registry matching input_schema.py.
+    Generates a 100% mirrored device registry matching input_schema.py.
     """
-    print(f"Bootstrapping Schema-Aligned Registry ({scale:,} devices)...")
-    
     devices = {}
-    
-    # New Customer Hierarchy (1:M PCID-to-ACID mapping)
-    PCID_COUNT = 5
-    ACIDS_PER_PCID = 2  # Each platform has multiple ACIDs
-    DEVICES_PER_ACID = 1000  # 2 * 1000 = 2000 devices per platform
-    total_scale = PCID_COUNT * ACIDS_PER_PCID * DEVICES_PER_ACID
+    total_scale = pcids * acids * devices_per_acid
+    print(f"Bootstrapping Schema-Aligned Registry ({total_scale:,} devices)...")
+    print(f"Hierarchy: {pcids} Platforms | {acids} ACIDs per Platform | {devices_per_acid} Devices per ACID")
     
     # Regional DC Locations for Regional Diversity
     LOCATIONS = [
@@ -27,13 +22,13 @@ def generate_registry(scale=80000, output_path="device_configs.json"):
     ]
     
     global_counter = 0
-    for p_idx in range(1, PCID_COUNT + 1):
+    for p_idx in range(1, pcids + 1):
         pcid = f"PLATCUST{p_idx:04}"
         
-        for a_idx in range(1, ACIDS_PER_PCID + 1):
+        for a_idx in range(1, acids + 1):
             acid = f"{pcid}_APPCUST{a_idx:02}"
             
-            for d_idx in range(1, DEVICES_PER_ACID + 1):
+            for d_idx in range(1, devices_per_acid + 1):
                 dev_id = f"PLAT{p_idx:04}-APP{a_idx:02}-DEV-{d_idx:04}"
                 
                 # Select Geographic Location (Rotation)
@@ -76,8 +71,10 @@ def generate_registry(scale=80000, output_path="device_configs.json"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scale", type=int, default=80000)
+    parser.add_argument("--pcids", type=int, default=5, help="Number of platform customers")
+    parser.add_argument("--acids", type=int, default=2, help="Number of application customers per platform")
+    parser.add_argument("--devices", type=int, default=1000, help="Number of devices per application")
     parser.add_argument("--output", type=str, default="device_configs.json")
     args = parser.parse_args()
     
-    generate_registry(scale=args.scale, output_path=args.output)
+    generate_registry(pcids=args.pcids, acids=args.acids, devices_per_acid=args.devices, output_path=args.output)

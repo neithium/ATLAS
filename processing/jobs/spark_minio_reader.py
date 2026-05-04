@@ -17,13 +17,13 @@ def run_7day_analysis():
     spark.sparkContext.setLogLevel("ERROR")
     
     print("\n" + "="*50)
-    print("🚀 LOCAL ANALYTICS: Batch Pull from /app/data/raw")
+    print("🚀 LOCAL ANALYTICS: Batch Pull from /app/data/raw/production/")
     print("="*50)
     
     start_time = time.monotonic()
     
     try:
-        path = "/app/data/raw/"
+        path = "/app/data/raw/production/"
         processed_output = "/app/data/processed/batch/"
         
         print(f"📡 Fetching PARQUET data from: {path}")

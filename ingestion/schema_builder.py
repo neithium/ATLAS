@@ -58,17 +58,16 @@ def build_48_field_golden_record(
     if power_detail_list is None:
         power_detail_list = [{
             "AmbTemp": float(reading.get("AmbTemp") or reading.get("amb_temp") or 25.0),
-            "Average": avg_watts,
+            "Average": float(avg_watts),
             "CpuAvgFreq": int(reading.get("CpuAvgFreq") or reading.get("cpu_avg_freq") or 3400000),
             "CpuMax": int(reading.get("CpuMax") or reading.get("cpu_max") or 4200000),
             "CpuPwrSavLim": int(reading.get("CpuPwrSavLim") or reading.get("cpu_pwr_sav_lim") or 250),
             "CpuUtil": int(reading.get("CpuUtil") or reading.get("cpu_util") or 50),
             "CpuWatts": int(reading.get("CpuWatts") or reading.get("cpu_watts") or 200),
             "GpuWatts": int(reading.get("GpuWatts") or reading.get("gpu_watts") or 0),
-            "Minimum": int(min_watts),
-            "Peak": int(peak_watts),
-            "Time": timestamp_str,
-            "is_fresh": bool(reading.get("is_fresh", False))
+            "Minimum": float(min_watts),
+            "Peak": float(peak_watts),
+            "Time": timestamp_str
         }]
     
     # Build inventory_data with defaults if not provided
@@ -114,9 +113,9 @@ def build_48_field_golden_record(
         # data object (5 fields + 11 fields per PowerDetail)
         "data": {
             "Id": device_id,
-            "Average": round(avg_watts, 2),
-            "Maximum": round(peak_watts, 2),
-            "Minimum": round(min_watts, 2),
+            "Average": float(round(avg_watts, 2)),
+            "Maximum": float(round(peak_watts, 2)),
+            "Minimum": float(round(min_watts, 2)),
             "Name": device_metadata.get("server_name", "UNKNOWN"),
             "PowerDetail": power_detail_list
         },
@@ -200,45 +199,44 @@ def build_batch_power_detail(raw_readings: List[dict], fresh_cutoff_str: Optiona
     for i in range(num_readings):
         reading = raw_readings[i]
         
-        # ⚡ Zero-Alloc Extraction
+        # ⚡ Zero-Alloc Extraction with Null Safety
         if needs_cast:
-            avg = float(reading[k_avg])
-            peak = float(reading[k_pk])
-            minimum = float(reading[k_min])
+            raw_avg = reading[k_avg]
+            raw_pk = reading[k_pk]
+            raw_min = reading[k_min]
+            
+            avg = float(raw_avg) if raw_avg is not None else 0.0
+            peak = float(raw_pk) if raw_pk is not None else 0.0
+            minimum = float(raw_min) if raw_min is not None else 0.0
         else:
-            avg = reading[k_avg]
-            peak = reading[k_pk]
-            minimum = reading[k_min]
+            avg = reading[k_avg] or 0.0
+            peak = reading[k_pk] or 0.0
+            minimum = reading[k_min] or 0.0
         
         total_watts += avg
-        if peak > max_watts: max_watts = peak
-        if minimum < min_watts: min_watts = minimum
+        if peak is not None and peak > max_watts: max_watts = peak
+        if minimum is not None and minimum < min_watts: min_watts = minimum
         
         timestamp = reading[t_key]
         timestamp_str = timestamp.isoformat() if needs_iso else str(timestamp)
         
-        is_fresh = False
-        if fresh_cutoff_str:
-            is_fresh = timestamp_str >= fresh_cutoff_str
-        else:
-            is_fresh = bool(reading.get("is_fresh", False))
+        # 🛑 is_fresh logic removed
 
         # Direct index assignment instead of .append() to avoid reallocations
         power_detail_list[i] = {
-            "AmbTemp": float(reading[k_amb]) if needs_cast else reading[k_amb],
+            "AmbTemp": float(reading[k_amb] or 25.0) if needs_cast else (reading[k_amb] or 25.0),
             "Average": avg,
-            "CpuAvgFreq": int(reading[k_freq]) if needs_cast else reading[k_freq],
-            "CpuMax": int(reading[k_cmax]) if needs_cast else reading[k_cmax],
-            "CpuPwrSavLim": int(reading[k_lim]) if needs_cast else reading[k_lim],
-            "CpuUtil": int(reading[k_util]) if needs_cast else reading[k_util],
-            "CpuWatts": int(reading[k_cw]) if needs_cast else reading[k_cw],
-            "GpuWatts": int(reading[k_gw]) if needs_cast else reading[k_gw],
-            "Minimum": int(minimum) if needs_cast else minimum,
-            "Peak": int(peak) if needs_cast else peak,
-            "Time": timestamp_str,
-            "is_fresh": is_fresh
+            "CpuAvgFreq": int(reading[k_freq] or 0) if needs_cast else (reading[k_freq] or 0),
+            "CpuMax": int(reading[k_cmax] or 0) if needs_cast else (reading[k_cmax] or 0),
+            "CpuPwrSavLim": int(reading[k_lim] or 0) if needs_cast else (reading[k_lim] or 0),
+            "CpuUtil": int(reading[k_util] or 0) if needs_cast else (reading[k_util] or 0),
+            "CpuWatts": int(reading[k_cw] or 0) if needs_cast else (reading[k_cw] or 0),
+            "GpuWatts": int(reading[k_gw] or 0) if needs_cast else (reading[k_gw] or 0),
+            "Minimum": float(minimum),
+            "Peak": float(peak),
+            "Time": timestamp_str
         }
     
-    avg_watts_computed = round(total_watts / max(len(raw_readings), 1), 2)
+    avg_watts_computed = float(round(total_watts / max(len(raw_readings), 1), 2))
     
     return power_detail_list, avg_watts_computed, max_watts, min_watts

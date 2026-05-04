@@ -371,67 +371,110 @@ async def daily_archival_job():
     """Scheduled Task: Consolidation of last 24h data to Local RAW and ARCHIVE."""
     now = datetime.now(timezone.utc)
     end = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    start = end - timedelta(days=1)
+    start = end - timedelta(days=7)
     
-    log.info(f"🕰️ [ARCHIVE] Consolidating Daily Local Data: {start.strftime('%Y-%m-%d')}...")
+    log.info(f"🕰️ [ARCHIVE] Consolidating 7-Day Sliding Window: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}...")
     
     try:
-        # 1. Prepare Local Directories
+        # 1. Prepare Local & Hive Paths
         RAW_LOCAL = "/app/data/raw"
         ARCHIVE_LOCAL = "/app/data/archive"
-        os.makedirs(RAW_LOCAL, exist_ok=True)
-        os.makedirs(ARCHIVE_LOCAL, exist_ok=True)
+        # Using a special 'full_7day' marker for the 7-day daily consolidation
+        hive_path = f"production/year={end.year}/month={end.month:02d}/day={end.day:02d}/full_7day/"
+        
+        raw_dir = os.path.join(RAW_LOCAL, hive_path)
+        archive_dir = os.path.join(ARCHIVE_LOCAL, hive_path)
+        os.makedirs(raw_dir, exist_ok=True)
+        os.makedirs(archive_dir, exist_ok=True)
 
         with open(REGISTRY_PATH, "rb") as f:
             DEVICES_META = orjson.loads(f.read())
         
         all_device_ids = list(DEVICES_META.keys())
         pool = await get_db_pool()
-        s3 = get_minio()
         
-        STREAM_BATCH = 1000
+        # 🏎️ LARGE SILO STRATEGY (Target: 128MB+)
+        # 2,016 points/device/7-days -> ~1,000 devices per 128MB silo
+        SILO_SIZE = 1000 
+        MICRO_BATCH = 100
         total_records = 0
-        date_str = start.strftime('%Y-%m-%d')
         
-        for i in range(0, len(all_device_ids), STREAM_BATCH):
-            batch_devices = all_device_ids[i:i + STREAM_BATCH]
-            async with pool.acquire() as conn:
-                records = await conn.fetch(
-                    "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3)", 
-                    start, end, batch_devices
-                )
-            
-            if not records: continue
-            
-            # Hydrate to 48-field schema
-            hydrated = [_build_full_record(r, r['device_id'], DEVICES_META.get(r['device_id'], {})) for r in records]
-            df = pd.DataFrame(hydrated)
+        for i in range(0, len(all_device_ids), SILO_SIZE):
+            silo_devices = all_device_ids[i:i + SILO_SIZE]
             pq_buf = io.BytesIO()
-            df.to_parquet(pq_buf, engine='pyarrow', index=False, compression='snappy')
-            content = pq_buf.getvalue()
+            writer = None
+            silo_records_count = 0
             
-            # 2. SAVE TO LOCAL RAW
-            fname = f"daily_{date_str}_batch_{i//STREAM_BATCH}.parquet"
-            raw_file_path = os.path.join(RAW_LOCAL, fname)
-            with open(raw_file_path, "wb") as f:
-                f.write(content)
+            # Process Silo in Micro-batches to keep RAM stable
+            for j in range(0, len(silo_devices), MICRO_BATCH):
+                micro_devices = silo_devices[j:j + MICRO_BATCH]
+                async with pool.acquire() as conn:
+                    records = await conn.fetch(
+                        "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3)", 
+                        start, end, micro_devices
+                    )
+                
+                if not records: continue
+                
+                # 🚀 Group by Device and Hydrate using Unified Batch Builder
+                from schema_builder import build_batch_power_detail
+                
+                # Group records by device_id
+                from collections import defaultdict
+                device_groups = defaultdict(list)
+                for r in records:
+                    device_groups[r['device_id']].append(dict(r))
+                
+                hydrated = []
+                for did, raw_readings in device_groups.items():
+                    meta = DEVICES_META.get(did, {})
+                    
+                    # 1. Build PowerDetail and aggregates (2016 points for 7 days)
+                    pd_list, avg_v, max_v, min_v = build_batch_power_detail(raw_readings)
+                    
+                    # 2. Build 48-field record
+                    payload = build_48_field_golden_record(
+                        device_id=did,
+                        reading=raw_readings[-1],
+                        device_metadata=meta,
+                        inventory_data=meta.get("inventory_data"),
+                        power_detail_list=pd_list
+                    )
+                    
+                    # 3. Inject computed aggregates
+                    payload["data"]["Average"] = avg_v
+                    payload["data"]["Maximum"] = max_v
+                    payload["data"]["Minimum"] = min_v
+                    
+                    hydrated.append(payload)
+
+                table = pa.Table.from_pylist(hydrated)
+                
+                if writer is None:
+                    writer = pq.ParquetWriter(pq_buf, table.schema, compression='snappy')
+                
+                writer.write_table(table)
+                silo_records_count += len(table)
+                del records, hydrated, table
+                gc.collect()
             
-            # 3. MIRROR TO LOCAL ARCHIVE (Duplicate of RAW)
-            archive_file_path = os.path.join(ARCHIVE_LOCAL, fname)
-            import shutil
-            shutil.copy2(raw_file_path, archive_file_path)
-            
-            # 4. Secondary Push to MinIO (Lakehouse/Fallback)
-            try:
-                minio_fname = f"date={date_str}/{fname}"
-                for bucket in ["telemetry-raw", "telemetry-archive"]:
-                    s3.put_object(bucket, minio_fname, io.BytesIO(content), len(content))
-            except:
-                pass
-            
-            total_records += len(records)
-            del hydrated, df, pq_buf, content, records
-            gc.collect()
+            if writer:
+                writer.close()
+                content = pq_buf.getvalue()
+                fname = f"daily_silo_{i//SILO_SIZE}.parquet"
+                
+                # 🚀 LOCAL FS MIRRORING (Primary Storage)
+                with open(os.path.join(raw_dir, fname), "wb") as f:
+                    f.write(content)
+                with open(os.path.join(archive_dir, fname), "wb") as f:
+                    f.write(content)
+                
+                total_records += silo_records_count
+                log.info(f"📦 [ARCHIVE] Silo {i//SILO_SIZE} Created: {silo_records_count:,} records | Size: {len(content)/1024/1024:.2f} MB")
+                del content, pq_buf
+                gc.collect()
+
+        log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
 
         log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
         
@@ -620,10 +663,20 @@ def process_device_batch_hydration(
     dids = sorted_table["device_id"].to_pylist()
     results = []
     
-    metric_cols = ["metric_time", "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max",
-                   "cpu_pwr_sav_lim", "cpu_util", "cpu_watts", "gpu_watts", "min_watts",
-                   "peak_watts", "status", "error_reason"]
-    available_metrics = [c for c in metric_cols if c in sorted_table.column_names]
+    # Mapping for PascalCase Schema compliance (per input_schema.py)
+    METRIC_MAP = {
+        "amb_temp": "AmbTemp",
+        "avg_watts": "Average",
+        "cpu_avg_freq": "CpuAvgFreq",
+        "cpu_max": "CpuMax",
+        "cpu_pwr_sav_lim": "CpuPwrSavLim",
+        "cpu_util": "CpuUtil",
+        "cpu_watts": "CpuWatts",
+        "gpu_watts": "GpuWatts",
+        "min_watts": "Minimum",
+        "peak_watts": "Peak",
+        "metric_time": "Time"
+    }
     
     # Slicing Logic
     n = len(dids)
@@ -644,29 +697,30 @@ def process_device_batch_hydration(
         if count > 0 and device_table.num_rows > count:
             device_table = device_table.slice(0, count)
             
-        # Select metrics and convert to pylist (list of dicts)
-        # 🏎️ to_pylist() is fast in modern Arrow (C++ implementation)
-        readings = device_table.select(available_metrics).to_pylist()
+        # 🏎️ PascalCase Transformation & Aggregation
+        raw_readings = device_table.to_pylist()
         
+        # USE UNIFIED BUILDERS FOR CONSISTENCY
+        from schema_builder import build_48_field_golden_record, build_batch_power_detail
+        
+        # 1. Build PowerDetail and compute aggregates using unified logic
+        power_detail_list, avg_v, max_v, min_v = build_batch_power_detail(raw_readings)
+        
+        # 2. Build complete 48-field record
         meta = devices_meta.get(current_did, {})
+        payload = build_48_field_golden_record(
+            device_id=current_did,
+            reading=raw_readings[-1] if raw_readings else {},
+            device_metadata=meta,
+            inventory_data=meta.get("inventory_data"),
+            power_detail_list=power_detail_list
+        )
         
-        # Build Golden Record Payload (Hyper-Optimized Lean Payload)
-        payload = {
-            "device_id": current_did,
-            "report_id": f"S-{int(time.time())}",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "status": True,
-            "model": meta.get('model', 'U'),
-            "tags": meta.get('tags', ''),
-            "report_type": "telemetry_live",
-            "server_name": meta.get('server_name', 'U'),
-            "error_reason": "",
-            "location_id": meta.get('location_id', ''),
-            "platform_customer_id": meta.get('platform_customer_id', ''),
-            "application_customer_id": meta.get('application_customer_id', ''),
-            "metric_type": "power_metrics",
-            "data": { "PowerDetail": readings }
-        }
+        # 3. Ensure aggregates match the vectorized batch calculation
+        payload["data"]["Average"] = avg_v
+        payload["data"]["Maximum"] = max_v
+        payload["data"]["Minimum"] = min_v
+        
         results.append((current_did, orjson.dumps(payload)))
         start_idx = end_idx
         
@@ -675,31 +729,25 @@ def process_device_batch_hydration(
 def _serialize_record(did, readings, meta):
     """CPU-Bound: Runs in ProcessPool to bypass GIL."""
     import orjson
-    from datetime import datetime, timezone
-    payload = {
-        "device_id": did,
-        "report_id": meta.get('report_id', 'STITCHED-' + str(int(time.time()))),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "status": True,
-        "model": meta.get('model', 'Unknown'),
-        "tags": meta.get('tags', ''),
-        "report_type": "telemetry_live",
-        "server_name": meta.get('server_name', 'Unknown'),
-        "error_reason": "",
-        "location_id": meta.get('location_id', ''),
-        "location_city": meta.get('location_city', ''),
-        "location_name": meta.get('location_name', ''),
-        "location_state": meta.get('location_state', ''),
-        "location_country": meta.get('location_country', ''),
-        "processor_vendor": meta.get('processor_vendor', ''),
-        "server_generation": meta.get('server_generation', ''),
-        "platform_customer_id": meta.get('platform_customer_id', ''),
-        "application_customer_id": meta.get('application_customer_id', ''),
-        "metric_type": "power_metrics",
-        "data": {
-            "PowerDetail": readings
-        }
-    }
+    from schema_builder import build_48_field_golden_record, build_batch_power_detail
+    
+    # 1. Build PowerDetail and compute aggregates using unified logic
+    power_detail_list, avg_v, max_v, min_v = build_batch_power_detail(readings)
+    
+    # 2. Build complete 48-field record (Fixes missing metadata/inventory)
+    payload = build_48_field_golden_record(
+        device_id=did,
+        reading=readings[-1] if readings else {},
+        device_metadata=meta,
+        inventory_data=meta.get("inventory_data"),
+        power_detail_list=power_detail_list
+    )
+    
+    # 3. Ensure aggregates match the batch calculation
+    payload["data"]["Average"] = avg_v
+    payload["data"]["Maximum"] = max_v
+    payload["data"]["Minimum"] = min_v
+    
     return orjson.dumps(payload)
 
 async def _process_and_send(did, readings, DEVICES, kafka_prod):
@@ -1229,14 +1277,29 @@ async def register_new_device(device: DeviceRegistration):
                 raise HTTPException(status_code=400, detail=f"Device {device.device_id} already registered.")
 
             # 3. Append new config (Hydrated with defaults)
-            configs[device.device_id] = device.dict()
+            new_config = device.dict()
+            configs[device.device_id] = new_config
             
             # 4. Atomic Write
             with open(REGISTRY_PATH, "wb") as f:
                 f.write(orjson.dumps(configs))
 
-            log.info(f"🆕 [REGISTRY] Device {device.device_id} registered successfully under {device.application_customer_id}")
-            return {"status": "success", "device_id": device.device_id, "message": "Device added to registry"}
+            # 🚀 DYNAMIC UPDATE: Refresh in-memory caches so API recognizes device immediately
+            global CACHED_REGISTRY, REGISTRY_DF
+            CACHED_REGISTRY[device.device_id] = new_config
+            
+            # Append to vectorized registry dataframe
+            new_row = pd.DataFrame([{
+                "device_id": device.device_id,
+                "platform_customer_id": new_config.get("platform_customer_id"),
+                "application_customer_id": new_config.get("application_customer_id"),
+                "server_name": new_config.get("server_name"),
+                "model": new_config.get("model")
+            }])
+            REGISTRY_DF = pd.concat([REGISTRY_DF, new_row], ignore_index=True)
+
+            log.info(f"🆕 [REGISTRY] Device {device.device_id} registered successfully and hot-loaded.")
+            return {"status": "success", "device_id": device.device_id, "message": "Device added to registry and hot-loaded"}
             
         except Exception as e:
             log.error(f"❌ [REGISTRY] Registration failed for {device.device_id}: {str(e)}")
