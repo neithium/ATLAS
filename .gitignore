@@ -181,7 +181,12 @@ __marimo__/
 /ingestion/v2/scripts/verify_kafka_msg.py
 /ingestion/v2/scripts/verify_kafka_push.py
 /ingestion/v2/scripts/verify_kafka_schema.py
-/ingestion/telemetry-cache/
-/data/
-/archive/
+# Data Silo Structures (Track folders but ignore data)
+**/data/raw/*
+**/data/archive/*
+!**/data/raw/.gitkeep
+!**/data/archive/.gitkeep
+
+# Global Data Ignores
 *.parquet
+*.log
