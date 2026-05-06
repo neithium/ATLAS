@@ -121,7 +121,8 @@ _kafka: Optional[AIOKafkaProducer] = None
 _pool: Optional[asyncpg.Pool] = None
 _redis: Optional[Any] = None
 _minio: Optional[Minio] = None
-_executor = ThreadPoolExecutor(max_workers=200)
+_executor = ThreadPoolExecutor(max_workers=64)
+GLOBAL_IO_SEM = asyncio.Semaphore(100) # Limits total concurrent file reads across all exports
 _cpu_pool_internal = None
 
 def get_cpu_pool():
@@ -191,7 +192,7 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(16)  # Hyper-scaled for 80k device fleet (<30s target)
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(8)  # Reduced to 8 to prevent IO/CPU death during burst
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -890,10 +891,19 @@ async def _fetch_from_cache_arrow(pcid, acid, start_time: datetime, end_time: da
             log.warning(f"⚠️ [CACHE] Failed to read local parquets in {dir_path}: {e}")
             return None
 
+    async def throttled_read(h):
+        async with GLOBAL_IO_SEM:
+            return await loop.run_in_executor(_executor, read_local_parquet, h)
+
+    # log.info(f"🔍 [CACHE] Fetching {len(target_hours)} hours from Local FS for {pcid}:{acid}...")
     loop = asyncio.get_event_loop()
-    tables = await asyncio.gather(*[
-        loop.run_in_executor(_executor, read_local_parquet, h) for h in target_hours
-    ])
+    t_io_start = time.monotonic()
+    tables = await asyncio.gather(*[throttled_read(h) for h in target_hours])
+    t_io_end = time.monotonic()
+    # log.info(f"📦 [CACHE] Read {len(target_hours)} Parquet files for {pcid}:{acid} in {t_io_end - t_io_start:.2f}s")
+    
+    # Filter target_hours to only include those where a table was actually found
+    found_slots = [target_hours[i] for i, t in enumerate(tables) if t is not None]
     
     final_tables = [t for t in tables if t is not None]
     if not final_tables:
@@ -925,7 +935,7 @@ async def _fetch_from_cache_arrow(pcid, acid, start_time: datetime, end_time: da
                 # If cast fails, just keep it and hope concat handles it (or it will fail gracefully later)
                 aligned_tables.append(t_clean)
 
-    return pa.concat_tables(aligned_tables), target_hours
+    return pa.concat_tables(aligned_tables), found_slots
 
 async def _fetch_from_cache(s3, pcid, acid, start_time: datetime, end_time: datetime):
     """Legacy/Simple: Returns (records, found_slots)"""
@@ -1048,35 +1058,54 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             all_hours.append(curr_h)
             curr_h += timedelta(hours=1)
             
-        missing_hours = [h for h in all_hours if h not in found_slots]
+        query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
+        missing_hours = sorted([h for h in all_hours if h not in found_slots])
         
         if not missing_hours:
             table_db = pa.table({k: [] for k in query_cols})
             log.info("📥 [HYBRID] No gaps found. TSDB fetch skipped.")
         else:
-            db_start = min(missing_hours)
-            db_end = end_time
-            query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
+            # 🏎️ RANGE OPTIMIZATION: Group contiguous missing hours into start/end pairs
+            ranges = []
+            if missing_hours:
+                start = missing_hours[0]
+                prev = missing_hours[0]
+                for i in range(1, len(missing_hours)):
+                    if missing_hours[i] == prev + timedelta(hours=1):
+                        prev = missing_hours[i]
+                    else:
+                        ranges.append((start, prev + timedelta(hours=1)))
+                        start = missing_hours[i]
+                        prev = missing_hours[i]
+                ranges.append((start, prev + timedelta(hours=1)))
             
-            log.info(f"📥 [HYBRID] Fetching gaps from TSDB: {db_start} to {db_end}")
+            log.info(f"📥 [HYBRID] Fetching {len(ranges)} gaps from TSDB (Total {len(missing_hours)} hours)...")
+            
+            # Construct multi-range query
+            where_clauses = []
+            params = [pcid, acid]
+            for i, (r_start, r_end) in enumerate(ranges):
+                p_idx = len(params) + 1
+                where_clauses.append(f"(metric_time >= ${p_idx} AND metric_time < ${p_idx+1})")
+                params.extend([r_start, r_end])
+            
+            range_sql = " OR ".join(where_clauses)
+            query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND ({range_sql})"
             
             async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time >= $3 AND metric_time < $4",
-                    pcid, acid, db_start, db_end
-                )
+                rows = await conn.fetch(query, *params)
                 
                 if rows:
                     table_db = pa.Table.from_pylist([dict(r) for r in rows])
-                    # 🎯 Filter out any points already in cache (prevents duplicates in overlap hours)
+                    # Deduplicate in case of overlap
                     cached_times = set(table_cached["metric_time"].to_pylist()) if table_cached.num_rows > 0 else set()
                     if cached_times:
                         mask = [t not in cached_times for t in table_db["metric_time"].to_pylist()]
                         table_db = table_db.filter(pa.array(mask))
-                    log.info(f"📥 [HYBRID] Fetched {table_db.num_rows:,} records from TSDB gaps")
+                    log.info(f"📥 [HYBRID] Fetched {table_db.num_rows:,} records from {len(ranges)} gaps")
                 else:
                     table_db = pa.table({k: [] for k in query_cols})
-                    log.info(f"📥 [HYBRID] TSDB gaps were EMPTY (Window: {db_start} to {db_end})")
+                    log.info(f"📥 [HYBRID] TSDB gaps were EMPTY")
 
         # 3. VECTORIZED STITCHING (Pure Arrow)
         if table_cached.num_rows > 0 and table_db.num_rows > 0:

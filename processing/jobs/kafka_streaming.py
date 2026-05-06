@@ -752,6 +752,7 @@ spark = SparkSession.builder \
     .config("spark.sql.shuffle.partitions", "12") \
     .config("spark.default.parallelism", "12") \
     .config("spark.sql.streaming.kafka.offsetFetch.timeoutMs", "120000") \
+    .config("spark.sql.legacy.timeParserPolicy", "LEGACY") \
     .getOrCreate()
 
 spark.sparkContext.setLogLevel("ERROR")
@@ -770,6 +771,7 @@ df = spark.readStream.format("kafka") \
     .option("kafka.metadata.max.age.ms", "5000") \
     .option("kafka.consumer.request.timeout.ms", "120000") \
     .option("kafka.default.api.timeout.ms", "120000") \
+    .option("maxOffsetsPerTrigger", 50000) \
     .load()
 
 # ---------------- PARSE ----------------
