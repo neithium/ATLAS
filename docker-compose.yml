@@ -59,6 +59,16 @@ services:
   #   - Cold Path: Daily Mega-Compaction to MinIO Parquet (Daily Archive)
   #   - Streaming: On-Demand Kafka Outgress for Hierarchical Exports
   # ===========================================================================
+  # ── OBSERVABILITY: JAEGER (Tracing UI) ──────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.47
+    container_name: atlas-tracing
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
+    networks:
+      - atlas-network
+
   atlas-ingestion:
     build:
       context: ./ingestion
@@ -68,6 +78,7 @@ services:
     ports:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
+      - "9001:9001"    # MinIO Console
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
@@ -79,15 +90,15 @@ services:
       - KAFKA_BOOTSTRAP=broker1:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=true 
+      - ENABLE_POLLER=false 
       - SCALE_SIZE=80000
+    networks:
+      - atlas-network
     volumes:
       - ./ingestion:/app
       - redis-data:/data/redis
       - minio-data:/data/minio
       - ingestion-tsdb-data:/data/timescale
-    networks:
-      - atlas-network
     deploy:
       resources:
         limits:
@@ -170,7 +181,7 @@ services:
 
       # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9062
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker1:9092,EXTERNAL://localhost:9064
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
@@ -189,7 +200,8 @@ services:
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
-      - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
+      - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
+      - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
@@ -200,9 +212,9 @@ services:
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
 
-    mem_limit: 2g
-    mem_reservation: 1g
-    restart: always
+    mem_limit: 8g
+    mem_reservation: 2g
+    restart: unless-stopped
     volumes:
       - kafka-data-1:/bitnami/kafka
     networks:
@@ -246,7 +258,7 @@ services:
 
       # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9065
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker2:9092,EXTERNAL://localhost:9067
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
@@ -263,7 +275,8 @@ services:
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
-      - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
+      - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
+      - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
@@ -320,7 +333,7 @@ services:
 
       # Listeners
       - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker3:9092,EXTERNAL://localhost:9068
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://broker3:9092,EXTERNAL://localhost:9070
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
@@ -337,7 +350,8 @@ services:
       # Performance
       - KAFKA_CFG_LOG_RETENTION_HOURS=168
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
-      - KAFKA_CFG_MESSAGE_MAX_BYTES=10485760
+      - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
+      - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
@@ -458,7 +472,8 @@ services:
       - ./processing/jobs:/app/jobs
       - ./schema:/app/schema:ro
       - spark-checkpoint:/app/checkpoint
-      - raw-telemetry:/app/data/raw
+      - ./ingestion/data/raw:/app/data/raw
+      - ./ingestion/data/archive:/app/data/archive
       - delta-refined:/app/data/processed
 
     networks:
