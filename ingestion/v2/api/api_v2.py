@@ -798,9 +798,9 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
                      for i in range(int((end_time - start_time).total_seconds() // 3600) + 1)]
     
     if pcid and acid:
-        cached_records, found_slots = await _fetch_from_cache_df(pcid, acid, start_time, end_time)
-        # Convert DF to list of dicts for legacy processing
-        cached_records = cached_records.to_dict('records') if not cached_records.empty else []
+        cached_table, found_slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
+        # Convert PyArrow Table to list of dicts for legacy processing
+        cached_records = cached_table.to_pylist() if cached_table and cached_table.num_rows > 0 else []
         if cached_records:
             log.info(f"🎯 [CACHE] Found {len(cached_records)} records in MinIO for {pcid}:{acid}")
             df_cached = pd.DataFrame(cached_records)
