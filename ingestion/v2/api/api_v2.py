@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sys
+import gc
 from pathlib import Path
 import time
 import uuid
@@ -33,7 +34,7 @@ from aiokafka import AIOKafkaProducer
 import redis.asyncio as redis
 import pyarrow as pa
 import pyarrow.compute as pc
-
+import pyarrow.parquet as pq
 
 # Config
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
@@ -756,7 +757,7 @@ async def _process_and_send(did, readings, DEVICES, kafka_prod):
     loop = asyncio.get_event_loop()
     
     # 🏎️ Parallel Serialization (Offloaded to separate CPU core)
-    payload_bytes = await loop.run_in_executor(_cpu_pool, _serialize_record, did, readings, meta)
+    payload_bytes = await loop.run_in_executor(get_cpu_pool(), _serialize_record, did, readings, meta)
     
     # 🛰️ Kafka Delivery
     await kafka_prod.send(KAFKA_TOPIC, payload_bytes, key=did.encode())
