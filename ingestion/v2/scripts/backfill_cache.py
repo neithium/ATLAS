@@ -5,15 +5,11 @@ import orjson
 import pandas as pd
 import asyncio
 from datetime import datetime, timedelta, timezone
-from minio import Minio
 import asyncpg
 import redis
 
 # Config
 TSDB_DSN = "postgres://postgres:postgres@127.0.0.1:5432/postgres"
-MINIO_HOST = "127.0.0.1:9000"
-MINIO_ACCESS = "minioadmin"
-MINIO_SECRET = "minioadmin"
 def get_registry_path():
     paths = [
         os.path.join(os.getcwd(), "device_configs.json"),
@@ -54,7 +50,6 @@ async def backfill(days=7, offset_hours=0):
         })
     REGISTRY_DF = pd.DataFrame(registry_list)
     
-    s3 = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
     rd = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
     pool = await asyncpg.create_pool(TSDB_DSN)
@@ -97,9 +92,6 @@ async def backfill(days=7, offset_hours=0):
                 cache_content = cache_buf.getvalue()
                 
                 cache_fname = f"{base_path}pcid={pcid}/acid={acid}/cache.parquet"
-                
-                # 🚀 Write to MinIO
-                s3.put_object("telemetry-cache", cache_fname, io.BytesIO(cache_content), len(cache_content))
                 
                 # 🚀 Mirror to Local FS (Crucial for Local-First API)
                 local_path = os.path.join("/app/telemetry-cache", cache_fname)

@@ -59,7 +59,10 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     consumer = AIOKafkaConsumer(
         topic,
         bootstrap_servers=bootstrap,
-        auto_offset_reset='latest'
+        auto_offset_reset='latest',
+        request_timeout_ms=60000,
+        session_timeout_ms=60000,
+        max_poll_interval_ms=300000
     )
     await consumer.start()
     
@@ -98,12 +101,17 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
                 print("❌ Timeout reached waiting for Kafka messages.")
                 break
                 
-            msg_batch = await consumer.getmany(timeout_ms=1000)
-            for tp, messages in msg_batch.items():
-                received_count += len(messages)
-            
-            if received_count > 0:
-                print(f"  📥 Received {received_count}/{total_expected} ({received_count/total_expected*100:.1f}%)", end="\r")
+            try:
+                msg_batch = await consumer.getmany(timeout_ms=2000)
+                for tp, messages in msg_batch.items():
+                    received_count += len(messages)
+                
+                if received_count > 0:
+                    print(f"  📥 Received {received_count}/{total_expected} ({received_count/total_expected*100:.1f}%)", end="\r")
+            except Exception as consumer_err:
+                # Silently retry on timeouts during heavy write load
+                await asyncio.sleep(1.0)
+                continue
     finally:
         await consumer.stop()
 

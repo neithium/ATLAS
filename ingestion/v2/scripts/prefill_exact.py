@@ -52,7 +52,7 @@ def prefill_exact():
     device_ids = list(devices.keys())
     
     now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    all_hours = [now - timedelta(hours=i) for i in range(192)] # 8 days
+    all_hours = [now - timedelta(hours=i) for i in range(168)] # 7 days
     
     # Split into 4 chunks
     chunks = [all_hours[i::4] for i in range(4)]
