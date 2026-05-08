@@ -100,7 +100,7 @@ minio server $DATA_DIR/minio --address ":9000" --console-address ":9001" > $DATA
 # Ensure the 80,000-device registry exists (Scaling from Zero)
 if [ ! -f "/app/device_configs.json" ]; then
     echo "🏝️ Registry missing! Auto-Bootstrapping 80,000-device hierarchical fleet..."
-    python3 v2/scripts/generate_registry.py --scale 80000
+    python3 v2/scripts/generate_registry.py --scale ${SCALE_SIZE:-80000}
 fi
 
 # ── 7. Start Unified Python Service ──────────────────────────────────

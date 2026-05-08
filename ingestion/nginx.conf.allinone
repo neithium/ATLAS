@@ -8,7 +8,12 @@ http {
         keepalive 64;
     }
 
-    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=3r/s;
+    # --- TOGGLE: BENCHMARK MODE (50 req/sec) ---
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=50r/s;
+    
+    # --- TOGGLE: PRODUCTION MODE (3 req/sec) ---
+    # limit_req_zone $binary_remote_addr zone=api_limit:10m rate=3r/s;
+
     limit_req_status 429;
 
     server {
