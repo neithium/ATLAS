@@ -482,8 +482,8 @@ services:
       --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
       /app/jobs/kafka_streaming.py &
 
-      echo '🚀 Starting Batch Job...' &&
-      spark-submit /app/jobs/batch_job.py &
+      # echo '🚀 Starting Batch Job...' &&
+      # spark-submit /app/jobs/batch_job.py &
 
       wait
       "

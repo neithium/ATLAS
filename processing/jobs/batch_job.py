@@ -1,191 +1,333 @@
+# # from pyspark.sql import SparkSession
+# # from pyspark.sql.functions import col, to_date, avg, count
+# # from pyspark.sql.types import *
+# # import time, json, os
+# # import logging
+
+# # # ---------------- LOGGING ----------------
+# # logging.basicConfig(
+# #     level=logging.INFO,
+# #     format="%(asctime)s [%(levelname)s] [%(name)s] - %(message)s"
+# # )
+# # logger = logging.getLogger("ATLAS")
+
+# # # ---------------- SPARK ----------------
+# # spark = SparkSession.builder.appName("Batch").getOrCreate()
+# # spark.sparkContext.setLogLevel("ERROR")
+
+# # logging.getLogger("py4j").setLevel(logging.ERROR)
+# # logging.getLogger("org.apache.kafka").setLevel(logging.ERROR)
+
+# # # ---------------- PATHS ----------------
+# # INPUT = "/app/data/raw"
+# # OUTPUT = "/app/data/processed/batch"
+# # METRICS = "/app/data/metrics/batch_metrics.json"
+
+# # os.makedirs("/app/data/metrics", exist_ok=True)
+
+# # logger.info("BATCH JOB STARTED")
+
+# # # ---------------- SCHEMA ----------------
+# # schema = StructType([
+# #     StructField("device_id", StringType()),
+# #     StructField("timestamp", StringType()),
+# #     StructField("cpu", IntegerType()),
+# #     StructField("mem", IntegerType())
+# # ])
+
+# # processed_days = set()
+# # run_id = 0
+
+# # def ensure_scalar(df, c):
+# #     dt = dict(df.dtypes).get(c)
+# #     if dt and dt.startswith("array"):
+# #         return df.withColumn(c, col(c).getItem(0))
+# #     return df
+
+# # # ---------------- LOOP ----------------
+# # while True:
+# #     try:
+# #         if not os.path.exists(INPUT) or not os.listdir(INPUT):
+# #             logger.debug("Waiting for data...")
+# #             time.sleep(5)
+# #             continue
+
+# #         df = spark.read.schema(schema).json(INPUT)
+
+# #         if df.rdd.isEmpty():
+# #             logger.debug("Empty dataframe")
+# #             time.sleep(5)
+# #             continue
+
+# #         for c in ["device_id", "timestamp", "cpu", "mem"]:
+# #             df = ensure_scalar(df, c)
+
+# #         df = df.select(
+# #             col("device_id").cast("string"),
+# #             col("timestamp").cast("string"),
+# #             col("cpu").cast("int"),
+# #             col("mem").cast("int")
+# #         ).where(col("device_id").isNotNull() & col("timestamp").isNotNull())
+
+# #         flat = df.select(
+# #             col("device_id"),
+# #             to_date("timestamp").alias("event_date"),
+# #             col("cpu"),
+# #             col("mem")
+# #         )
+
+# #         all_days = [r[0] for r in flat.select("event_date").distinct().collect()]
+# #         if not all_days:
+# #             time.sleep(5)
+# #             continue
+
+# #         max_day = max(all_days)
+
+# #         days_to_process = [d for d in all_days if d < max_day and d not in processed_days]
+
+# #         for day in sorted(days_to_process):
+# #             logger.info(f"Processing day={day}")
+# #             start = time.time()
+
+# #             daily = flat.filter(col("event_date") == day)
+
+# #             result = daily.groupBy("device_id", "event_date").agg(
+# #                 avg("cpu").alias("avg_cpu"),
+# #                 avg("mem").alias("avg_mem"),
+# #                 count("*").alias("num_records")
+# #             )
+
+# #             result.write.mode("append").parquet(OUTPUT)
+
+# #             duration = time.time() - start
+# #             rows = daily.count()
+
+# #             metrics_data = {
+# #                 "run_id": run_id,
+# #                 "event_date": str(day),
+# #                 "rows": rows,
+# #                 "duration": duration,
+# #                 "throughput": rows / duration if duration else 0
+# #             }
+
+# #             with open(METRICS, "a") as f:
+# #                 f.write(json.dumps(metrics_data) + "\n")
+
+# #             logger.info(f"Batch completed | {metrics_data}")
+
+# #             processed_days.add(day)
+# #             run_id += 1
+
+# #         time.sleep(60)
+
+# #     except Exception:
+# #         logger.exception("Batch failed")
+# #         time.sleep(5)
 # from pyspark.sql import SparkSession
-# from pyspark.sql.functions import col, to_date, avg, count
-# from pyspark.sql.types import *
-# import time, json, os
-# import logging
+# from pyspark.sql.functions import *
+# from pyspark.sql.window import Window
+# import time
 
-# # ---------------- LOGGING ----------------
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s [%(levelname)s] [%(name)s] - %(message)s"
-# )
-# logger = logging.getLogger("ATLAS")
+# spark = SparkSession.builder \
+#     .appName("Batch") \
+#     .master("local[6]") \
+#     .config("spark.sql.shuffle.partitions", "6") \
+#     .config("spark.default.parallelism", "6") \
+#     .getOrCreate()
 
-# # ---------------- SPARK ----------------
-# spark = SparkSession.builder.appName("Batch").getOrCreate()
-# spark.sparkContext.setLogLevel("ERROR")
-
-# logging.getLogger("py4j").setLevel(logging.ERROR)
-# logging.getLogger("org.apache.kafka").setLevel(logging.ERROR)
-
-# # ---------------- PATHS ----------------
 # INPUT = "/app/data/raw"
 # OUTPUT = "/app/data/processed/batch"
-# METRICS = "/app/data/metrics/batch_metrics.json"
 
-# os.makedirs("/app/data/metrics", exist_ok=True)
+# print("⏳ Waiting 24 minutes...")
+# time.sleep(1440)
 
-# logger.info("BATCH JOB STARTED")
+# df = spark.read.json(INPUT)
 
-# # ---------------- SCHEMA ----------------
-# schema = StructType([
-#     StructField("device_id", StringType()),
-#     StructField("timestamp", StringType()),
-#     StructField("cpu", IntegerType()),
-#     StructField("mem", IntegerType())
-# ])
+# flat = df.withColumn("p", explode("data.PowerDetail"))
 
-# processed_days = set()
-# run_id = 0
+# windowSpec = Window.partitionBy("device_id")
 
-# def ensure_scalar(df, c):
-#     dt = dict(df.dtypes).get(c)
-#     if dt and dt.startswith("array"):
-#         return df.withColumn(c, col(c).getItem(0))
-#     return df
+# result = flat.select(
+#     "report_id",
+#     "device_id",
+#     "application_customer_id",
+#     "platform_customer_id",
+#     "status",
+#     "report_type",
+#     "error_reason",
+#     col("p.Average").alias("MetricValue"),
+#     "model",
+#     "tags",
+#     "location_state",
+#     "location_country",
+#     "processor_vendor",
+#     "server_generation",
+#     "location_id",
+#     "location_name",
+#     "location_city",
+#     "server_name",
+#     lit("power").alias("metric_id"),
+#     lit("cpu").alias("cpu_inventory"),
+#     lit("memory").alias("memory_inventory"),
+#     lit(0).alias("pcie_devices_count"),
+#     col("inventory_data.socket_count").alias("socket_count"),
+#     avg("p.Average").over(windowSpec).alias("avg_metric_value"),
+#     max("p.Average").over(windowSpec).alias("max_metric_value"),
+#     min("p.Average").over(windowSpec).alias("min_metric_value"),
+#     col("p.Time").alias("metric_time"),
+#     unix_timestamp("p.Time").cast("double").alias("datetime"),
+#     (unix_timestamp("p.Time")+60).cast("double").alias("timeRangeEnd"),
+#     col("p.AmbTemp").alias("amb_temp"),
+#     unix_timestamp().cast("double").alias("Insertiontime"),
+#     lit(0.5).alias("co2_factor"),
+#     lit(1.2).alias("energy_cost_factor"),
+#     col("p.Time").alias("max_metric_time"),
+#     to_date("p.Time").cast("string").alias("location_date"),
+#     to_date("p.Time").cast("string").alias("inventory_date")
+# )
 
-# # ---------------- LOOP ----------------
-# while True:
-#     try:
-#         if not os.path.exists(INPUT) or not os.listdir(INPUT):
-#             logger.debug("Waiting for data...")
-#             time.sleep(5)
-#             continue
+# result.coalesce(1).write.mode("overwrite").parquet(OUTPUT)
 
-#         df = spark.read.schema(schema).json(INPUT)
-
-#         if df.rdd.isEmpty():
-#             logger.debug("Empty dataframe")
-#             time.sleep(5)
-#             continue
-
-#         for c in ["device_id", "timestamp", "cpu", "mem"]:
-#             df = ensure_scalar(df, c)
-
-#         df = df.select(
-#             col("device_id").cast("string"),
-#             col("timestamp").cast("string"),
-#             col("cpu").cast("int"),
-#             col("mem").cast("int")
-#         ).where(col("device_id").isNotNull() & col("timestamp").isNotNull())
-
-#         flat = df.select(
-#             col("device_id"),
-#             to_date("timestamp").alias("event_date"),
-#             col("cpu"),
-#             col("mem")
-#         )
-
-#         all_days = [r[0] for r in flat.select("event_date").distinct().collect()]
-#         if not all_days:
-#             time.sleep(5)
-#             continue
-
-#         max_day = max(all_days)
-
-#         days_to_process = [d for d in all_days if d < max_day and d not in processed_days]
-
-#         for day in sorted(days_to_process):
-#             logger.info(f"Processing day={day}")
-#             start = time.time()
-
-#             daily = flat.filter(col("event_date") == day)
-
-#             result = daily.groupBy("device_id", "event_date").agg(
-#                 avg("cpu").alias("avg_cpu"),
-#                 avg("mem").alias("avg_mem"),
-#                 count("*").alias("num_records")
-#             )
-
-#             result.write.mode("append").parquet(OUTPUT)
-
-#             duration = time.time() - start
-#             rows = daily.count()
-
-#             metrics_data = {
-#                 "run_id": run_id,
-#                 "event_date": str(day),
-#                 "rows": rows,
-#                 "duration": duration,
-#                 "throughput": rows / duration if duration else 0
-#             }
-
-#             with open(METRICS, "a") as f:
-#                 f.write(json.dumps(metrics_data) + "\n")
-
-#             logger.info(f"Batch completed | {metrics_data}")
-
-#             processed_days.add(day)
-#             run_id += 1
-
-#         time.sleep(60)
-
-#     except Exception:
-#         logger.exception("Batch failed")
-#         time.sleep(5)
+# print("✅ Batch complete")
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from pyspark.sql.window import Window
-import time
+from pyspark.sql.functions import col, lit
+from pyspark.sql.types import *
 
-spark = SparkSession.builder \
-    .appName("Batch") \
-    .master("local[6]") \
-    .config("spark.sql.shuffle.partitions", "6") \
-    .config("spark.default.parallelism", "6") \
-    .getOrCreate()
+# ✅ INPUT SCHEMA (FIXED)
+input_schema = StructType([
+    StructField("data", StructType([
+        StructField("Id", StringType(), True),
+        StructField("Average", DoubleType(), True),
+        StructField("PowerDetail", ArrayType(StructType([
+            StructField("Time", StringType(), True),
+            StructField("CpuUtil", LongType(), True)
+        ])), True)
+    ]), True),
 
-INPUT = "/app/data/raw"
-OUTPUT = "/app/data/processed/batch"
+    StructField("model", StringType(), True),
+    StructField("tags", StringType(), True),
+    StructField("status", BooleanType(), True),
+    StructField("device_id", StringType(), True),
+    StructField("report_id", StringType(), True),
+    StructField("created_at", StringType(), True),
 
-print("⏳ Waiting 24 minutes...")
-time.sleep(1440)
+    StructField("location_id", StringType(), True),
+    StructField("report_type", StringType(), True),
+    StructField("server_name", StringType(), True),
+    StructField("error_reason", StringType(), True),
 
-df = spark.read.json(INPUT)
+    StructField("location_city", StringType(), True),
+    StructField("location_name", StringType(), True),
+    StructField("location_state", StringType(), True),
+    StructField("location_country", StringType(), True),
 
-flat = df.withColumn("p", explode("data.PowerDetail"))
+    StructField("processor_vendor", StringType(), True),
+    StructField("server_generation", StringType(), True),
 
-windowSpec = Window.partitionBy("device_id")
+    StructField("platform_customer_id", StringType(), True),
+    StructField("application_customer_id", StringType(), True),
 
-result = flat.select(
-    "report_id",
-    "device_id",
-    "application_customer_id",
-    "platform_customer_id",
-    "status",
-    "report_type",
-    "error_reason",
-    col("p.Average").alias("MetricValue"),
-    "model",
-    "tags",
-    "location_state",
-    "location_country",
-    "processor_vendor",
-    "server_generation",
-    "location_id",
-    "location_name",
-    "location_city",
-    "server_name",
-    lit("power").alias("metric_id"),
-    lit("cpu").alias("cpu_inventory"),
-    lit("memory").alias("memory_inventory"),
-    lit(0).alias("pcie_devices_count"),
-    col("inventory_data.socket_count").alias("socket_count"),
-    avg("p.Average").over(windowSpec).alias("avg_metric_value"),
-    max("p.Average").over(windowSpec).alias("max_metric_value"),
-    min("p.Average").over(windowSpec).alias("min_metric_value"),
-    col("p.Time").alias("metric_time"),
-    unix_timestamp("p.Time").cast("double").alias("datetime"),
-    (unix_timestamp("p.Time")+60).cast("double").alias("timeRangeEnd"),
-    col("p.AmbTemp").alias("amb_temp"),
-    unix_timestamp().cast("double").alias("Insertiontime"),
-    lit(0.5).alias("co2_factor"),
-    lit(1.2).alias("energy_cost_factor"),
-    col("p.Time").alias("max_metric_time"),
-    to_date("p.Time").cast("string").alias("location_date"),
-    to_date("p.Time").cast("string").alias("inventory_date")
-)
+    StructField("metric_type", StringType(), True),
 
-result.coalesce(1).write.mode("overwrite").parquet(OUTPUT)
+    StructField("inventory_data", StructType([
+        StructField("cpu_count", IntegerType(), True),
+        StructField("socket_count", LongType(), True)
+    ]), True)
+])
 
-print("✅ Batch complete")
+
+def create_spark():
+    return SparkSession.builder \
+        .appName("Batch-Pipeline") \
+        .master("local[6]") \
+        .config("spark.sql.shuffle.partitions", "6") \
+        .config("spark.default.parallelism", "6") \
+        .config("spark.driver.memory", "3g") \
+        .config("spark.hadoop.fs.s3a.endpoint", "http://ingestion:9000") \
+        .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
+        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
+        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .getOrCreate()
+
+
+def run_batch():
+    spark = create_spark()
+    spark.sparkContext.setLogLevel("ERROR")
+
+    print("🚀 Starting Batch Job...")
+
+    # ✅ READ ONLY LATEST PARTITION (VERY IMPORTANT)
+    df = spark.read.schema(input_schema) \
+        .parquet("s3a://telemetry-raw/production/year=2026/month=05/day=03/")
+
+    print("✅ Data loaded")
+
+    # ✅ CONTROL PARALLELISM (IMPORTANT FOR STABILITY)
+    df = df.repartition(6)
+
+    # ✅ TRANSFORM
+    df_out = df.select(
+        col("report_id"),
+        col("device_id"),
+        col("application_customer_id"),
+        col("platform_customer_id"),
+        col("status"),
+        col("report_type"),
+        col("error_reason"),
+
+        col("data.Average").alias("MetricValue"),
+
+        col("model"),
+        col("tags"),
+        col("location_state"),
+        col("location_country"),
+        col("processor_vendor"),
+        col("server_generation"),
+        col("location_id"),
+        col("location_name"),
+        col("location_city"),
+        col("server_name"),
+
+        lit(None).cast("string").alias("metric_id"),
+
+        lit(None).cast("string").alias("cpu_inventory"),
+        lit(None).cast("string").alias("memory_inventory"),
+
+        lit(None).cast("int").alias("pcie_devices_count"),
+        col("inventory_data.socket_count").alias("socket_count"),
+
+        col("data.Average").alias("avg_metric_value"),
+        lit(None).cast("double").alias("max_metric_value"),
+        lit(None).cast("double").alias("min_metric_value"),
+
+        col("created_at").alias("metric_time"),
+
+        lit(None).cast("double").alias("datetime"),
+        lit(None).cast("double").alias("timeRangeEnd"),
+
+        lit(None).cast("double").alias("amb_temp"),
+        lit(None).cast("double").alias("Insertiontime"),
+        lit(None).cast("double").alias("co2_factor"),
+        lit(None).cast("double").alias("energy_cost_factor"),
+
+        lit(None).cast("string").alias("max_metric_time"),
+        lit(None).cast("string").alias("location_date"),
+        lit(None).cast("string").alias("inventory_date")
+    )
+
+    # ✅ WRITE OUTPUT (CONTROL FILE COUNT)
+    # output_path = "/opt/spark-data/processed/batch/"
+    output_path = "/app/data/processed/batch/"
+
+    df_out.coalesce(2).write \
+        .mode("overwrite") \
+        .parquet(output_path)
+
+    print(f"✅ Batch Output Written to {output_path}")
+
+    spark.stop()
+
+
+if __name__ == "__main__":
+    run_batch()
