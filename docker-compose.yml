@@ -23,10 +23,6 @@
 #
 # =============================================================================
 
-networks:
-  atlas-network:
-    driver: bridge
-    name: atlas-network
 
 volumes:
   kafka-data:
@@ -79,6 +75,7 @@ services:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
       - "9001:9001"    # MinIO Console
+      - "8081:8081"    # TSDB UI (PostWeb)
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
@@ -882,3 +879,8 @@ services:
           --devices $$DEVICE_COUNT \
           --rate $$RECORDS_PER_SECOND
       "
+
+networks:
+  atlas-network:
+    driver: bridge
+    name: atlas-network

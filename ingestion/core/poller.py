@@ -44,9 +44,7 @@ HOT_PATH_COLUMNS = [
     "metric_time", "device_id", "platform_customer_id", "application_customer_id",
     "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
     "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts",
-    "server_name", "model", "processor_vendor", "server_generation",
-    "report_type", "metric_type", "status", "error_reason", "tags",
-    "location_id", "location_city", "location_state", "location_country", "location_name"
+    "status", "error_reason"
 ]
 
 # Scheduler State
@@ -137,11 +135,7 @@ async def _push_to_tsdb_hot(batch_results):
                 250, int(reading.get('CpuUtil', 50)), int(reading.get('CpuWatts', 200)), 
                 int(reading.get('GpuWatts', 50)), int(reading.get('Minimum', 250)), 
                 int(reading.get('Peak', 400)), 
-                meta.get("server_name"), meta.get("model"), meta.get("processor_vendor"),
-                meta.get("server_generation"), "telemetry_live", "power_metrics", True, "", 
-                "production,critical", meta.get("location_id"),
-                meta.get("location_city"), meta.get("location_state"), 
-                meta.get("location_country"), meta.get("location_name")
+                True, ""
             ])
 
     if records and ENABLE_TSDB_PUSH:

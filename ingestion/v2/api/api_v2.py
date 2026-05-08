@@ -141,9 +141,7 @@ DB_COLUMNS = [
     "metric_time", "device_id", "platform_customer_id", "application_customer_id",
     "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
     "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts",
-    "server_name", "model", "processor_vendor", "server_generation",
-    "report_type", "metric_type", "status", "error_reason", "tags",
-    "location_id", "location_city", "location_state", "location_country", "location_name"
+    "status", "error_reason"
 ]
 
 # Metric-Only Columns (Strips redundant metadata for lean exports)
@@ -185,7 +183,10 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(8)  # Reduced to 8 to prevent IO/CPU death during burst
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(3)  # 🛡️ Reduced to 3 to strictly bound RAM usage on 5+ platforms
+
+# Tier 3: CPU Worker Guard (Ensures all concurrent exports share the 12 CPU cores fairly)
+GLOBAL_WORKER_SEM = asyncio.Semaphore(12)
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -233,20 +234,8 @@ def _build_full_record(r, did: str, meta: dict) -> dict:
             "gpu_watts": r[11],
             "min_watts": r[12],
             "peak_watts": r[13],
-            "server_name": r[14],
-            "model": r[15],
-            "processor_vendor": r[16],
-            "server_generation": r[17],
-            "report_type": r[18],
-            "metric_type": r[19],
-            "status": r[20],
-            "error_reason": r[21],
-            "tags": r[22],
-            "location_id": r[23],
-            "location_city": r[24],
-            "location_state": r[25],
-            "location_country": r[26],
-            "location_name": r[27]
+            "status": r[14],
+            "error_reason": r[15]
         }
     
     # Use unified schema builder
@@ -297,9 +286,8 @@ async def hourly_cache_job():
             df_raw = pd.DataFrame(records, columns=DB_COLUMNS)
             
             # 2. Vectorized Merge with Registry for Customer Info
-            # This handles PCID/ACID mapping at C-speed via pandas merge
             df = df_raw.merge(
-                REGISTRY_DF[['device_id', 'platform_customer_id', 'application_customer_id', 'server_name', 'model']], 
+                REGISTRY_DF[['device_id', 'platform_customer_id', 'application_customer_id']], 
                 on="device_id", 
                 how="left",
                 suffixes=('', '_reg')
@@ -308,8 +296,6 @@ async def hourly_cache_job():
             # Use registry values if DB values are missing/null (fallback)
             df['platform_customer_id'] = df['platform_customer_id'].fillna(df['platform_customer_id_reg'])
             df['application_customer_id'] = df['application_customer_id'].fillna(df['application_customer_id_reg'])
-            df['server_name'] = df['server_name'].fillna(df['server_name_reg'])
-            df['model'] = df['model'].fillna(df['model_reg'])
             
             # Select relevant columns for cache (Raw Metrics + Keys)
             final_cols = [
@@ -544,12 +530,12 @@ async def get_kafka():
             _kafka = AIOKafkaProducer(
                 bootstrap_servers=KAFKA_BOOTSTRAP,
                 value_serializer=lambda v: v if isinstance(v, bytes) else orjson.dumps(v),
-                compression_type="snappy",     # 📦 Snappy for massive bandwidth reduction
-                linger_ms=5,                   # ⬇️ Reduced from 25ms to 5ms for lower local latency
-                max_batch_size=10485760,       # ⬆️ Increased to 10MB to match large telemetry exports
-                max_request_size=10485760,      # ⬆️ Increased to 10MB
-                request_timeout_ms=300000,     # ⬆️ 5-minute timeout for heavy flushes
-                acks=1                         # ⚖️ Balanced - Wait for leader ack to prevent socket flooding
+                compression_type="snappy",     # 📦 Restored to reduce Redpanda I/O bottleneck
+                linger_ms=5,                   # ⬇️ Balanced for throughput
+                max_batch_size=10485760,       # 10MB
+                max_request_size=10485760,     # 10MB
+                request_timeout_ms=300000,
+                acks=1
             )
             # Startup handled in main.py
             log.info(f"🛰️  [KAFKA] Production Producer Initialized (AIOKafka + Snappy)")
@@ -691,10 +677,8 @@ def process_device_batch_hydration(
     
     power_detail_structs = pa.StructArray.from_arrays(struct_arrays, names=struct_names)
     
-    # 🏎️ CRITICAL PERFORMANCE HACK: One-shot conversion to Python list
-    # Converting the whole array once is MUCH faster than 100 separate slices/conversions
-    all_power_details = power_detail_structs.to_pylist()
-    
+    # (Removed to_pylist() on full table to save memory and avoid redundancy)
+
     # 🏎️ STEP 2: Vectorized Aggregates for the WHOLE BATCH
     # Instead of calling mean/max/min 100 times per batch, we do it once
     agg_table = sorted_table.group_by("device_id").aggregate([
@@ -720,11 +704,14 @@ def process_device_batch_hydration(
         while end_idx < n and dids[end_idx] == current_did:
             end_idx += 1
         
-        # 🏎️ Slice the Python list (almost zero cost)
         limit = min(end_idx - start_idx, count)
-        power_detail_list = all_power_details[start_idx : start_idx + limit]
         
-        # 🏎️ Lookup pre-calculated aggregates (O(1))
+        # 🏎️ PyArrow C++ slicing and dict conversion (Ultra-fast and memory efficient)
+        slice_struct = power_detail_structs.slice(start_idx, limit)
+        power_detail_list = slice_struct.to_pylist()
+
+        
+        # 🏎️ Lookup pre-calculated aggregates
         avg_v, max_v, min_v = agg_map.get(current_did, (0.0, 0.0, 0.0))
         avg_v = avg_v or 0.0
         max_v = max_v or 0.0
@@ -1112,60 +1099,31 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             table_cached, found_slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
 
         # 2. HOT PATH (TimescaleDB)
-        log.info(f"🔌 [HYBRID] Fetching DB tail and merging with {table_cached.num_rows:,} cache records...")
-        pool = await get_db_pool()
-        # 2. TSDB GAP FETCH (Identify and fill missing hours)
-        all_hours = []
-        curr_h = start_time.replace(minute=0, second=0, microsecond=0)
-        while curr_h <= end_time:
-            all_hours.append(curr_h)
-            curr_h += timedelta(hours=1)
-            
-        query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
-        missing_hours = sorted([h for h in all_hours if h not in found_slots])
+        # Use the latest timestamp from cache to find the starting point for the DB tail fetch
+        db_start_time = start_time
+        if table_cached.num_rows > 0:
+            # Get the maximum timestamp from the cache (vectorized)
+            db_start_time = pc.max(table_cached["metric_time"]).as_py()
+            log.info(f"🔌 [HYBRID] Cache ends at {db_start_time}. Fetching DB tail from there...")
         
-        if not missing_hours:
-            table_db = pa.table({k: [] for k in query_cols})
-            log.info("📥 [HYBRID] No gaps found. TSDB fetch skipped.")
-        else:
-            # 🏎️ RANGE OPTIMIZATION: Group contiguous missing hours into start/end pairs
-            ranges = []
-            if missing_hours:
-                start = missing_hours[0]
-                prev = missing_hours[0]
-                for i in range(1, len(missing_hours)):
-                    if missing_hours[i] == prev + timedelta(hours=1):
-                        prev = missing_hours[i]
-                    else:
-                        ranges.append((start, prev + timedelta(hours=1)))
-                        start = missing_hours[i]
-                        prev = missing_hours[i]
-                ranges.append((start, prev + timedelta(hours=1)))
+        pool = await get_db_pool()
+        query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
+        
+        log.info(f"📥 [HYBRID] Fetching DB range from {db_start_time} to {end_time}...")
+        query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4"
+        
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, pcid, acid, db_start_time, end_time)
             
-            log.info(f"📥 [HYBRID] Fetching DB range from {start_time} to {end_time}...")
-            
-            query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time >= $3 AND metric_time < $4"
-            
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(query, pcid, acid, start_time, end_time)
+            if rows:
+                def convert_to_table(r_list):
+                    return pa.Table.from_pylist([dict(r) for r in r_list])
                 
-                if rows:
-                    # 🏎️ Offload to ThreadPool to avoid blocking the Main Event Loop
-                    def convert_to_table(r_list):
-                        return pa.Table.from_pylist([dict(r) for r in r_list])
-                    
-                    table_db = await loop.run_in_executor(_executor, convert_to_table, rows)
-                    
-                    # Deduplicate in case of overlap
-                    cached_times = set(table_cached["metric_time"].to_pylist()) if table_cached.num_rows > 0 else set()
-                    if cached_times:
-                        # 🏎️ Vectorized filtering
-                        mask = pc.invert(pc.is_in(table_db["metric_time"], value_set=pa.array(list(cached_times))))
-                        table_db = table_db.filter(mask)
-                    log.info(f"📥 [HYBRID] Fetched {table_db.num_rows:,} records (filtered to {len(missing_hours)} hours)")
-                else:
-                    table_db = pa.table({k: [] for k in query_cols})
-                    log.info(f"📥 [HYBRID] TSDB range was EMPTY")
+                table_db = await loop.run_in_executor(_executor, convert_to_table, rows)
+                log.info(f"📥 [HYBRID] Fetched {table_db.num_rows:,} fresh records from TSDB")
+            else:
+                table_db = pa.table({k: [] for k in query_cols})
+                log.info(f"📥 [HYBRID] TSDB range was EMPTY")
 
         # 3. VECTORIZED STITCHING (Pure Arrow)
         if table_cached.num_rows > 0 and table_db.num_rows > 0:
@@ -1201,7 +1159,7 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
 
         # ── HYBRID OPTIMIZATION: ARROW HYDRATION ────────────────────────────
         unique_dids = pc.unique(full_table["device_id"]).to_pylist()
-        DEVICE_BATCH_SIZE = 100  # 🎯 Reduced to avoid IPC/Pickle bottlenecks
+        DEVICE_BATCH_SIZE = 200  # 🎯 Increased to reduce IPC overhead
         cpu_pool = get_cpu_pool()
         
         async def process_batch(batch_dids):
@@ -1222,22 +1180,20 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
                 batch_table, batch_meta, count
             )
             
-            # Send results to Kafka
+            # Send results to Kafka (Batched & Non-Blocking)
             if results:
-                # 🏎️ Vectorized Send (Concurrent)
-                tasks = [kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()) for did, payload in results]
-                await asyncio.gather(*tasks)
+                for did, payload in results:
+                    await kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode())
                 return len(results)
             return 0
 
         # 2. Stream Batches (Offloaded to CPU Pool)
         log.info(f"🌊 [ARROW] Delivering {len(unique_dids)} devices via parallel hydration...")
-        DEVICE_BATCH_SIZE = 50
-        MAX_CONCURRENT_BATCHES = 4
-        sem = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
+        DEVICE_BATCH_SIZE = 100  # 🎯 Small batches to distribute work across all cores
+        MAX_CONCURRENT_BATCHES = 12  # 🎯 Maximize 12-core utilization
         
         async def throttled_batch(batch_dids):
-            async with sem:
+            async with GLOBAL_WORKER_SEM:
                 return await process_batch(batch_dids)
         
         # 🏎️ Run batches with concurrency control
