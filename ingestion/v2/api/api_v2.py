@@ -183,10 +183,10 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(3)  # 🛡️ Reduced to 3 to strictly bound RAM usage on 5+ platforms
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(3)  # 🛡️ Reduced to 4 to strictly bound RAM usage on 5+ platforms
 
-# Tier 3: CPU Worker Guard (Ensures all concurrent exports share the 12 CPU cores fairly)
-GLOBAL_WORKER_SEM = asyncio.Semaphore(12)
+# Tier 3: CPU Worker Guard (Ensures all concurrent exports share the cores fairly)
+GLOBAL_WORKER_SEM = asyncio.Semaphore(10)
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -693,11 +693,46 @@ def process_device_batch_hydration(
         for r in agg_table.to_pylist()
     }
     
-    # 🏎️ STEP 3: Block Processing per Device
+    # 🏎️ STEP 3: Block Processing per Device with Object Reuse
     n = len(dids)
     if n == 0: return []
     
     start_idx = 0
+    # Pre-allocate a single payload skeleton to reuse across all devices in this batch
+    # This avoids millions of dictionary allocations
+    payload = {
+        "device_id": "",
+        "report_id": "",
+        "created_at": "",
+        "status": True,
+        "model": "",
+        "tags": "",
+        "report_type": "telemetry_live",
+        "server_name": "",
+        "error_reason": "",
+        "location_id": "",
+        "location_city": "",
+        "location_name": "",
+        "location_state": "",
+        "location_country": "",
+        "processor_vendor": "",
+        "server_generation": "",
+        "platform_customer_id": "",
+        "application_customer_id": "",
+        "metric_type": "power_metrics",
+        "data": {
+            "Id": "",
+            "Average": 0.0,
+            "Maximum": 0.0,
+            "Minimum": 0.0,
+            "Name": "",
+            "PowerDetail": []
+        },
+        "inventory_data": {}
+    }
+    
+    data_block = payload["data"]
+
     while start_idx < n:
         current_did = dids[start_idx]
         end_idx = start_idx + 1
@@ -706,57 +741,46 @@ def process_device_batch_hydration(
         
         limit = min(end_idx - start_idx, count)
         
-        # 🏎️ PyArrow C++ slicing and dict conversion (Ultra-fast and memory efficient)
+        # 🏎️ PyArrow C++ slicing (zero-copy)
         slice_struct = power_detail_structs.slice(start_idx, limit)
         power_detail_list = slice_struct.to_pylist()
-
         
         # 🏎️ Lookup pre-calculated aggregates
         avg_v, max_v, min_v = agg_map.get(current_did, (0.0, 0.0, 0.0))
-        avg_v = avg_v or 0.0
-        max_v = max_v or 0.0
-        min_v = min_v or 0.0
         
-        # 🏎️ Final Assembly (Optimized dict creation)
+        # 🏎️ Update reused payload dict (No new allocation!)
         meta = devices_meta.get(current_did, {})
-        inventory = meta.get("inventory_data", {
-            "cpu_count": 2, "socket_count": 2,
-            "cpu_inventory": [{"model": "Intel Xeon Platinum 8380", "speed": 2300, "total_cores": 40}],
-            "memory_inventory": [{"memory_size": 32, "operating_freq": 3200, "memory_device_type": "DDR4"}]
-        })
         
-        payload = {
-            "device_id": current_did,
-            "report_id": os.urandom(16).hex(),
-            "created_at": power_detail_list[-1]["Time"] if power_detail_list else str(datetime.now(timezone.utc)),
-            "status": True,
-            "model": meta.get("model", "PowerEdge R750"),
-            "tags": meta.get("tags", "production,critical"),
-            "report_type": "telemetry_live",
-            "server_name": meta.get("server_name", "UNKNOWN"),
-            "error_reason": "",
-            "location_id": meta.get("location_id", "LOC-01"),
-            "location_city": meta.get("location_city", "UNKNOWN"),
-            "location_name": meta.get("location_name", "Atlas-DC-Default"),
-            "location_state": meta.get("location_state", "UNKNOWN"),
-            "location_country": meta.get("location_country", "UNKNOWN"),
-            "processor_vendor": meta.get("processor_vendor", "Intel"),
-            "server_generation": meta.get("server_generation", "15G"),
-            "platform_customer_id": meta.get("platform_customer_id", "UNKNOWN"),
-            "application_customer_id": meta.get("application_customer_id", "UNKNOWN"),
-            "metric_type": "power_metrics",
-            "data": {
-                "Id": current_did,
-                "Average": float(round(avg_v, 2)),
-                "Maximum": float(round(max_v, 2)),
-                "Minimum": float(round(min_v, 2)),
-                "Name": meta.get("server_name", "UNKNOWN"),
-                "PowerDetail": power_detail_list
-            },
-            "inventory_data": inventory
-        }
+        # 🏎️ Serialization Optimization: Use orjson.Fragment
+        # This converts telemetry to bytes once and avoids re-walking the tree later
+        pd_fragment = orjson.Fragment(orjson.dumps(power_detail_list))
+        
+        payload["device_id"] = current_did
+        payload["report_id"] = os.urandom(8).hex() 
+        payload["created_at"] = power_detail_list[-1]["Time"] if power_detail_list else ""
+        payload["model"] = meta.get("model", "PowerEdge R750")
+        payload["tags"] = meta.get("tags", "production,critical")
+        payload["server_name"] = meta.get("server_name", "UNKNOWN")
+        payload["location_id"] = meta.get("location_id", "LOC-01")
+        payload["location_city"] = meta.get("location_city", "UNKNOWN")
+        payload["location_name"] = meta.get("location_name", "Atlas-DC-Default")
+        payload["location_state"] = meta.get("location_state", "UNKNOWN")
+        payload["location_country"] = meta.get("location_country", "UNKNOWN")
+        payload["processor_vendor"] = meta.get("processor_vendor", "Intel")
+        payload["server_generation"] = meta.get("server_generation", "15G")
+        payload["platform_customer_id"] = meta.get("platform_customer_id", "UNKNOWN")
+        payload["application_customer_id"] = meta.get("application_customer_id", "UNKNOWN")
+        payload["inventory_data"] = meta.get("inventory_data", {})
+        
+        data_block["Id"] = current_did
+        data_block["Average"] = float(round(avg_v or 0.0, 2))
+        data_block["Maximum"] = float(round(max_v or 0.0, 2))
+        data_block["Minimum"] = float(round(min_v or 0.0, 2))
+        data_block["Name"] = payload["server_name"]
+        data_block["PowerDetail"] = pd_fragment # 🚀 STITCHING: Zero-copy injection
         
         results.append((current_did, orjson.dumps(payload)))
+        
         start_idx = end_idx
         
     return results

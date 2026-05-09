@@ -132,7 +132,7 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     print("=" * 60)
     
     # Save results to file
-    with open("/app/v2/scripts/benchmark_results.txt", "a") as f:
+    with open("/app/v2/scripts/benchmark_latest.txt", "a") as f:
         f.write(f"\n============================================================\n")
         f.write(f"E2E MULTI-PLATFORM BENCHMARK\n")
         f.write(f"Platforms: {len(targets)} | Total Devices: {total_expected}\n")
