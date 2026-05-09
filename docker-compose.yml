@@ -78,7 +78,7 @@ services:
     ports:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
-      - "9001:9001"    # MinIO Console
+      - "9010:9001"    # MinIO Console
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
