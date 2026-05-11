@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 import time
@@ -186,7 +187,7 @@ HIERARCHY_LOCK = asyncio.Lock()
 GLOBAL_THROTTLE_SEM = asyncio.Semaphore(3)  # 🛡️ Reduced to 4 to strictly bound RAM usage on 5+ platforms
 
 # Tier 3: CPU Worker Guard (Ensures all concurrent exports share the cores fairly)
-GLOBAL_WORKER_SEM = asyncio.Semaphore(10)
+GLOBAL_WORKER_SEM = asyncio.Semaphore(8)
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -445,7 +446,48 @@ async def daily_archival_job():
 
         log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
 
-        log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
+        # 🚀 3. SLIDING WINDOW CLEANUP (Local FS + Redis)
+        # We prune everything older than the 'start' (7 days ago)
+        log.info(f"🧹 [ARCHIVE] Starting Cache Pruning (Retention Threshold: {start.strftime('%Y-%m-%d')})...")
+        
+        CACHE_BASE = "/app/telemetry-cache"
+        if os.path.exists(CACHE_BASE):
+            deleted_dirs = 0
+            # Scan top-level date directories: date=YYYY-MM-DD
+            for date_dir in os.listdir(CACHE_BASE):
+                if not date_dir.startswith("date="): continue
+                
+                try:
+                    dir_date_str = date_dir.split("=")[1]
+                    dir_date = datetime.strptime(dir_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    
+                    if dir_date < start:
+                        full_path = os.path.join(CACHE_BASE, date_dir)
+                        shutil.rmtree(full_path)
+                        deleted_dirs += 1
+                        log.info(f"🗑️ [ARCHIVE] Purged expired cache: {date_dir}")
+                except Exception as e:
+                    log.warning(f"⚠️ [ARCHIVE] Skip pruning for {date_dir}: {e}")
+            
+            log.info(f"✅ [ARCHIVE] Cache Pruning Complete. Removed {deleted_dirs} expired days.")
+
+        # 🚀 4. REDIS INDEX CLEANUP
+        try:
+            rd = await get_redis()
+            all_index_keys = await rd.keys(f"{REDIS_INDEX_PREFIX}:*")
+            
+            purged_count = 0
+            for key in all_index_keys:
+                hours = await rd.smembers(key)
+                # Filter hours older than 'start'
+                expired_hours = [h for h in hours if datetime.strptime(h, "%Y%m%d%H").replace(tzinfo=timezone.utc) < start]
+                if expired_hours:
+                    await rd.srem(key, *expired_hours)
+                    purged_count += len(expired_hours)
+            
+            log.info(f"✅ [ARCHIVE] Redis Index Cleanup Complete. Purged {purged_count} expired hour keys.")
+        except Exception as e:
+            log.warning(f"⚠️ [ARCHIVE] Redis Index Cleanup partial failure: {e}")
         
     except Exception as e:
         log.error(f"💥 [ARCHIVE] Daily Consolidation Failed: {str(e)}")
@@ -493,15 +535,7 @@ async def startup_event():
     
     await get_db_pool()
     
-    # 3. Initialize MinIO Buckets Upfront
-    try:
-        s3 = get_minio()
-        for bucket in ["telemetry-raw", "telemetry-archive", "telemetry-cache"]:
-            if not s3.bucket_exists(bucket):
-                s3.make_bucket(bucket)
-                log.info(f"🪣 [MINIO] Bucket created: {bucket}")
-    except Exception as e:
-        log.error(f"❌ [MINIO] Bucket initialization failed: {e}")
+    # 3. MinIO initialization removed as we now use Local FS for caching and archival.
     
     # Schedule: Dual-Tier Archival Strategy
     _scheduler.add_job(hourly_cache_job, 'cron', minute=0, misfire_grace_time=600, coalesce=True)
@@ -554,24 +588,6 @@ async def get_redis():
         _redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     return _redis
 
-def get_minio():
-    global _minio
-    if _minio is None:
-        import urllib3
-        # 🚀 CUSTOM POOL: Expanded for 168+ parallel hourly downloads
-        http_client = urllib3.PoolManager(
-            retries=False,
-            maxsize=300,
-            num_pools=10
-        )
-        _minio = Minio(
-            MINIO_HOST, 
-            access_key=MINIO_ACCESS, 
-            secret_key=MINIO_SECRET, 
-            secure=False,
-            http_client=http_client
-        )
-    return _minio
 
 # =============================================================================
 # DATABASE DATA ACCESS LAYER (DAL)
