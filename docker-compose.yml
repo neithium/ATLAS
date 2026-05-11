@@ -460,13 +460,15 @@ services:
 
     user: root
 
+    # ports:
+    #   - "0:4040"
     ports:
-      - "0:4040"
+      - "4040-4045:4040-4045"
 
     environment:
       - SPARK_MODE=driver
-      - SPARK_DRIVER_MEMORY=4g
-      - SPARK_EXECUTOR_MEMORY=4g
+      - SPARK_DRIVER_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=2g
 
     volumes:
       - ./processing/jobs:/app/jobs
@@ -479,6 +481,29 @@ services:
     networks:
       - atlas-network
       
+    # command: >
+    #   bash -c "
+    #   mkdir -p /app/data/raw &&
+    #   mkdir -p /app/data/processed/stream &&
+    #   mkdir -p /app/data/processed/batch &&
+    #   mkdir -p /app/checkpoint/stream &&
+
+    #   echo '⏳ Waiting for Kafka to stabilize...' &&
+    #   sleep 40 &&
+
+    #   # echo '🚀 Starting Generator...' &&
+    #   # python3 /app/jobs/json_generator.py &
+
+    #   # echo '🚀 Starting Kafka Streaming...' &&
+    #   # spark-submit \
+    #   # --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+    #   # /app/jobs/kafka_streaming.py &
+
+    #   # echo '🚀 Starting Batch Job...' &&
+    #   # spark-submit /app/jobs/batch_job.py &
+
+    #   wait
+    #   "
     command: >
       bash -c "
       mkdir -p /app/data/raw &&
@@ -489,19 +514,8 @@ services:
       echo '⏳ Waiting for Kafka to stabilize...' &&
       sleep 40 &&
 
-      # echo '🚀 Starting Generator...' &&
-      # python3 /app/jobs/json_generator.py &
-
-      echo '🚀 Starting Kafka Streaming...' &&
-      spark-submit \
-      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
-      /app/jobs/kafka_streaming.py &
-
-      # echo '🚀 Starting Batch Job...' &&
-      # spark-submit /app/jobs/batch_job.py &
-
-      wait
-      "
+      tail -f /dev/null
+      "  
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
