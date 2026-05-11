@@ -29,17 +29,11 @@ class PipelineConfig:
     # Triple-Hash Composite Primary Key columns
     PRIMARY_KEY_COLUMNS = ["device_id", "metric_time", "application_customer_id"]
     
-    # 5-Level Partition columns (order matters for directory structure)
-    PARTITION_COLUMNS = [
-        "report_type",
-        "partition_date",
-        "platform_customer_id",
-        "application_customer_id",
-        "device_id"
-    ]
+    # 1-Level Partition to fix small file problem
+    PARTITION_COLUMNS = ["partition_date"]
     
     # Z-ORDER clustering column for read optimization
-    ZORDER_COLUMN = "metric_time"
+    ZORDER_COLUMN = "application_customer_id, device_id"
     
     # Delta Lake optimizations
     TARGET_FILE_SIZE_MB = 128
@@ -269,7 +263,8 @@ def execute_merge_deduplication(
     target_count = spark.read.format("delta").load(target_path).count()
     
     merge_condition = """
-        target.device_id = source.device_id 
+        target.partition_date = source.partition_date
+        AND target.device_id = source.device_id 
         AND target.metric_time = source.metric_time 
         AND target.application_customer_id = source.application_customer_id
     """
