@@ -169,12 +169,13 @@ def run_benchmark_pipeline(
             state = checkpoint_mgr.mark_batch_complete(file_date, row_count, state)
         
         optimize_counter += 1
-        if optimize_counter >= PipelineConfig.OPTIMIZE_EVERY_N_BATCHES:
-            print(f"  │  Running OPTIMIZE...", flush=True)
-            opt_start = time.perf_counter()
-            optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
-            print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s", flush=True)
-            optimize_counter = 0
+        # Deprecated: Replaced by Delta Auto-Compaction
+        # if optimize_counter >= PipelineConfig.OPTIMIZE_EVERY_N_BATCHES:
+        #     print(f"  │  Running OPTIMIZE...", flush=True)
+        #     opt_start = time.perf_counter()
+        #     optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
+        #     print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s", flush=True)
+        #     optimize_counter = 0
         
         print(f"  └─ ✓ Batch complete", flush=True)
     
