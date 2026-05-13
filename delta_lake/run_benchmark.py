@@ -47,7 +47,8 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .master("local[*]")
         .config("spark.executor.instances", "1")
         .config("spark.executor.cores", "6")
-        .config("spark.executor.memory", "5g")
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
     )
     
     if os.getenv("SPARK_MASTER"):

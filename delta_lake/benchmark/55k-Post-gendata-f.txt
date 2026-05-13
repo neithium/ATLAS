@@ -2,8 +2,8 @@ Microsoft Windows [Version 10.0.26200.8246]
 (c) Microsoft Corporation. All rights reserved.
 
 C:\Users\manth\Documents\GitHub\ATLAS>docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=55000 -e BATCH_SIZE=11000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=20 atlas-lakehouse
-time="2026-05-11T20:41:46+05:30" level=warning msg="The \"PIPELINE_MODE\" variable is not set. Defaulting to a blank string."
-\━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+time="2026-05-13T14:31:56+05:30" level=warning msg="The \"PIPELINE_MODE\" variable is not set. Defaulting to a blank string."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ATLAS Lakehouse - Delta Lake Deduplication Engine
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -32,7 +32,7 @@ Configuration:
   Compression: ZSTD
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
-26/05/11 15:11:54 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/05/13 09:01:59 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 ================================================================================
 ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
 ================================================================================
@@ -63,19 +63,19 @@ DAILY FILE 1/1: file_date = 2026-03-01
 ================================================================================
 
   Batch 1/5: devices 1..11,000
-  Rows written: 22,176,000 | Time: 119.75s | Throughput: 185,192 rows/s
+  Rows written: 22,176,000 | Time: 94.74s | Throughput: 234,073 rows/s
 
   Batch 2/5: devices 11,001..22,000
-  Rows written: 22,176,000 | Time: 90.61s | Throughput: 244,731 rows/s
+  Rows written: 22,176,000 | Time: 79.33s | Throughput: 279,552 rows/s
 
   Batch 3/5: devices 22,001..33,000
-  Rows written: 22,176,000 | Time: 98.15s | Throughput: 225,948 rows/s
+  Rows written: 22,176,000 | Time: 86.45s | Throughput: 256,521 rows/s
 
   Batch 4/5: devices 33,001..44,000
-  Rows written: 22,176,000 | Time: 86.04s | Throughput: 257,729 rows/s
+  Rows written: 22,176,000 | Time: 96.22s | Throughput: 230,476 rows/s
 
   Batch 5/5: devices 44,001..55,000
-  Rows written: 22,176,000 | Time: 89.71s | Throughput: 247,207 rows/s
+  Rows written: 22,176,000 | Time: 85.67s | Throughput: 258,848 rows/s
 
 ================================================================================
 Benchmark Generation Complete
@@ -84,7 +84,7 @@ Output path:            /raw/benchmark_data
 Total raw rows:         110,880,000
 Expected unique after dedup: 110,880,000
 Expected dedup ratio:   0.0%
-Total elapsed:          491.52s
+Total elapsed:          444.47s
 ================================================================================
 
 [2/3] Running deduplication pipeline (mode=benchmark)...
@@ -92,18 +92,18 @@ Total elapsed:          491.52s
 Ivy Default Cache set to: /root/.ivy2/cache
 The jars for the packages stored in: /root/.ivy2/jars
 io.delta#delta-spark_2.12 added as a dependency
-:: resolving dependencies :: org.apache.spark#spark-submit-parent-b6d0250a-2b11-4ab5-ae50-9d22cee47a60;1.0
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-8e4f8280-832c-4eef-a14f-a7c9ed3a56a1;1.0
         confs: [default]
         found io.delta#delta-spark_2.12;3.1.0 in central
         found io.delta#delta-storage;3.1.0 in central
         found org.antlr#antlr4-runtime;4.9.3 in central
 downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
-        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (1430ms)
+        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (1199ms)
 downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
-        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (225ms)
+        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (184ms)
 downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
-        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (212ms)
-:: resolution report :: resolve 5770ms :: artifacts dl 1882ms
+        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (164ms)
+:: resolution report :: resolve 3861ms :: artifacts dl 1551ms
         :: modules in use:
         io.delta#delta-spark_2.12;3.1.0 from central in [default]
         io.delta#delta-storage;3.1.0 from central in [default]
@@ -114,10 +114,10 @@ downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4
         ---------------------------------------------------------------------
         |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
         ---------------------------------------------------------------------
-:: retrieving :: org.apache.spark#spark-submit-parent-b6d0250a-2b11-4ab5-ae50-9d22cee47a60
+:: retrieving :: org.apache.spark#spark-submit-parent-8e4f8280-832c-4eef-a14f-a7c9ed3a56a1
         confs: [default]
-        3 artifacts copied, 0 already retrieved (5727kB/23ms)
-26/05/11 15:20:25 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+        3 artifacts copied, 0 already retrieved (5727kB/18ms)
+26/05/13 09:09:36 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
 Setting default log level to "WARN".
 To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
 
@@ -126,23 +126,21 @@ To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLeve
 --------------------------------------------------------------------------------
          ✓ Found 1 daily file batches
 
-
-
 --------------------------------------------------------------------------------
 [STEP 3] Processing file batches with incremental MERGE...
 --------------------------------------------------------------------------------
 
   ┌─ Batch 1/1: file_date=2026-03-01
-  │  Rows: 110,880 | Read: 7.43s
-         Partition structure: /report_type/partition_date/platform_customer_id/application_customer_id/device_id/
-         Compression: zstd
-26/05/11 17:50:57 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
-  │  Action: INIT | Time: 107.69s
-  │  Batch total: 115.14s | Throughput: 963 rows/s
+  │  Rows: 110,880,000 | Read: 0.71s
+        Initializing Delta table at: /refined
+26/05/13 09:13:04 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
+        Applying Auto-Compaction and Optimized Writes...
+  │  Action: INIT | Time: 203.43s
+  │  Batch total: 204.14s | Throughput: 543,168 rows/s
   └─ ✓ Batch complete
-{'total_rows': 110880, 'num_days': 1, 'all_file_dates': ['2026-03-01']}
+{'total_rows': 110880000, 'num_days': 1, 'all_file_dates': ['2026-03-01']}
 
 [3/3] Skipping vacuum (RUN_VACUUM=n)
 
 Done!
- 
+KEEP_ALIVE enabled: container will stay running.

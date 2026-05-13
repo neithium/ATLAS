@@ -21,9 +21,9 @@ class PipelineConfig:
     """Configuration for ATLAS Refined Layer Pipeline."""
     
     # Paths (configurable via CLI args)
-    RAW_DATA_PATH = "/raw"
-    REFINED_PATH = "/refined"
-    CHECKPOINT_PATH = "/refined/_checkpoints"
+    RAW_DATA_PATH = "app/data/raw"
+    REFINED_PATH = "app/data/refined"
+    CHECKPOINT_PATH = "app/data/refined/_checkpoints"
     
     # Mode: legacy | benchmark | dataframe | livewire
     MODE = " benchmark"
@@ -56,12 +56,13 @@ class PipelineConfig:
     # Horizontal Scaling Configuration
     SPARK_EXECUTOR_INSTANCES = int(os.getenv("SPARK_EXECUTOR_INSTANCES", "1"))
     SPARK_EXECUTOR_CORES = int(os.getenv("SPARK_EXECUTOR_CORES", "6"))
-    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "4g")
+    SPARK_DRIVER_MEMORY = os.getenv("SPARK_DRIVER_MEMORY", "8g")
+    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "8g")
+    
     SPARK_DYNAMIC_ALLOCATION = os.getenv("SPARK_DYNAMIC_ALLOCATION", "false").lower() == "true"
     SPARK_MIN_EXECUTORS = int(os.getenv("SPARK_MIN_EXECUTORS", "2"))
     SPARK_MAX_EXECUTORS = int(os.getenv("SPARK_MAX_EXECUTORS", "8"))
-    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "12"))
-
+    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "200")) #earlier 12    
 
 # =============================================================================
 # LATENCY TRACKER

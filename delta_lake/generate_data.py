@@ -88,6 +88,10 @@ def create_spark_session() -> SparkSession:
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.execution.arrow.pyspark.enabled", "false")
         .config("spark.sql.parquet.compression.codec", GeneratorConfig.COMPRESSION_CODEC)
+        .config("spark.executor.instances", "1")
+        .config("spark.executor.cores", "6")
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")
@@ -148,8 +152,6 @@ def build_daily_file_df(
         .withColumn("id", col("device_num") + lit(1))
         .withColumn("device_id", format_string("SRV-%06d", col("id")))
         .withColumn("pair_index", floor((col("id") - lit(1)) / lit(11)) + lit(1))
-        # Ensure pair_index wraps around or caps correctly if id exceeds 55000, 
-        # but 55000 / 11 = 5000. So we can just use pair_index directly.
         .withColumn("application_customer_id", format_string("APPCUST%04d", col("pair_index").cast("int")))
         .withColumn("platform_customer_id", format_string("PLATCUST%04d", col("pair_index").cast("int")))
         .withColumn(
@@ -164,6 +166,20 @@ def build_daily_file_df(
                 (pmod(col("device_num"), lit(4)) + lit(1)).cast("int"),
             ),
         )
+        # Add new enterprise metadata columns
+        .withColumn("model", lit("ProLiant DL380 Gen11"))
+        .withColumn("tags", lit("production,edge"))
+        .withColumn("status", lit(True))
+        .withColumn("report_id", format_string("RID-%s-%s", col("device_id"), lit(file_date.strftime("%Y%m%d"))))
+        .withColumn("created_at", lit(datetime.now().isoformat()))
+        .withColumn("location_id", lit("LOC-01"))
+        .withColumn("location_city", lit("Mysuru"))
+        .withColumn("location_name", lit("DataCenter-A"))
+        .withColumn("location_state", lit("Karnataka"))
+        .withColumn("location_country", lit("India"))
+        .withColumn("processor_vendor", element_at(array(lit("AMD"), lit("Intel")), (pmod(col("device_num"), lit(2)) + lit(1)).cast("int")))
+        .withColumn("server_generation", lit("Gen10 Plus v2"))
+        .withColumn("metric_type", lit("power"))
         .drop("id", "pair_index")
     )
 
@@ -211,6 +227,19 @@ def build_daily_file_df(
         "file_date",
         "partition_date",
         "MetricValue",
+        "model",
+        "tags",
+        "status",
+        "report_id",
+        "created_at",
+        "location_id",
+        "location_city",
+        "location_name",
+        "location_state",
+        "location_country",
+        "processor_vendor",
+        "server_generation",
+        "metric_type",
     )
 
 
