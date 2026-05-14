@@ -21,9 +21,9 @@ class PipelineConfig:
     """Configuration for ATLAS Refined Layer Pipeline."""
     
     # Paths (configurable via CLI args)
-    RAW_DATA_PATH = "app/data/raw"
-    REFINED_PATH = "app/data/refined"
-    CHECKPOINT_PATH = "app/data/refined/_checkpoints"
+    RAW_DATA_PATH = "/raw"
+    REFINED_PATH = "/refined"
+    CHECKPOINT_PATH = "/refined/_checkpoints"
     
     # Mode: legacy | benchmark | dataframe | livewire
     MODE = " benchmark"
@@ -201,7 +201,7 @@ def prepare_partition_columns(df: DataFrame) -> DataFrame:
             date_format(to_date(col("metric_time")), "yyyy-MM-dd")
         )
     
-    return (
+    return (   ## remove this while refactoring.. heavy partitioning causing small file problem as of now..
         prepared
         .withColumn("report_type", coalesce(col("report_type"), lit("unknown")))
         .withColumn("platform_customer_id", coalesce(col("platform_customer_id"), lit("unknown")))
