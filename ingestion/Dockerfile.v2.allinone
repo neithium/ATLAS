@@ -52,6 +52,7 @@ WORKDIR /app
 # Requirements for V2
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir redis opentelemetry-instrumentation-fastapi
 RUN pip3 install --no-cache-dir --force-reinstall lz4 && python3 -c "import lz4.frame; print('LZ4 OK')"
 
 # Copy logic and configs

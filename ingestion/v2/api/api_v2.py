@@ -1260,6 +1260,37 @@ async def trigger_historical_first_export(pcid: str, acid: str, background_tasks
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.post("/fleet/telemetry/export")
+async def trigger_fleet_telemetry_export(days: int = 7):
+    """Triggers Kafka Ingestion for EVERY device registered in the fleet."""
+    try:
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=days)
+        
+        # Load ALL devices from registry
+        with open(REGISTRY_PATH, "rb") as f:
+            registry = orjson.loads(f.read())
+        
+        device_ids = list(registry.keys())
+        
+        if not device_ids:
+            return {"status": "Empty Fleet", "message": "No devices found in registry."}
+            
+        log.info(f"📢 [API] Global Fleet Export Triggered: {len(device_ids)} devices. (Synchronous Mode)")
+        
+        # We now AWAIT this task so the API doesn't return until the data is in Kafka
+        await _export_stream_task(device_ids, start_time, end_time)
+        
+        return {
+            "status": "Fleet-wide Export Completed", 
+            "targeted_devices": len(device_ids),
+            "window_days": days
+        }
+
+    except Exception as e:
+        log.error(f"❌ Fleet Export failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/register/device")
 async def register_new_device(device: DeviceRegistration):
     """Dynamically adds a new device to the fleet registry."""
