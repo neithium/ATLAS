@@ -32,21 +32,31 @@ from schema_builder import build_48_field_golden_record, build_batch_power_detai
 
 log = logging.getLogger(__name__)
 
-# ─── Aligned with docker-compose.yml and Nandini's broker1 ───
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP", "broker1:9092")
+# ─── Aligned with docker-compose.yml and Nandini's broker1/2/3 ───
+# All 3 brokers listed so producer survives broker1 going down.
+# Kafka only needs ONE reachable bootstrap to discover the full cluster.
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP", "broker1:9092,broker2:9092,broker3:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "raw-server-metrics")
 
 _producer: Optional['AIOKafkaProducer'] = None
 
+def _kafka_serializer(v):
+    if isinstance(v, (bytes, bytearray)):
+        return v
+    payload = json.dumps(v)
+    if isinstance(payload, bytes):
+        return payload
+    return payload.encode('utf-8')
+
 async def init_kafka():
-    """Initialize the Kafka producer with retry logic to connect to broker1."""
+    """Initialize the Kafka producer with retry logic to connect to the broker cluster."""
     global _producer
     if not KAFKA_AVAILABLE:
         log.warning("[kafka] aiokafka not installed. Kafka integration disabled.")
         return
 
     retry_count = 0
-    max_retries = 10
+    max_retries = 15          # More retries — cluster may be mid-election
     retry_delay = 5
 
     while retry_count < max_retries:
@@ -56,9 +66,12 @@ async def init_kafka():
                 compression_type="lz4",
                 linger_ms=50,                  # Batch optimization
                 max_request_size=8388608,       # 8MB for large device bursts
-                request_timeout_ms=300000,      # 5 minutes timeout
+                request_timeout_ms=30000,       # 30s per request (not 2 min)
+                retry_backoff_ms=500,           # Back off between internal retries
                 connections_max_idle_ms=540000,
-                value_serializer=lambda v: v if isinstance(v, (bytes, bytearray)) else json.dumps(v)
+                # Allow re-electing a new leader transparently
+                metadata_max_age_ms=30000,
+                value_serializer=_kafka_serializer
             )
             await _producer.start()
             log.info(f"🛰️ [KAFKA] Connected to {KAFKA_BOOTSTRAP_SERVERS}, topic: {KAFKA_TOPIC}")
@@ -76,7 +89,7 @@ async def init_kafka():
             _producer = None
             await asyncio.sleep(retry_delay)
 
-    log.error(f"[kafka] Critical: Could not connect to Kafka after {max_retries} attempts.")
+    log.error(f"[kafka] Critical: Could not connect to Kafka after {max_retries} attempts. Cluster may be unavailable.")
 
 async def close_kafka():
     """Close the Kafka producer."""
