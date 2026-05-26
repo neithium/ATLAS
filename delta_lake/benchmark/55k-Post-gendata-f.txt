@@ -133,8 +133,6 @@ To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLeve
   ┌─ Batch 1/1: file_date=2026-03-01
   │  Rows: 110,880,000 | Read: 0.71s
         Initializing Delta table at: /refined
-26/05/13 09:13:04 WARN SparkStringUtils: Truncated the string representation of a plan since it was too large. This behavior can be adjusted by setting 'spark.sql.debug.maxToStringFields'.
-        Applying Auto-Compaction and Optimized Writes...
   │  Action: INIT | Time: 203.43s
   │  Batch total: 204.14s | Throughput: 543,168 rows/s
   └─ ✓ Batch complete
@@ -143,4 +141,4 @@ To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLeve
 [3/3] Skipping vacuum (RUN_VACUUM=n)
 
 Done!
-KEEP_ALIVE enabled: container will stay running.
+ 
