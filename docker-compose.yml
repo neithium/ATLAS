@@ -46,6 +46,7 @@ volumes:
   redis-data:
   minio-data:
   ingestion-tsdb-data:
+  batch-data:
 
 services:
   # ===========================================================================
@@ -78,7 +79,7 @@ services:
     ports:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
-      - "9001:9001"    # MinIO Console
+      - "9010:9001"    # MinIO Console
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
@@ -90,7 +91,7 @@ services:
       - KAFKA_BOOTSTRAP=broker1:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=false 
+      - ENABLE_POLLER=true  
       - SCALE_SIZE=80000
     networks:
       - atlas-network
@@ -99,6 +100,7 @@ services:
       - redis-data:/data/redis
       - minio-data:/data/minio
       - ingestion-tsdb-data:/data/timescale
+      - batch-data:/app/data
     deploy:
       resources:
         limits:
@@ -462,11 +464,13 @@ services:
 
     ports:
       - "0:4040"
+    # ports:
+    #   - "4041:4040"
 
     environment:
       - SPARK_MODE=driver
-      - SPARK_DRIVER_MEMORY=4g
-      - SPARK_EXECUTOR_MEMORY=4g
+      - SPARK_DRIVER_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=2g
 
     volumes:
       - ./processing/jobs:/app/jobs
@@ -475,10 +479,34 @@ services:
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
       - delta-refined:/app/data/processed
+      - batch-data:/app/data 
 
     networks:
       - atlas-network
       
+    # command: >
+    #   bash -c "
+    #   mkdir -p /app/data/raw &&
+    #   mkdir -p /app/data/processed/stream &&
+    #   mkdir -p /app/data/processed/batch &&
+    #   mkdir -p /app/checkpoint/stream &&
+
+    #   echo '⏳ Waiting for Kafka to stabilize...' &&
+    #   sleep 40 &&
+
+    #   # echo '🚀 Starting Generator...' &&
+    #   # python3 /app/jobs/json_generator.py &
+
+    #   # echo '🚀 Starting Kafka Streaming...' &&
+    #   # spark-submit \
+    #   # --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
+    #   # /app/jobs/kafka_streaming.py &
+
+    #   # echo '🚀 Starting Batch Job...' &&
+    #   # spark-submit /app/jobs/batch_job.py &
+
+    #   wait
+    #   "
     command: >
       bash -c "
       mkdir -p /app/data/raw &&
@@ -489,19 +517,8 @@ services:
       echo '⏳ Waiting for Kafka to stabilize...' &&
       sleep 40 &&
 
-      # echo '🚀 Starting Generator...' &&
-      # python3 /app/jobs/json_generator.py &
-
-      echo '🚀 Starting Kafka Streaming...' &&
-      spark-submit \
-      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
-      /app/jobs/kafka_streaming.py &
-
-      echo '🚀 Starting Batch Job...' &&
-      spark-submit /app/jobs/batch_job.py &
-
-      wait
-      "
+      tail -f /dev/null
+      "  
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
