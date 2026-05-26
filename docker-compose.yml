@@ -88,7 +88,9 @@ services:
       - REDIS_HOST=127.0.0.1
       - MINIO_HOST=127.0.0.1
       - MINIO_BUCKET=telemetry-raw
-      - KAFKA_BOOTSTRAP=broker1:9092
+      # All 3 brokers listed — producer stays up even if broker1 crashes.
+      # Kafka needs only ONE reachable bootstrap to discover the full cluster.
+      - KAFKA_BOOTSTRAP=broker1:9092,broker2:9092,broker3:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=false
