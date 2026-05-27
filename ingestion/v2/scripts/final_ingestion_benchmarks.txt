@@ -9,6 +9,12 @@ API Overhead:        1.000s
 Database + Kafka:    166.172s
 System Throughput:   120,594 data points / sec
 
+
+----------------------------------------------------
+5000 Platforms 1:1 mappped with 5000 App_customers
+under each App_customer - 11 Devices
+----------------------------------------------------
+
 --- Concurrent Multi-Platform Sweeps ---
 10 Platforms (110 devices):  2.141s  (103,578 pts/sec)
 50 Platforms (550 devices):  10.047s (110,361 pts/sec)
@@ -16,81 +22,3 @@ System Throughput:   120,594 data points / sec
 200 Platforms (2200 devices): 37.203s (119,216 pts/sec)
 500 Platforms (5500 devices): 109.015s (101,711 pts/sec)
 
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 15.109s | P90: 24.359s | P99: 25.718s
-
---- 500 Platforms CLEAN RUN PERCENTILES ---
-P50: 177.562s | P90: 292.656s | P99: 337.000s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 14.484s | P90: 25.063s | P99: 27.172s
-
---- 10 Platforms CLEAN RUN PERCENTILES ---
-P50: 1.219s | P90: 1.891s | P99: 1.891s
-
---- 50 Platforms CLEAN RUN PERCENTILES ---
-P50: 6.593s | P90: 10.937s | P99: 12.109s
-
---- 200 Platforms CLEAN RUN PERCENTILES ---
-P50: 63.094s | P90: 85.843s | P99: 86.859s
-
---- 1 Platforms CLEAN RUN PERCENTILES ---
-P50: 13.015s | P90: 13.015s | P99: 13.015s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 28.578s | P90: 42.313s | P99: 44.828s
-
---- 500 Platforms CLEAN RUN PERCENTILES ---
-P50: 259.780s | P90: 299.248s | P99: 301.209s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 24.172s | P90: 26.672s | P99: 26.891s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 20.500s | P90: 26.609s | P99: 26.875s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 21.609s | P90: 27.079s | P99: 27.313s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 113.250s | P90: 118.734s | P99: 118.906s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 20.750s | P90: 27.203s | P99: 27.703s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 236.531s | P90: 243.157s | P99: 243.594s
-
---- 50 Platforms CLEAN RUN PERCENTILES ---
-P50: 6.266s | P90: 8.516s | P99: 8.734s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 17.687s | P90: 22.234s | P99: 22.703s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 16.391s | P90: 22.750s | P99: 22.922s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 22.922s | P90: 37.390s | P99: 40.062s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 20.281s | P90: 34.594s | P99: 36.985s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 21.109s | P90: 35.172s | P99: 37.812s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 20.594s | P90: 31.266s | P99: 32.954s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 17.015s | P90: 27.625s | P99: 30.204s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 16.250s | P90: 26.391s | P99: 28.891s
-
---- 100 Platforms CLEAN RUN PERCENTILES ---
-P50: 57.580s | P90: 79.932s | P99: 83.466s
-
---- 200 Platforms CLEAN RUN PERCENTILES ---
-P50: 58.830s | P90: 100.526s | P99: 109.196s

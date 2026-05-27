@@ -1,4 +1,4 @@
-import json
+import orjson
 import os
 from pathlib import Path
 
@@ -11,8 +11,10 @@ DEVICE_CONFIG_PATH = os.getenv("DEVICE_CONFIG_PATH", str(BASE_DIR / "device_conf
 def load_devices():
     """Load the device registry from the JSON config file."""
     try:
-        with open(DEVICE_CONFIG_PATH, 'r') as f:
-            return json.load(f)
+        if os.path.exists(DEVICE_CONFIG_PATH):
+            with open(DEVICE_CONFIG_PATH, 'rb') as f:
+                return orjson.loads(f.read())
+        return {}
     except Exception as e:
         print(f"Error loading devices from {DEVICE_CONFIG_PATH}: {e}")
         return {}

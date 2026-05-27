@@ -23,7 +23,7 @@ docker exec atlas-ingestion python3 /app/v2/scripts/generate_registry.py --devic
 ## 3. Prefill Sample Telemetry (Simulate History)
 Populate TimescaleDB with 7 days of historical telemetry for the simulated fleet:
 ```bash
-docker exec atlas-ingestion python3 /app/v2/scripts/prefill_tsdb.py --days 7
+docker exec atlas-ingestion python3 /app/v2/scripts/prefill_tsdb.py --days 7 --workers 4
 ```
 
 ## 4. Warm the High-Performance Cache

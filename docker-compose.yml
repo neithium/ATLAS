@@ -42,6 +42,7 @@ volumes:
   redis-data:
   minio-data:
   ingestion-tsdb-data:
+  telemetry-cache-data:
 
 services:
   # ===========================================================================
@@ -55,15 +56,6 @@ services:
   #   - Cold Path: Daily Mega-Compaction to MinIO Parquet (Daily Archive)
   #   - Streaming: On-Demand Kafka Outgress for Hierarchical Exports
   # ===========================================================================
-  # ── OBSERVABILITY: JAEGER (Tracing UI) ──────────────────────────────────
-  jaeger:
-    image: jaegertracing/all-in-one:1.47
-    container_name: atlas-tracing
-    ports:
-      - "16686:16686"   # Jaeger UI
-      - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
-    networks:
-      - atlas-network
 
   atlas-ingestion:
     build:
@@ -84,7 +76,7 @@ services:
       - REDIS_HOST=127.0.0.1
       - MINIO_HOST=127.0.0.1
       - MINIO_BUCKET=telemetry-raw
-      - KAFKA_BOOTSTRAP=broker1:9092
+      - KAFKA_BOOTSTRAP=broker1:9092,broker2:9092,broker3:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
@@ -94,6 +86,7 @@ services:
     shm_size: 1gb
     volumes:
       - ./ingestion:/app
+      - telemetry-cache-data:/app/telemetry-cache
       - redis-data:/data/redis
       - minio-data:/data/minio
       - ingestion-tsdb-data:/data/timescale
@@ -108,9 +101,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    depends_on:
-      broker1:
-        condition: service_healthy
     command: ["/app/v2/entrypoint.sh"]
 
 
@@ -200,9 +190,10 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
+      - KAFKA_HEAP_OPTS=-Xmx2048m -Xms2048m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -275,9 +266,10 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
+      - KAFKA_HEAP_OPTS=-Xmx2048m -Xms2048m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -350,9 +342,10 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
+      - KAFKA_HEAP_OPTS=-Xmx2048m -Xms2048m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts

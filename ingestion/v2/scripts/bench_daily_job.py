@@ -1,5 +1,4 @@
 import asyncio
-# RUN COMMAND: docker exec atlas-ingestion python3 /app/v2/scripts/bench_daily_job.py
 import time
 import sys
 import os
@@ -28,6 +27,20 @@ async def run_bench():
         duration = time.monotonic() - start_time
         log.info(f"✅ JOB COMPLETE!")
         log.info(f"📊 EXACT TIME TAKEN: {duration:.2f} seconds ({(duration/60):.2f} minutes)")
+        
+        # 🔍 Verify the _SUCCESS file was written
+        import glob
+        import json
+        success_files = glob.glob("/app/data/raw/production/year=*/month=*/day=*/full_7day/_SUCCESS")
+        if success_files:
+            latest_success = max(success_files, key=os.path.getmtime)
+            log.info(f"📁 Found _SUCCESS file at: {latest_success}")
+            with open(latest_success, "r") as f:
+                metadata = json.load(f)
+                log.info(f"📄 Metadata Payload: {json.dumps(metadata, indent=2)}")
+        else:
+            log.warning("⚠️ No _SUCCESS file found in /app/data/raw/production/year=*/month=*/day=*/full_7day/_SUCCESS!")
+            
     except Exception as e:
         log.error(f"💥 Job failed: {e}")
 
@@ -40,3 +53,4 @@ took around 6 mins to push 10k devices into raw directory.
 can be optimized further by increasing the batch size and  
 by assigning multiple workers to push the data to raw.
 """
+# RUN COMMAND: docker exec atlas-ingestion python3 /app/v2/scripts/bench_daily_job.py

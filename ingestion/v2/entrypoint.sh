@@ -87,8 +87,8 @@ minio server $DATA_DIR/minio --address ":9000" --console-address ":9001" > $DATA
 # ── 6. Identity Auto-Bootstrap ──────────────────────────────────────────
 # Ensure the 80,000-device registry exists (Scaling from Zero)
 if [ ! -f "/app/device_configs.json" ]; then
-    echo "🏝️ Registry missing! Auto-Bootstrapping 80,000-device hierarchical fleet..."
-    python3 v2/scripts/generate_registry.py --scale ${SCALE_SIZE:-80000}
+    echo "🏝️ Registry missing! Auto-Bootstrapping fleet..."
+    python3 v2/scripts/generate_registry.py --pcids 5 --acids 2 --devices 8000
 fi
 
 # ── 7. Start Unified Python Service ──────────────────────────────────
@@ -99,7 +99,7 @@ cd /app
 export ENABLE_POLLER=${ENABLE_POLLER:-true}
 export ENABLE_TSDB_PUSH=1
 export TS_CONN_STR="host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres"
-export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP:-broker1:9092}"
+#export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP:-broker1:9092}"
 
 # Execute Uvicorn in the background and stream to terminal
 python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 2>&1 | tee -a $DATA_DIR/logs/api.log &

@@ -29,9 +29,7 @@ DB_COLUMNS = [
     "metric_time", "device_id", "platform_customer_id", "application_customer_id",
     "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
     "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts",
-    "server_name", "model", "processor_vendor", "server_generation",
-    "report_type", "metric_type", "status", "error_reason", "tags",
-    "location_id", "location_city", "location_state", "location_country", "location_name"
+    "status", "error_reason"
 ]
 
 async def backfill(days=7, offset_hours=0):
