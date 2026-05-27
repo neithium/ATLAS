@@ -51,21 +51,11 @@ def run_livewire_pipeline(
             PipelineConfig.PARTITION_COLUMNS
         )
     
-    # Use readStream for continuous folder ingestion
-    from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType, LongType, DateType
-    schema = StructType([
-        StructField("device_id", StringType()),
-        StructField("avg_cpu", DoubleType()),
-        StructField("avg_mem", DoubleType()),
-        StructField("num_records", LongType()),
-        StructField("window_start", TimestampType(), True),
-        StructField("window_end", TimestampType(), True),
-        StructField("event_date", DateType(), True)
-    ])
-    
+    # Use readStream for continuous folder ingestion.
+    # The schema is inferred from the Parquet files, making it schema-agnostic.
     try:
         # Recursive reading from /stream_raw allows parsing both /batch and /stream partitions
-        stream_df = spark.readStream.schema(schema).parquet(f"{source_path}/*/*.parquet")
+        stream_df = spark.readStream.parquet(f"{source_path}/*/*.parquet")
     except Exception as e:
         print(f"         ⚠ Could not initialize stream from {source_path}: {e}")
         return {"status": "failed"}

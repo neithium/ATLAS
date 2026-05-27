@@ -569,9 +569,8 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      # Shared volumes for inter-container data flow (bind mounts to /Users/Public/atlas-data)
-      - C:/Users/Public/atlas-data/raw:/raw
-      - C:/Users/Public/atlas-data/refined:/refined
+      # Shared volumes for inter-container data flow
+      - delta-refined:/refined
       - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
