@@ -507,6 +507,18 @@ services:
 
     #   wait
     #   "
+    # command: >
+    #       bash -c "
+    #       mkdir -p /app/data/raw &&
+    #       mkdir -p /app/data/processed/stream &&
+    #       mkdir -p /app/data/processed/batch &&
+    #       mkdir -p /app/checkpoint/stream &&
+    #
+    #       echo '⏳ Waiting for Kafka to stabilize...' &&
+    #       sleep 40 &&
+    #
+    #       tail -f /dev/null
+    #       "  
     command: >
       bash -c "
       mkdir -p /app/data/raw &&
@@ -517,8 +529,14 @@ services:
       echo '⏳ Waiting for Kafka to stabilize...' &&
       sleep 40 &&
 
-      tail -f /dev/null
-      "  
+      echo '🚀 Starting Kafka Streaming...' &&
+      spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/kafka_streaming.py &
+
+      echo '🚀 Starting Batch Job...' &&
+      spark-submit /app/jobs/batch_job.py &
+
+      wait
+      "
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
