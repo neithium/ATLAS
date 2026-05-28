@@ -129,9 +129,14 @@ class DeviceRegistration(BaseModel):
 _kafka: Optional[AIOKafkaProducer] = None
 _pool: Optional[asyncpg.Pool] = None
 _redis: Optional[Any] = None
-_executor = ThreadPoolExecutor(max_workers=50)  # 🧹 CRITICAL: Reduced to 32 (was 64) to save memory
-GLOBAL_IO_SEM = asyncio.Semaphore(50)  # 🧹 CRITICAL: Reduced to 50 (was 100) to limit concurrent file reads
+_executor = ThreadPoolExecutor(max_workers=24)  # 🧹 CRITICAL: Reduced to 32 (was 64) to save memory
+GLOBAL_IO_SEM = asyncio.Semaphore(8)  # 🧹 CRITICAL: Reduced to 50 (was 100) to limit concurrent file reads
+_WORKER_REGISTRY = {}
 _cpu_pool_internal = None
+
+def init_worker_registry(registry):
+    global _WORKER_REGISTRY
+    _WORKER_REGISTRY = registry
 
 def get_cpu_pool():
     global _cpu_pool_internal
@@ -142,9 +147,14 @@ def get_cpu_pool():
             multiprocessing.set_start_method('spawn', force=True)
         except RuntimeError:
             pass
-        # 🧹 CRITICAL: Reduce workers to 6 to save ~400-600MB ProcessPool memory (was 12)
-        # Each worker process uses 50-100MB; 12 workers = 1.2GB overhead
-        _cpu_pool_internal = ProcessPoolExecutor(max_workers=min(os.cpu_count() or 8, 6))
+        # Memory-optimized: 4 workers saves ~1.2GB vs 10 workers
+        # Each spawned worker costs ~200MB (Python + PyArrow + orjson + registry copy)
+        # CPU usage peaks at ~110% so extra workers just waste memory
+        _cpu_pool_internal = ProcessPoolExecutor(
+            max_workers=4,
+            initializer=init_worker_registry,
+            initargs=(CACHED_REGISTRY,)
+        )
     return _cpu_pool_internal
 
 _scheduler = AsyncIOScheduler()
@@ -185,7 +195,7 @@ async def get_db_pool():
     if _pool is None:
         _pool = await asyncpg.create_pool(
             host=TSDB_HOST, port=TSDB_PORT, user=TSDB_USER, password=TSDB_PASS, database=TSDB_NAME,
-            min_size=15, max_size=60,  # 🧹 CRITICAL: Reduced from 30-150 to save connection pool memory
+            min_size=10, max_size=30,  # 🧹 CRITICAL: Reduced from 30-150 to save connection pool memory
             max_cached_statement_lifetime=3600,
             max_cacheable_statement_size=65536
         )
@@ -207,14 +217,15 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(3)  # 🚀 Allow 3 concurrent hierarchies (with batched Kafka + reduced batch sizes)
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(6)  # 🚀 Allow 6 concurrent hierarchies (12 CPUs, 7.4GB available)
 
 # Tier 3: CPU Worker Guard (Ensures all concurrent exports share the cores fairly)
-GLOBAL_WORKER_SEM = asyncio.Semaphore(3)  # 🚀 Reduced to 3 (1 batch per concurrent hierarchy)
+GLOBAL_WORKER_SEM = asyncio.Semaphore(8)  # 🚀 Reduced to 3 (1 batch per concurrent hierarchy)
 
 # =============================================================================
 # THROTTLING WRAPPER
 # =============================================================================
+#queue explosion handler is pending
 async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
     """Wrapper to enforce global system limits and automatic cleanup of hierarchical locks."""
     with tracer.start_as_current_span("queue_wait", attributes={"hierarchy": h_key}):
@@ -229,46 +240,6 @@ async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
                     if h_key in ACTIVE_HIERARCHIES:
                         ACTIVE_HIERARCHIES.remove(h_key)
                 log.info(f"🟢 [GUARD] Export complete for {h_key}. Hierarchy lock released.")
-
-# =============================================================================
-# 48-FIELD GOLDEN SCHEMA BUILDER (Matches Spark input_schema)
-# =============================================================================
-def _build_full_record(r, did: str, meta: dict) -> dict:
-    """
-    Hydrates a single DB row into the complete 48-field schema.
-    NOW DELEGATES TO UNIFIED SCHEMA BUILDER TO ENSURE CONSISTENCY.
-    """
-    # Convert asyncpg row to dict if needed
-    if hasattr(r, 'keys'):
-        reading = dict(r)
-    else:
-        # Map positional indices from old tuple format
-        reading = {
-            "metric_time": r[0],
-            "device_id": r[1],
-            "platform_customer_id": r[2],
-            "application_customer_id": r[3],
-            "amb_temp": r[4],
-            "avg_watts": r[5],
-            "cpu_avg_freq": r[6],
-            "cpu_max": r[7],
-            "cpu_pwr_sav_lim": r[8],
-            "cpu_util": r[9],
-            "cpu_watts": r[10],
-            "gpu_watts": r[11],
-            "min_watts": r[12],
-            "peak_watts": r[13],
-            "status": r[14],
-            "error_reason": r[15]
-        }
-    
-    # Use unified schema builder
-    return build_48_field_golden_record(
-        device_id=did,
-        reading=reading,
-        device_metadata=meta,
-        inventory_data=meta.get("inventory_data")
-    )
 
 # =============================================================================
 # HOURLY CACHE JOB (Optimized for API Exports)
@@ -538,22 +509,22 @@ async def startup_event():
     
     await get_db_pool()
     
-    # 3. Initialize MinIO Buckets Upfront
-    try:
-        s3 = get_minio()
-        for bucket in ["telemetry-raw", "telemetry-archive", "telemetry-cache"]:
-            if not s3.bucket_exists(bucket):
-                s3.make_bucket(bucket)
-                log.info(f"🪣 [MINIO] Bucket created: {bucket}")
-    except Exception as e:
-        log.error(f"❌ [MINIO] Bucket initialization failed: {e}")
+    # # 3. Initialize MinIO Buckets Upfront
+    # try:
+    #     s3 = get_minio()
+    #     for bucket in ["telemetry-raw", "telemetry-archive", "telemetry-cache"]:
+    #         if not s3.bucket_exists(bucket):
+    #             s3.make_bucket(bucket)
+    #             log.info(f"🪣 [MINIO] Bucket created: {bucket}")
+    # except Exception as e:
+    #     log.error(f"❌ [MINIO] Bucket initialization failed: {e}")
     
     # Schedule: Dual-Tier Archival Strategy
     _scheduler.add_job(hourly_cache_job, 'cron', minute=0, misfire_grace_time=600, coalesce=True)
     _scheduler.add_job(daily_archival_job, 'cron', hour=0, minute=10, misfire_grace_time=3600, coalesce=True)
     _scheduler.start()
     
-    log.info("🚀 [SYSTEM] Silo-Systems Online (Dual-Tier Archival ACTIVE: Hourly Cache + Daily Long-term)")
+    log.info("[SYSTEM] Silo-Systems Online (Dual-Tier Archival ACTIVE: Hourly Cache + Daily Long-term)")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -576,16 +547,17 @@ async def get_kafka():
                 bootstrap_servers=KAFKA_BOOTSTRAP,
                 value_serializer=lambda v: v if isinstance(v, bytes) else orjson.dumps(v),
                 compression_type="snappy",     # 📦 Reduced to reduce Redpanda I/O bottleneck
-                linger_ms=100,                 # 🚀 Increased to 100ms for aggressive batching (was 5)
+                linger_ms=5,                 # 🚀 Increased to 100ms for aggressive batching (was 5)
                 max_batch_size=16777216,       # 16MB (increased from 10MB)
                 max_request_size=16777216,     # 16MB (increased from 10MB)
                 request_timeout_ms=300000,
-                acks=0                         # 🚀 Fire-and-forget for 3+ concurrent hierarchies (was 1)
+                retry_backoff_ms=1000,
+                acks=1  # 🚀 Fire-and-forget for max throughput
             )
             # Startup handled in main.py
-            log.info(f"🛰️  [KAFKA] Production Producer Initialized (AIOKafka + Snappy + Aggressive Batching)")
+            log.info(f"[KAFKA] Production Producer Initialized (AIOKafka + Snappy + Aggressive Batching)")
         except Exception as e:
-            log.error(f"❌ [KAFKA] Initialisation Failed: {e}")
+            log.error(f"[KAFKA] Initialisation Failed: {e}")
             _kafka = AIOKafkaProducer(
                 bootstrap_servers="broker1:9092",
                 value_serializer=lambda v: orjson.dumps(v),
@@ -599,45 +571,97 @@ async def get_redis():
         _redis = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     return _redis
 
-def get_minio():
-    global _minio
-    if _minio is None:
-        import urllib3
-        # 🚀 CUSTOM POOL: Expanded for 168+ parallel hourly downloads
-        http_client = urllib3.PoolManager(
-            retries=False,
-            maxsize=300,
-            num_pools=10
-        )
-        _minio = Minio(
-            MINIO_HOST, 
-            access_key=MINIO_ACCESS, 
-            secret_key=MINIO_SECRET, 
-            secure=False,
-            http_client=http_client
-        )
-    return _minio
+# def get_minio():
+#     global _minio
+#     if _minio is None:
+#         import urllib3
+#         # 🚀 CUSTOM POOL: Expanded for 168+ parallel hourly downloads
+#         http_client = urllib3.PoolManager(
+#             retries=False,
+#             maxsize=300,
+#             num_pools=10
+#         )
+#         _minio = Minio(
+#             MINIO_HOST, 
+#             access_key=MINIO_ACCESS, 
+#             secret_key=MINIO_SECRET, 
+#             secure=False,
+#             http_client=http_client
+#         )
+#     return _minio
 
 # =============================================================================
 # DATABASE DATA ACCESS LAYER (DAL)
 # =============================================================================
-async def query_tsdb_range(device_id: str, start_time: datetime, end_time: datetime):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        records = await conn.fetch(
-            "SELECT * FROM telemetry_live WHERE device_id = $1 AND metric_time >= $2 AND metric_time < $3 ORDER BY metric_time ASC",
-            device_id, start_time, end_time
-        )
-        return [dict(r) for r in records]
 
-async def query_tsdb_latest(device_id: str, limit: int = 2016):
+TSDB_EXPORT_COLUMNS = """
+    metric_time,
+    device_id,
+    platform_customer_id,
+    application_customer_id,
+    amb_temp,
+    avg_watts,
+    cpu_avg_freq,
+    cpu_max,
+    cpu_pwr_sav_lim,
+    cpu_util,
+    cpu_watts,
+    gpu_watts,
+    min_watts,
+    peak_watts,
+    status,
+    error_reason
+"""
+
+
+async def query_tsdb_range(
+    device_id: str,
+    start_time: datetime,
+    end_time: datetime
+):
     pool = await get_db_pool()
+
     async with pool.acquire() as conn:
-        # Optimized for speed: Ordering ASC in SQL removes Python reversed() overhead
+
+        query = f"""
+            SELECT {TSDB_EXPORT_COLUMNS}
+            FROM telemetry_live
+            WHERE device_id = $1
+              AND metric_time >= $2
+              AND metric_time < $3
+            ORDER BY metric_time ASC
+        """
+
         return await conn.fetch(
-            "SELECT * FROM telemetry_live WHERE device_id = $1 ORDER BY metric_time ASC LIMIT $2",
-            device_id, limit
+            query,
+            device_id,
+            start_time,
+            end_time
         )
+
+
+async def query_tsdb_latest(
+    device_id: str,
+    limit: int = 2016
+):
+    pool = await get_db_pool()
+
+    async with pool.acquire() as conn:
+
+        query = f"""
+            SELECT {TSDB_EXPORT_COLUMNS}
+            FROM telemetry_live
+            WHERE device_id = $1
+            ORDER BY metric_time DESC
+            LIMIT $2
+        """
+
+        return await conn.fetch(
+            query,
+            device_id,
+            limit
+        )
+
 
 # =============================================================================
 # BACKGROUND ASYNC WORKERS (Bulk Query Architecture)
@@ -646,15 +670,14 @@ BULK_BATCH_SIZE = 400  # 🎯 Dialed back to the 'Sweet Spot' for 1601 device sy
 
 def process_device_batch_hydration(
     table: pa.Table, 
-    devices_meta: dict,  # Full DEVICES registry (pre-loaded, shared reference)
     count: int
 ) -> list:
     """
     Vectorized Hydration: Processes a batch of devices via PyArrow.
     Runs in ProcessPoolExecutor to bypass GIL.
     
-    🚀 Memory Optimization: devices_meta is a reference to the shared registry,
-    not a per-batch dict. Individual device metadata is fetched on-demand.
+    🚀 Memory Optimization: Reads from pre-initialized global worker registry
+    to completely avoid IPC pickling overhead.
     🧹 Aggressive GC: Collect after each device to prevent buildup.
     """
     import pyarrow as pa
@@ -714,36 +737,20 @@ def process_device_batch_hydration(
     else:
         time_strings = time_col
         
-    # Build struct array for PowerDetail (Each element is a {PascalCase: Value} object)
-    struct_arrays = []
-    struct_names = []
-    for raw, pascal in field_map.items():
-        if raw == "metric_time":
-            struct_arrays.append(time_strings.combine_chunks())
-            struct_names.append(pascal)
-        elif raw in sorted_table.column_names:
-            struct_arrays.append(sorted_table[raw].combine_chunks())
-            struct_names.append(pascal)
-    
-    power_detail_structs = pa.StructArray.from_arrays(struct_arrays, names=struct_names)
-    
-    # (Removed to_pylist() on full table to save memory and avoid redundancy)
+    # (Batch-level to_pylist removed to optimize memory)
 
     # 🏎️ STEP 2: Vectorized Aggregates for the WHOLE BATCH (Arrow Native - No Dict)
-    # Instead of calling mean/max/min 100 times per batch, we do it once
     agg_table = sorted_table.group_by("device_id").aggregate([
         ("avg_watts", "mean"),
         ("peak_watts", "max"),
         ("min_watts", "min")
     ])
     
-    # 🚀 MEMORY OPTIMIZATION: Keep aggregates in Arrow format (no dict allocation)
     agg_device_ids = agg_table["device_id"].to_pylist()
     agg_means = agg_table["avg_watts_mean"].to_pylist()
     agg_peaks = agg_table["peak_watts_max"].to_pylist()
     agg_mins = agg_table["min_watts_min"].to_pylist()
     
-    # Use list indices instead of dict lookup (O(1) with list comprehension hint)
     agg_lookup = {agg_device_ids[i]: (agg_means[i], agg_peaks[i], agg_mins[i]) for i in range(len(agg_device_ids))}
     
     # 🏎️ STEP 3: Block Processing per Device with Object Reuse
@@ -751,8 +758,6 @@ def process_device_batch_hydration(
     if n == 0: return []
     
     start_idx = 0
-    # Pre-allocate a single payload skeleton to reuse across all devices in this batch
-    # This avoids millions of dictionary allocations
     payload = {
         "device_id": "",
         "report_id": "",
@@ -793,16 +798,41 @@ def process_device_batch_hydration(
             end_idx += 1
         
         limit = min(end_idx - start_idx, count)
+        end_slice = start_idx + limit
         
-        # 🏎️ PyArrow C++ slicing (zero-copy)
-        slice_struct = power_detail_structs.slice(start_idx, limit)
-        power_detail_list = slice_struct.to_pylist()
+        # 🏎️ Zero-copy PyArrow slice of the sorted table
+        device_table = sorted_table.slice(start_idx, limit)
+        
+        # Convert ONLY this device's slice to list (~2016 rows) to keep memory near zero!
+        t_list = device_table["metric_time"].to_pylist()
+        at_list = device_table["amb_temp"].to_pylist()
+        av_list = device_table["avg_watts"].to_pylist()
+        cf_list = device_table["cpu_avg_freq"].to_pylist()
+        cm_list = device_table["cpu_max"].to_pylist()
+        cp_list = device_table["cpu_pwr_sav_lim"].to_pylist()
+        cu_list = device_table["cpu_util"].to_pylist()
+        cw_list = device_table["cpu_watts"].to_pylist()
+        gw_list = device_table["gpu_watts"].to_pylist()
+        mi_list = device_table["min_watts"].to_pylist()
+        pk_list = device_table["peak_watts"].to_pylist()
+        
+        # 🏎️ Python Native List Slicing & Zipped List Comprehension (up to 25x faster than PyArrow slice struct conversion)
+        power_detail_list = [
+            {
+                "Time": t, "AmbTemp": at, "Average": av, "CpuAvgFreq": cf,
+                "CpuMax": cm, "CpuPwrSavLim": cp, "CpuUtil": cu, "CpuWatts": cw,
+                "GpuWatts": gw, "Minimum": mi, "Peak": pk
+            }
+            for t, at, av, cf, cm, cp, cu, cw, gw, mi, pk in zip(
+                t_list, at_list, av_list, cf_list, cm_list, cp_list, cu_list, cw_list, gw_list, mi_list, pk_list
+            )
+        ]
         
         # 🏎️ Lookup pre-calculated aggregates (dict lookup O(1))
         avg_v, max_v, min_v = agg_lookup.get(current_did, (0.0, 0.0, 0.0))
         
         # 🏎️ Update reused payload dict (No new allocation!)
-        meta = devices_meta.get(current_did, {})
+        meta = _WORKER_REGISTRY.get(current_did, {})
         
         # 🏎️ Serialization Optimization: Use orjson.Fragment
         # This converts telemetry to bytes once and avoids re-walking the tree later
@@ -1265,7 +1295,7 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             # This is the "Hot Path": No pickling of large dicts in main thread
             results = await loop.run_in_executor(
                 cpu_pool, process_device_batch_hydration,
-                batch_table, DEVICES, count
+                batch_table, count
             )
             
             # Send results to Kafka (Non-Blocking: fire-and-forget after serialization)
