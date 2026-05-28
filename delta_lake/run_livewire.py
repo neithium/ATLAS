@@ -1,7 +1,9 @@
 import time
+import os
 from datetime import datetime
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import coalesce, to_timestamp, current_timestamp, col, lit
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType, LongType
 from delta_core import (
     PipelineConfig,
     LatencyTracker,
@@ -16,7 +18,7 @@ from delta_core import (
 def run_livewire_pipeline(
     spark: SparkSession,
     tracker: LatencyTracker,
-    source_path: str = "/stream_raw",
+    source_path: str = "/app/data/processed",
     target_path: str = PipelineConfig.REFINED_PATH
 ) -> dict:
     """
@@ -53,15 +55,47 @@ def run_livewire_pipeline(
     
     # Use readStream for continuous folder ingestion.
     # The schema is inferred from the Parquet files, making it schema-agnostic.
+    
+    # Check if source directory has any parquet files
+    has_data = False
+    try:
+        for root, dirs, files in os.walk(source_path):
+            if any(f.endswith('.parquet') for f in files):
+                has_data = True
+                break
+    except Exception:
+        pass
+    
+    if not has_data:
+        print(f"\n        No parquet files found in {source_path}")
+        print(f"          Waiting for processor to generate data from Kafka...")
+        print(f"          If using test mode, enable RUN_GENERATOR=y to pre-populate test data")
+        print(f"          Will retry schema inference when data arrives...\n")
+    
     try:
         # Enable Spark streaming schema inference
         spark.conf.set("spark.sql.streaming.schemaInference", "true")
         
-        # Recursive reading from /stream_raw allows parsing both /batch and /stream partitions
-        stream_df = spark.readStream.parquet(f"{source_path}/*/*.parquet")
+        # Recursive reading from both /app/data/processed/stream/ and /app/data/processed/batch/
+        # Pattern matches: stream/worker_1/*.parquet, batch/*.parquet, etc.
+        stream_df = spark.readStream.parquet(f"{source_path}")
     except Exception as e:
-        print(f"         ⚠ Could not initialize stream from {source_path}: {e}")
-        return {"status": "failed"}
+        error_msg = str(e)
+        if "Unable to infer schema" in error_msg or "Path does not exist" in error_msg:
+            print(f"\n           Cannot initialize streaming: {error_msg}")
+            print(f"\n           TROUBLESHOOTING:")
+            print(f"            1. Check if Kafka has telemetry data:")
+            print(f"               docker exec atlas-ingestion curl -s http://localhost:8001/health | jq .")
+            print(f"            2. Check processor logs:")
+            print(f"               docker logs atlas-processor | grep -i 'worker\\|batch'")
+            print(f"            3. Enable test data generation:")
+            print(f"               RUN_GENERATOR=y RUN_PIPELINE=y docker compose up atlas-lakehouse")
+            print(f"            4. Check that docker volumes exist:")
+            print(f"               docker volume ls | grep delta")
+            return {"status": "failed", "reason": "no_input_data"}
+        else:
+            print(f"         ⚠ Error initializing stream: {e}")
+            return {"status": "failed", "reason": str(e)}
 
     # Track batches
     batch_counter = {"count": 0}
@@ -75,16 +109,29 @@ def run_livewire_pipeline(
             
         print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚡ Processing Micro-batch {batch_id} with {rows} rows...", flush=True)
         
-        # Schema alignment mapping streaming and batch outputs
+        # Schema alignment mapping streaming and batch outputs (schema-agnostic)
         from pyspark.sql.functions import coalesce, to_timestamp, current_timestamp
+        
+        # Make the metric_time derivation schema-agnostic
+        if "window_start" in batch_df.columns:
+            time_col = col("window_start")
+        elif "event_date" in batch_df.columns:
+            time_col = to_timestamp(col("event_date"))
+        else:
+            time_col = current_timestamp()
+            
         aligned_df = (
             batch_df
-            .withColumn("metric_time", coalesce(col("window_start"), to_timestamp(col("event_date")), current_timestamp()))
+            .withColumn("metric_time", time_col)
             .withColumn("application_customer_id", lit("livewire_unknown"))
             .withColumn("platform_customer_id", lit("livewire_unknown"))
             .withColumn("report_type", lit("livewire_raw"))
-            .drop("window_start", "window_end", "event_date")  # Drop staging columns
         )
+        
+        # Drop staging columns only if they exist
+        drop_cols = [c for c in ["window_start", "window_end", "event_date"] if c in aligned_df.columns]
+        if drop_cols:
+            aligned_df = aligned_df.drop(*drop_cols)
         
         prepared_df = prepare_partition_columns(aligned_df)
         hashed_df = generate_composite_hash(prepared_df)

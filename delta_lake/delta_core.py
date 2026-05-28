@@ -22,8 +22,8 @@ class PipelineConfig:
     
     # Paths (configurable via CLI args)
     RAW_DATA_PATH = "/raw"
-    REFINED_PATH = "/refined"
-    CHECKPOINT_PATH = "/refined/_checkpoints"
+    REFINED_PATH = "/app/data/refined"
+    CHECKPOINT_PATH = "/app/data/refined/_checkpoints"
     
     # Mode: legacy | benchmark | dataframe | livewire
     MODE = " benchmark"
@@ -303,7 +303,12 @@ def optimize_delta_table(spark: SparkSession, path: str, zorder_col: Optional[st
     delta_table = DeltaTable.forPath(spark, path)
     if zorder_col:
         print(f"        Running OPTIMIZE and Z-ORDER by {zorder_col}...")
-        delta_table.optimize().executeZOrderBy(zorder_col)
+        # Handle comma-separated column names
+        if isinstance(zorder_col, str) and "," in zorder_col:
+            cols = [col.strip() for col in zorder_col.split(",")]
+            delta_table.optimize().executeZOrderBy(*cols)
+        else:
+            delta_table.optimize().executeZOrderBy(zorder_col)
     else:
         print("        Running OPTIMIZE...")
         delta_table.optimize().executeCompaction()

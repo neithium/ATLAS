@@ -33,7 +33,8 @@ volumes:
   postgres-data:
   clickhouse-data:
   spark-checkpoint:
-  delta-refined:
+  delta-processed:  # Processor's aggregated output
+  delta-refined:    # Lakehouse's deduplicated & optimized output
   raw-telemetry:
   # Shared volumes for Lakehouse module (NOTE: bind mounts are defined per-service)
   # Streaming checkpoint volume
@@ -478,7 +479,7 @@ services:
       - spark-checkpoint:/app/checkpoint
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
-      - delta-refined:/app/data/processed
+      - delta-processed:/app/data/processed
       - batch-data:/app/data 
 
     networks:
@@ -570,8 +571,10 @@ services:
       - 8.8.4.4
     volumes:
       # Shared volumes for inter-container data flow
-      - delta-refined:/refined
-      - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
+      # Read processed data from processor container
+      - delta-processed:/app/data/processed
+      # Write refined data to persistent storage
+      - delta-refined:/app/data/refined
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
       - ./delta_lake/generate_data.py:/app/generate_data.py
@@ -659,7 +662,7 @@ services:
         echo '' &&
         if [ \"$$RUN_VACUUM\" = 'y' ] || [ \"$$RUN_VACUUM\" = 'Y' ]; then
           echo '[3/3] Running VACUUM to clean old Delta log files...' &&
-          python3 -c \"from run_benchmark import create_spark_session; from delta_core import vacuum_old_files; spark = create_spark_session('Vacuum'); vacuum_old_files(spark, '/refined', $$VACUUM_RETENTION_DAYS * 24)\" ;
+          python3 -c \"from run_benchmark import create_spark_session; from delta_core import vacuum_old_files; spark = create_spark_session('Vacuum'); vacuum_old_files(spark, '/app/data/refined', $$VACUUM_RETENTION_DAYS * 24)\" ;
         else
           echo \"[3/3] Skipping vacuum (RUN_VACUUM=$$RUN_VACUUM)\";
         fi &&
@@ -864,7 +867,7 @@ services:
         echo '' &&
         python3 streaming_merge_pipeline.py \
           --source $$STREAMING_SOURCE \
-          --output /refined \
+          --output /app/data/refined \
           --trigger \"$$TRIGGER_INTERVAL\" \
           --checkpoint $$CHECKPOINT_DIR
       "
