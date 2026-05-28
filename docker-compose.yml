@@ -61,14 +61,14 @@ services:
   #   - Streaming: On-Demand Kafka Outgress for Hierarchical Exports
   # ===========================================================================
   # ── OBSERVABILITY: JAEGER (Tracing UI) ──────────────────────────────────
-  jaeger:
-    image: jaegertracing/all-in-one:1.47
-    container_name: atlas-tracing
-    ports:
-      - "16686:16686"   # Jaeger UI
-      - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
-    networks:
-      - atlas-network
+  # jaeger:
+  #   image: jaegertracing/all-in-one:1.47
+  #   container_name: atlas-tracing
+  #   ports:
+  #     - "16686:16686"   # Jaeger UI
+  #     - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
+  #   networks:
+  #     - atlas-network
 
   atlas-ingestion:
     build:
@@ -772,32 +772,32 @@ services:
   #     - dev
 
   # Jupyter Notebook - Interactive development (uses Lakehouse image)
-  jupyter:
-    build:
-      context: ./delta_lake
-      dockerfile: Dockerfile
-    container_name: atlas-jupyter
-    hostname: jupyter
-    ports:
-      - "8888:8888"
-    volumes:
-      - C:/Users/Public/atlas-data/raw:/raw
-      - C:/Users/Public/atlas-data/refined:/refined
-      - ./delta_lake/data:/app/data
-      - ./delta_lake:/app/notebooks
-      - ./schema:/app/schema:ro
-    environment:
-      - SPARK_DRIVER_MEMORY=2g
-    working_dir: /app
-    networks:
-      - atlas-network
-    command: >
-      bash -c "
-        pip install jupyter &&
-        jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
-      "
-    profiles:
-      - jupyter
+  # jupyter:
+  #   build:
+  #     context: ./delta_lake
+  #     dockerfile: Dockerfile
+  #   container_name: atlas-jupyter
+  #   hostname: jupyter
+  #   ports:
+  #     - "8888:8888"
+  #   volumes:
+  #     - C:/Users/Public/atlas-data/raw:/raw
+  #     - C:/Users/Public/atlas-data/refined:/refined
+  #     - ./delta_lake/data:/app/data
+  #     - ./delta_lake:/app/notebooks
+  #     - ./schema:/app/schema:ro
+  #   environment:
+  #     - SPARK_DRIVER_MEMORY=2g
+  #   working_dir: /app
+  #   networks:
+  #     - atlas-network
+  #   command: >
+  #     bash -c "
+  #       pip install jupyter &&
+  #       jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
+  #     "
+  #   profiles:
+  #     - jupyter
 
   # ===========================================================================
   # STREAMING SERVICES (atlas-streaming, atlas-data-producer)

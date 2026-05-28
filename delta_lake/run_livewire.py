@@ -54,6 +54,9 @@ def run_livewire_pipeline(
     # Use readStream for continuous folder ingestion.
     # The schema is inferred from the Parquet files, making it schema-agnostic.
     try:
+        # Enable Spark streaming schema inference
+        spark.conf.set("spark.sql.streaming.schemaInference", "true")
+        
         # Recursive reading from /stream_raw allows parsing both /batch and /stream partitions
         stream_df = spark.readStream.parquet(f"{source_path}/*/*.parquet")
     except Exception as e:
