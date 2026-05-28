@@ -10,10 +10,9 @@ Database + Kafka:    166.172s
 System Throughput:   120,594 data points / sec
 
 
-----------------------------------------------------
-5000 Platforms 1:1 mappped with 5000 App_customers
-under each App_customer - 11 Devices
-----------------------------------------------------
+5000 platforms 
+5000 app_customers
+11 devices each
 
 --- Concurrent Multi-Platform Sweeps ---
 10 Platforms (110 devices):  2.141s  (103,578 pts/sec)
@@ -21,4 +20,6 @@ under each App_customer - 11 Devices
 100 Platforms (1100 devices): 23.625s (93,867 pts/sec)
 200 Platforms (2200 devices): 37.203s (119,216 pts/sec)
 500 Platforms (5500 devices): 109.015s (101,711 pts/sec)
+
+
 

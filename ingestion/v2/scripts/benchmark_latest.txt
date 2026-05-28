@@ -341,219 +341,179 @@ Date: 2026-05-27 09:44:15
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
 Platforms: 100 | Total Devices: 1100
-Date: 2026-05-27 09:46:47
+Date: 2026-05-27 09:54:43
 ------------------------------------------------------------
-   Total Time:        108.536s
+   Total Time:        71.673s
    Devices Received:  1100/1100
-   System Throughput: 20,432 points/sec
+   System Throughput: 30,878 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1000 | Total Devices: 11000
+Date: 2026-05-27 14:59:31
+------------------------------------------------------------
+   Total Time:        407.544s
+   Devices Received:  5112/11000
+   System Throughput: 25,288 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1000 | Total Devices: 11000
+Date: 2026-05-27 15:44:05
+------------------------------------------------------------
+   Total Time:        833.216s
+   Devices Received:  11000/11000
+   System Throughput: 26,615 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 5 | Total Devices: 55
+Date: 2026-05-27 15:52:28
+------------------------------------------------------------
+   Total Time:        6.321s
+   Devices Received:  55/55
+   System Throughput: 17,542 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1 | Total Devices: 11
+Date: 2026-05-27 16:02:32
+------------------------------------------------------------
+   Total Time:        3.523s
+   Devices Received:  11/11
+   System Throughput: 6,294 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1 | Total Devices: 11
+Date: 2026-05-27 16:02:45
+------------------------------------------------------------
+   Total Time:        3.676s
+   Devices Received:  11/11
+   System Throughput: 6,032 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1 | Total Devices: 11
+Date: 2026-05-27 16:03:04
+------------------------------------------------------------
+   Total Time:        4.875s
+   Devices Received:  11/11
+   System Throughput: 4,549 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 1 | Total Devices: 11
+Date: 2026-05-27 16:03:59
+------------------------------------------------------------
+   Total Time:        8.933s
+   Devices Received:  11/11
+   System Throughput: 2,483 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 10 | Total Devices: 110
+Date: 2026-05-27 16:03:55
+------------------------------------------------------------
+   Total Time:        22.738s
+   Devices Received:  110/110
+   System Throughput: 9,753 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
 Platforms: 100 | Total Devices: 1100
-Date: 2026-05-27 09:49:00
+Date: 2026-05-27 16:05:52
 ------------------------------------------------------------
-   Total Time:        108.224s
+   Total Time:        98.672s
    Devices Received:  1100/1100
-   System Throughput: 20,491 points/sec
+   System Throughput: 22,474 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
 Platforms: 100 | Total Devices: 1100
-Date: 2026-05-27 09:51:20
+Date: 2026-05-27 16:09:34
 ------------------------------------------------------------
-   Total Time:        98.444s
-   Devices Received:  1100/1100
-   System Throughput: 22,526 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
-Date: 2026-05-27 09:58:09
-------------------------------------------------------------
-   Total Time:        9.393s
-   Devices Received:  110/110
-   System Throughput: 23,608 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
-Date: 2026-05-27 10:02:27
-------------------------------------------------------------
-   Total Time:        39.981s
-   Devices Received:  110/110
-   System Throughput: 5,547 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 12 | Total Devices: 132
-Date: 2026-05-27 10:01:58
-------------------------------------------------------------
-   Total Time:        10.001s
-   Devices Received:  132/132
-   System Throughput: 26,607 points/sec
+   Total Time:        92.250s
+   Devices Received:  1082/1100
+   System Throughput: 23,646 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
 Platforms: 100 | Total Devices: 1100
-Date: 2026-05-27 10:04:07
+Date: 2026-05-27 16:12:15
 ------------------------------------------------------------
-   Total Time:        94.368s
+   Total Time:        38.438s
    Devices Received:  1100/1100
-   System Throughput: 23,500 points/sec
+   System Throughput: 57,693 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 200 | Total Devices: 2200
+Date: 2026-05-27 16:15:41
+------------------------------------------------------------
+   Total Time:        98.500s
+   Devices Received:  2200/2200
+   System Throughput: 45,028 points/sec
+============================================================
+
+============================================================
+E2E MULTI-PLATFORM BENCHMARK
+Platforms: 200 | Total Devices: 2200
+Date: 2026-05-27 16:17:19
+------------------------------------------------------------
+   Total Time:        77.284s
+   Devices Received:  2200/2200
+   System Throughput: 57,388 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
 Platforms: 100 | Total Devices: 1100
-Date: 2026-05-27 10:11:28
+Date: 2026-05-27 16:18:33
 ------------------------------------------------------------
-   Total Time:        134.931s
+   Total Time:        32.343s
    Devices Received:  1100/1100
-   System Throughput: 16,435 points/sec
+   System Throughput: 68,565 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
 Platforms: 100 | Total Devices: 1100
-Date: 2026-05-27 10:14:36
+Date: 2026-05-27 16:28:39
 ------------------------------------------------------------
-   Total Time:        140.057s
+   Total Time:        41.751s
    Devices Received:  1100/1100
-   System Throughput: 15,834 points/sec
+   System Throughput: 53,115 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
-Date: 2026-05-27 10:17:52
+Platforms: 500 | Total Devices: 5500
+Date: 2026-05-27 16:33:03
 ------------------------------------------------------------
-   Total Time:        17.872s
-   Devices Received:  110/110
-   System Throughput: 12,408 points/sec
+   Total Time:        240.877s
+   Devices Received:  5500/5500
+   System Throughput: 46,032 points/sec
 ============================================================
 
 ============================================================
 E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
-Date: 2026-05-27 10:17:48
+Platforms: 500 | Total Devices: 5500
+Date: 2026-05-27 16:54:03
 ------------------------------------------------------------
-   Total Time:        25.487s
-   Devices Received:  110/110
-   System Throughput: 8,701 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 12 | Total Devices: 132
-Date: 2026-05-27 10:18:09
-------------------------------------------------------------
-   Total Time:        14.999s
-   Devices Received:  132/132
-   System Throughput: 17,741 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 12 | Total Devices: 132
-Date: 2026-05-27 10:20:55
-------------------------------------------------------------
-   Total Time:        14.206s
-   Devices Received:  132/132
-   System Throughput: 18,733 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 12 | Total Devices: 132
-Date: 2026-05-27 10:21:17
-------------------------------------------------------------
-   Total Time:        10.864s
-   Devices Received:  132/132
-   System Throughput: 24,495 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 30 | Total Devices: 330
-Date: 2026-05-27 10:22:20
-------------------------------------------------------------
-   Total Time:        50.342s
-   Devices Received:  330/330
-   System Throughput: 13,215 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 50 | Total Devices: 550
-Date: 2026-05-27 10:23:47
-------------------------------------------------------------
-   Total Time:        72.131s
-   Devices Received:  551/550
-   System Throughput: 15,400 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
-Date: 2026-05-27 10:24:14
-------------------------------------------------------------
-   Total Time:        30.656s
-   Devices Received:  111/110
-   System Throughput: 7,300 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
-Date: 2026-05-27 10:24:57
-------------------------------------------------------------
-   Total Time:        7.891s
-   Devices Received:  110/110
-   System Throughput: 28,104 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 12 | Total Devices: 132
-Date: 2026-05-27 10:25:16
-------------------------------------------------------------
-   Total Time:        9.276s
-   Devices Received:  132/132
-   System Throughput: 28,687 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 24 | Total Devices: 264
-Date: 2026-05-27 10:26:23
-------------------------------------------------------------
-   Total Time:        20.671s
-   Devices Received:  264/264
-   System Throughput: 25,748 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 48 | Total Devices: 528
-Date: 2026-05-27 10:26:37
-------------------------------------------------------------
-   Total Time:        39.497s
-   Devices Received:  528/528
-   System Throughput: 26,950 points/sec
-============================================================
-
-============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 96 | Total Devices: 1056
-Date: 2026-05-27 10:28:15
-------------------------------------------------------------
-   Total Time:        77.083s
-   Devices Received:  1056/1056
-   System Throughput: 27,618 points/sec
+   Total Time:        191.995s
+   Devices Received:  5500/5500
+   System Throughput: 57,752 points/sec
 ============================================================
