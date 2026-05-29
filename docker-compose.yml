@@ -193,7 +193,7 @@ services:
       - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx2048m -Xms2048m
+      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -269,7 +269,7 @@ services:
       - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx2048m -Xms2048m
+      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -345,7 +345,7 @@ services:
       - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx2048m -Xms2048m
+      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts

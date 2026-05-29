@@ -28,29 +28,48 @@ async def run_bench():
         log.info(f"✅ JOB COMPLETE!")
         log.info(f"📊 EXACT TIME TAKEN: {duration:.2f} seconds ({(duration/60):.2f} minutes)")
         
-        # 🔍 Verify the _SUCCESS file was written
+        # ── Verify _SUCCESS marker in both RAW and ARCHIVE ──────────────
         import glob
         import json
-        success_files = glob.glob("/app/data/raw/production/year=*/month=*/day=*/full_7day/_SUCCESS")
-        if success_files:
+        
+        passed = True
+        for store_name, base_path in [("RAW", "/app/data/raw"), ("ARCHIVE", "/app/data/archive")]:
+            success_files = glob.glob(f"{base_path}/production/year=*/month=*/day=*/full_7day/_SUCCESS")
+            if not success_files:
+                log.error(f"❌ [{store_name}] No _SUCCESS file found!")
+                passed = False
+                continue
+            
             latest_success = max(success_files, key=os.path.getmtime)
-            log.info(f"📁 Found _SUCCESS file at: {latest_success}")
+            log.info(f"📁 [{store_name}] _SUCCESS at: {latest_success}")
+            
             with open(latest_success, "r") as f:
                 metadata = json.load(f)
-                log.info(f"📄 Metadata Payload: {json.dumps(metadata, indent=2)}")
+            log.info(f"📄 [{store_name}] Metadata: {json.dumps(metadata, indent=2)}")
+            
+            # Validate silo parquet files exist alongside _SUCCESS
+            silo_dir = os.path.dirname(latest_success)
+            silo_files = glob.glob(os.path.join(silo_dir, "daily_silo_*.parquet"))
+            expected_silos = metadata.get("total_silos", 0)
+            total_size_mb = sum(os.path.getsize(f) for f in silo_files) / (1024 * 1024)
+            
+            if len(silo_files) == expected_silos:
+                log.info(f"✅ [{store_name}] Silo validation PASSED: {len(silo_files)}/{expected_silos} files | {total_size_mb:.1f} MB on disk")
+            else:
+                log.error(f"❌ [{store_name}] Silo validation FAILED: {len(silo_files)}/{expected_silos} files")
+                passed = False
+        
+        if passed:
+            log.info("🎉 ALL VALIDATIONS PASSED")
         else:
-            log.warning("⚠️ No _SUCCESS file found in /app/data/raw/production/year=*/month=*/day=*/full_7day/_SUCCESS!")
+            log.error("💥 VALIDATION FAILED — check missing files above")
+            sys.exit(1)
             
     except Exception as e:
         log.error(f"💥 Job failed: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     asyncio.run(run_bench())
 
-"""
-took around 6 mins to push 10k devices into raw directory.
-100 per batch and 10 batches for 10000 devices 
-can be optimized further by increasing the batch size and  
-by assigning multiple workers to push the data to raw.
-"""
 # RUN COMMAND: docker exec atlas-ingestion python3 /app/v2/scripts/bench_daily_job.py

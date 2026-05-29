@@ -151,7 +151,7 @@ def get_cpu_pool():
         # Each spawned worker costs ~200MB (Python + PyArrow + orjson + registry copy)
         # CPU usage peaks at ~110% so extra workers just waste memory
         _cpu_pool_internal = ProcessPoolExecutor(
-            max_workers=4,
+            max_workers=3,
             initializer=init_worker_registry,
             initargs=(CACHED_REGISTRY,)
         )
@@ -217,7 +217,7 @@ ACTIVE_HIERARCHIES = set()
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(6)  # 🚀 Allow 6 concurrent hierarchies (12 CPUs, 7.4GB available)
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # 🚀 Reduced to 2 to prevent All-in-One container OOM
 
 # Tier 3: CPU Worker Guard (Ensures all concurrent exports share the cores fairly)
 GLOBAL_WORKER_SEM = asyncio.Semaphore(8)  # 🚀 Reduced to 3 (1 batch per concurrent hierarchy)
@@ -358,16 +358,20 @@ async def daily_archival_job():
         os.makedirs(raw_dir, exist_ok=True)
         os.makedirs(archive_dir, exist_ok=True)
 
-        with open(REGISTRY_PATH, "rb") as f:
-            DEVICES_META = orjson.loads(f.read())
-        
-        all_device_ids = list(DEVICES_META.keys())
+        # Use the already loaded global registry to avoid duplicating memory
+        global CACHED_REGISTRY
+        if not CACHED_REGISTRY:
+            load_registry()
+            
+        all_device_ids = list(CACHED_REGISTRY.keys())
         pool = await get_db_pool()
         
         # 🏎️ LARGE SILO STRATEGY (Target: 128MB+)
         # 2,016 points/device/7-days -> ~1,000 devices per 128MB silo
-        SILO_SIZE = 1000 
-        MICRO_BATCH = 100
+        SILO_SIZE = 2600 
+        # 🧹 CRITICAL MEMORY FIX: Reduced MICRO_BATCH from 100 to 25.
+        # Python dicts for 200,000 nested records cause OOM in 1GB containers.
+        MICRO_BATCH = 50
         total_records = 0
         
         for i in range(0, len(all_device_ids), SILO_SIZE):
@@ -398,7 +402,7 @@ async def daily_archival_job():
                 
                 hydrated = []
                 for did, raw_readings in device_groups.items():
-                    meta = DEVICES_META.get(did, {})
+                    meta = CACHED_REGISTRY.get(did, {})
                     
                     # 1. Build PowerDetail and aggregates (2016 points for 7 days)
                     pd_list, avg_v, max_v, min_v = build_batch_power_detail(raw_readings)
@@ -426,7 +430,13 @@ async def daily_archival_job():
                 
                 writer.write_table(table)
                 silo_records_count += len(table)
-                del records, hydrated, table
+                
+                # Extreme GC cleanup to prevent OOM
+                del records
+                device_groups.clear()
+                del device_groups
+                del hydrated
+                del table
                 gc.collect()
             
             if writer:
@@ -447,7 +457,23 @@ async def daily_archival_job():
 
         log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
 
-        log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
+        # Write _SUCCESS marker for downstream consumers (Spark, verification scripts)
+        success_metadata = {
+            "status": "SUCCESS",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "start_date": start.strftime('%Y-%m-%d'),
+            "end_date": end.strftime('%Y-%m-%d'),
+            "total_records": total_records,
+            "total_silos": (len(all_device_ids) + SILO_SIZE - 1) // SILO_SIZE,
+            "total_devices": len(all_device_ids),
+            "compression": "snappy"
+        }
+        for target_dir in [raw_dir, archive_dir]:
+            success_path = os.path.join(target_dir, "_SUCCESS")
+            with open(success_path, "w") as f:
+                import json
+                json.dump(success_metadata, f, indent=2)
+        log.info(f"📝 [ARCHIVE] _SUCCESS marker written to {raw_dir} and {archive_dir}")
         
     except Exception as e:
         log.error(f"💥 [ARCHIVE] Daily Consolidation Failed: {str(e)}")
@@ -546,7 +572,7 @@ async def get_kafka():
             _kafka = AIOKafkaProducer(
                 bootstrap_servers=KAFKA_BOOTSTRAP,
                 value_serializer=lambda v: v if isinstance(v, bytes) else orjson.dumps(v),
-                compression_type="snappy",     # 📦 Reduced to reduce Redpanda I/O bottleneck
+                compression_type="lz4",     # 📦 Reduced to reduce Redpanda I/O bottleneck
                 linger_ms=5,                 # 🚀 Increased to 100ms for aggressive batching (was 5)
                 max_batch_size=16777216,       # 16MB (increased from 10MB)
                 max_request_size=16777216,     # 16MB (increased from 10MB)
@@ -1224,10 +1250,16 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
         query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
         
         log.info(f"📥 [HYBRID] Fetching DB range from {db_start_time} to {end_time}...")
-        query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4"
         
         async with pool.acquire() as conn:
-            rows = await conn.fetch(query, pcid, acid, db_start_time, end_time)
+            # 🚀 TSDB OPTIMIZATION: If specific device_ids were passed (e.g. manual fetch), don't fetch the whole hierarchy
+            if device_ids and len(device_ids) < 100:
+                query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4 AND device_id = ANY($5::text[])"
+                rows = await conn.fetch(query, pcid, acid, db_start_time, end_time, device_ids)
+            else:
+                query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4"
+                rows = await conn.fetch(query, pcid, acid, db_start_time, end_time)
+            
             
             if rows:
                 def convert_to_table(r_list):
@@ -1270,6 +1302,12 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             async with HIERARCHY_LOCK:
                 ACTIVE_HIERARCHIES.discard(f"{pcid}:{acid}")
             return
+
+        # 🎯 SPECIFIC DEVICE FILTER
+        # If specific device_ids were requested, filter the fetched data down to just those devices
+        if device_ids:
+            mask = pc.is_in(full_table["device_id"], value_set=pa.array(device_ids))
+            full_table = full_table.filter(mask)
 
         # ── HYBRID OPTIMIZATION: ARROW HYDRATION ────────────────────────────
         unique_dids = pc.unique(full_table["device_id"]).to_pylist()
@@ -1331,6 +1369,17 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
 
         await kafka_prod.flush()
         
+        # 🧹 AGGRESSIVE OS-LEVEL MEMORY RELEASE
+        # Python's allocator does not return memory to the OS/Docker immediately.
+        # This forces glibc to release all freed memory pages back to the kernel.
+        import ctypes
+        try:
+            libc = ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+            log.info("🧹 [MEMORY] malloc_trim(0) executed: OS memory released.")
+        except Exception as e:
+            pass
+        
         t_total = time.monotonic() - t_start
         log.info(f"✅ [HYBRID LATEST] Vector-Hydrated Export Complete | Devices: {processed_records:,} | Time: {t_total:.2f}s")
 
@@ -1389,18 +1438,16 @@ async def trigger_latest_telemetry_export(pcid: str, acid: str, background_tasks
             raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/pcid/{pcid}/acid/{acid}/id/{device_string}/export")
-async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, background_tasks: BackgroundTasks, days: int = 7):
+async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, background_tasks: BackgroundTasks, count: int = 2016):
     """Specific ID Export: Targets a comma-separated list of Device IDs."""
     try:
         device_ids = [d.strip() for d in device_string.split(",")]
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=days)
 
         log.info(f"📥 [API] Manual Export Requested for {len(device_ids)} specific devices.")
         
         # Manual exports use a special key to ensure they don't block hierarchical ones
         m_key = f"manual:{uuid.uuid4().hex[:8]}"
-        background_tasks.add_task(_handle_throttled_export, _export_stream_task, m_key, start_time, end_time, pcid=pcid, acid=acid, device_ids=device_ids)
+        background_tasks.add_task(_handle_throttled_export, _export_latest_task, m_key, device_ids, count)
         return {
             "status": "Manual Stream Started", 
             "requested_devices": len(device_ids),
@@ -1461,8 +1508,15 @@ async def register_new_device(device: DeviceRegistration):
                 f.write(orjson.dumps(configs))
 
             # 🚀 DYNAMIC UPDATE: Refresh in-memory caches so API recognizes device immediately
-            global CACHED_REGISTRY, REGISTRY_DF
+            global CACHED_REGISTRY, REGISTRY_DF, HIERARCHY_INDEX
             CACHED_REGISTRY[device.device_id] = new_config
+            
+            # Update Hierarchy Index for O(1) lookups
+            h_key = (new_config.get("platform_customer_id"), new_config.get("application_customer_id"))
+            if h_key not in HIERARCHY_INDEX:
+                HIERARCHY_INDEX[h_key] = []
+            if device.device_id not in HIERARCHY_INDEX[h_key]:
+                HIERARCHY_INDEX[h_key].append(device.device_id)
             
             # Append to vectorized registry dataframe
             new_row = pd.DataFrame([{
