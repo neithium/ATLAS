@@ -132,7 +132,7 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
     day_start = (now - timedelta(days=d_num + 1)).replace(hour=0, minute=0, second=0, microsecond=0)
     date_str = day_start.strftime("%Y-%m-%d")
     
-    log.info(f"🚀 Worker started Day {d_num+1}/{days_total} [{date_str}]")
+    log.info(f"[PREFILL TSDB] Worker started Day {d_num+1}/{days_total} [{date_str}]")
     
     conn = None
     try:
@@ -148,7 +148,7 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
             # Resume Check: Skip if this hour already has data
             cur.execute("SELECT 1 FROM telemetry_live WHERE metric_time = %s LIMIT 1", (hour_dt,))
             if cur.fetchone():
-                log.info(f"⏭️ Skipping {date_str} H{h:02} (already has data)")
+                log.info(f"[PREFILL TSDB] Skipping {date_str} H{h:02} (already has data)")
                 continue
             
             h_start = time.perf_counter()
@@ -165,12 +165,12 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
                 
             conn.commit() # Commit after each hour
 
-            log.info(f"  [DONE] {date_str} H{h:02} | Total: {total_rows:,} rows | Elapsed: {time.perf_counter()-h_start:.2f}s")
+            log.info(f"[PREFILL TSDB]  [DONE] {date_str} H{h:02} | Total: {total_rows:,} rows | Elapsed: {time.perf_counter()-h_start:.2f}s")
 
-        log.info(f"✅ Day {date_str} Complete. Final: {total_rows:,} rows. Total Elapsed: {time.perf_counter()-t0:.1f}s")
+        log.info(f"[PREFILL TSDB] Day {date_str} Complete. Final: {total_rows:,} rows. Total Elapsed: {time.perf_counter()-t0:.1f}s")
         
     except Exception as e:
-        log.error(f"❌ Error in worker {date_str}: {e}")
+        log.error(f"[PREFILL TSDB] Error in worker {date_str}: {e}")
         if conn: conn.rollback()
     finally:
         if conn:
@@ -179,7 +179,7 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
 
 def run_prefill(days: int = 7, workers: int = 4, limit: int = None, skip_archive: bool = False):
     registry_path = get_registry_path()
-    log.info(f"🔥 Starting Memory-Safe Hyper-Velocity Prefill: {days} Days | {workers} Workers | Limit: {limit if limit else 'All'}")
+    log.info(f"[PREFILL TSDB] Starting Memory-Safe Hyper-Velocity Prefill: {days} Days | {workers} Workers | Limit: {limit if limit else 'All'}")
     
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(process_day_task, d, days, registry_path, limit, skip_archive) for d in range(days)]
@@ -196,4 +196,4 @@ if __name__ == "__main__":
     
     start_time = time.time()
     run_prefill(days=args.days, workers=args.workers, limit=args.limit, skip_archive=args.skip_archive)
-    log.info(f"🏁 ALL DONE. Total time: {time.time()-start_time:.2f}s")
+    log.info(f"[PREFILL TSDB] ALL DONE. Total time: {time.time()-start_time:.2f}s")

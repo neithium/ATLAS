@@ -51,7 +51,7 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
             targets.append((h[0], h[1], hierarchy_counts[h]))
             
     total_expected = sum(t[2] for t in targets)
-    print(f"🚀 Starting E2E Multi-Platform Benchmark | Platforms: {len(targets)} | Total Devices: {total_expected}")
+    print(f"[BENCHMARK] Starting E2E Multi-Platform Benchmark | Platforms: {len(targets)} | Total Devices: {total_expected}")
     for pcid, acid, count in targets:
         print(f"  - {pcid} ({acid}): {count} devices")
     print("-" * 60)
@@ -81,17 +81,17 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
             url = f"http://localhost:8001/pcid/{pcid}/acid/{acid}/telemetry/latest/export"
             trigger_tasks.append(client.post(url))
         
-        print(f"📡 Triggering {len(targets)} exports in parallel...")
+        print(f"[BENCHMARK] Triggering {len(targets)} exports in parallel...")
         responses = await asyncio.gather(*trigger_tasks)
         
         for i, r in enumerate(responses):
             if r.status_code != 200:
-                print(f"  ❌ Failed to trigger {targets[i][0]}: {r.status_code}")
+                print(f"[BENCHMARK] Failed to trigger {targets[i][0]}: {r.status_code}")
             else:
-                print(f"  ✅ Triggered {targets[i][0]}")
+                print(f"[BENCHMARK] Triggered {targets[i][0]}")
 
     # 4. Wait for Kafka Messages
-    print(f"⌛ Waiting for {total_expected} devices to reach Kafka...")
+    print(f"[BENCHMARK] Waiting for {total_expected} devices to reach Kafka...")
     received_count = 0
     start_wait = time.monotonic()
     
@@ -99,7 +99,7 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
         while received_count < total_expected:
             # Check timeout (5 minutes max)
             if time.monotonic() - start_wait > 300:
-                print("❌ Timeout reached waiting for Kafka messages.")
+                print("[BENCHMARK] Timeout reached waiting for Kafka messages.")
                 break
                 
             try:
@@ -108,7 +108,7 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
                     received_count += len(messages)
                 
                 if received_count > 0:
-                    print(f"  📥 Received {received_count}/{total_expected} ({received_count/total_expected*100:.1f}%)", end="\r")
+                    print(f"[BENCHMARK] Received {received_count}/{total_expected} ({received_count/total_expected*100:.1f}%)", end="\r")
             except Exception as consumer_err:
                 # Silently retry on timeouts during heavy write load
                 await asyncio.sleep(1.0)

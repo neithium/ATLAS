@@ -18,7 +18,7 @@ chown -R postgres:postgres $DATA_DIR/timescale $DATA_DIR/redis $DATA_DIR/minio $
 
 # ── 1.5. Initialize Postgres Cluster if empty ───────────────────────────
 if [ ! -s "$DATA_DIR/timescale/PG_VERSION" ]; then
-    echo "🏗️ Initializing empty TimescaleDB cluster in $DATA_DIR/timescale..."
+    echo "[TSDB] Initializing empty TimescaleDB cluster in $DATA_DIR/timescale..."
     su postgres -s /bin/bash -c "/usr/lib/postgresql/15/bin/initdb -D $DATA_DIR/timescale"
     echo "shared_preload_libraries = 'timescaledb'" >> $DATA_DIR/timescale/postgresql.conf
 fi
@@ -87,7 +87,7 @@ minio server $DATA_DIR/minio --address ":9000" --console-address ":9001" > $DATA
 # ── 6. Identity Auto-Bootstrap ──────────────────────────────────────────
 # Ensure the 80,000-device registry exists (Scaling from Zero)
 if [ ! -f "/app/device_configs.json" ]; then
-    echo "🏝️ Registry missing! Auto-Bootstrapping fleet..."
+    echo "[REGISTRY] Registry missing! Auto-Bootstrapping fleet..."
     python3 v2/scripts/generate_registry.py --pcids 5 --acids 2 --devices 8000
 fi
 

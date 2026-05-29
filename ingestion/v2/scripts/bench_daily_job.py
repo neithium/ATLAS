@@ -14,7 +14,7 @@ async def run_bench():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger("bench-archive")
     
-    log.info("🚀 Initializing Production Registry and DB Pool...")
+    log.info("[DAILY JOB]Initializing Production Registry and DB Pool...")
     load_registry()
     await get_db_pool()
     
@@ -25,8 +25,8 @@ async def run_bench():
         await daily_archival_job()
         
         duration = time.monotonic() - start_time
-        log.info(f"✅ JOB COMPLETE!")
-        log.info(f"📊 EXACT TIME TAKEN: {duration:.2f} seconds ({(duration/60):.2f} minutes)")
+        log.info(f"[DAILY JOB] JOB COMPLETE!")
+        log.info(f"[DAILY JOB] EXACT TIME TAKEN: {duration:.2f} seconds ({(duration/60):.2f} minutes)")
         
         # ── Verify _SUCCESS marker in both RAW and ARCHIVE ──────────────
         import glob
@@ -36,16 +36,16 @@ async def run_bench():
         for store_name, base_path in [("RAW", "/app/data/raw"), ("ARCHIVE", "/app/data/archive")]:
             success_files = glob.glob(f"{base_path}/production/year=*/month=*/day=*/full_7day/_SUCCESS")
             if not success_files:
-                log.error(f"❌ [{store_name}] No _SUCCESS file found!")
+                log.error(f"[DAILY JOB] [{store_name}] No _SUCCESS file found!")
                 passed = False
                 continue
             
             latest_success = max(success_files, key=os.path.getmtime)
-            log.info(f"📁 [{store_name}] _SUCCESS at: {latest_success}")
+            log.info(f"[DAILY JOB] [{store_name}] _SUCCESS at: {latest_success}")
             
             with open(latest_success, "r") as f:
                 metadata = json.load(f)
-            log.info(f"📄 [{store_name}] Metadata: {json.dumps(metadata, indent=2)}")
+            log.info(f"[DAILY JOB] [{store_name}] Metadata: {json.dumps(metadata, indent=2)}")
             
             # Validate silo parquet files exist alongside _SUCCESS
             silo_dir = os.path.dirname(latest_success)
@@ -54,19 +54,19 @@ async def run_bench():
             total_size_mb = sum(os.path.getsize(f) for f in silo_files) / (1024 * 1024)
             
             if len(silo_files) == expected_silos:
-                log.info(f"✅ [{store_name}] Silo validation PASSED: {len(silo_files)}/{expected_silos} files | {total_size_mb:.1f} MB on disk")
+                log.info(f"[DAILY JOB] [{store_name}] Silo validation PASSED: {len(silo_files)}/{expected_silos} files | {total_size_mb:.1f} MB on disk")
             else:
-                log.error(f"❌ [{store_name}] Silo validation FAILED: {len(silo_files)}/{expected_silos} files")
+                log.error(f"[DAILY JOB] [{store_name}] Silo validation FAILED: {len(silo_files)}/{expected_silos} files")
                 passed = False
         
         if passed:
-            log.info("🎉 ALL VALIDATIONS PASSED")
+            log.info("[DAILY JOB] ALL VALIDATIONS PASSED")
         else:
-            log.error("💥 VALIDATION FAILED — check missing files above")
+            log.error("[DAILY JOB] VALIDATION FAILED — check missing files above")
             sys.exit(1)
             
     except Exception as e:
-        log.error(f"💥 Job failed: {e}")
+        log.error(f"[DAILY JOB] Job failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

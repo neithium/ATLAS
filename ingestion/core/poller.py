@@ -79,7 +79,7 @@ async def poll_all():
     LAST_POLL["success_count"] = 0
     LAST_POLL["error_count"] = 0
     
-    log.info(f"🚀 [poller] Starting high-scale poll for {total_devices:,} devices...")
+    log.info(f"[poller] Starting high-scale poll for {total_devices:,} devices...")
     
     batches = [devices[i:i + POLL_BATCH_SIZE] for i in range(0, total_devices, POLL_BATCH_SIZE)]
     semaphore = asyncio.Semaphore(POLL_WORKERS)
@@ -102,12 +102,12 @@ async def poll_all():
     
     # Ingestion Path
     if total_results:
-        log.info(f"💾 [hot-path] Ingesting {LAST_POLL['success_count']:,} records to TimescaleDB...")
+        log.info(f"[hot-path] Ingesting {LAST_POLL['success_count']:,} records to TimescaleDB...")
         await _push_to_tsdb_hot(total_results)
 
     LAST_POLL["end_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     LAST_POLL["status"] = "idle"
-    log.info(f"✅ [poller] Poll Complete: {LAST_POLL['success_count']}/{total_devices} success.")
+    log.info(f"[poller] Poll Complete: {LAST_POLL['success_count']}/{total_devices} success.")
 
 
 async def _push_to_tsdb_hot(batch_results):
@@ -145,7 +145,7 @@ async def _push_to_tsdb_hot(batch_results):
         f.seek(0)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: _do_tsdb_copy(f))
-        log.info(f"🔥 [hot-path] Bulk insert complete.")
+        log.info(f"[hot-path] Bulk insert complete.")
 
 def _do_tsdb_copy(f):
     conn = psycopg2.connect(TS_CONN_STR)
@@ -163,7 +163,7 @@ def start(run_immediately: bool = True):
     """Initializes the polling schedules."""
     scheduler.add_job(poll_all, trigger="interval", seconds=POLL_INTERVAL_SECONDS, id="ipmi_poller", max_instances=1, misfire_grace_time=300)
     scheduler.start()
-    log.info(f"📅 [scheduler] Dual-Write Background Engine Started.")
+    log.info(f"[scheduler] Dual-Write Background Engine Started.")
     if run_immediately:
         asyncio.create_task(poll_all())
 
@@ -172,6 +172,6 @@ def stop():
     try:
         if scheduler.running:
             scheduler.shutdown()
-        log.info(f"🛑 [scheduler] Dual-Write Background Engine Stopped.")
+        log.info(f"[scheduler] Dual-Write Background Engine Stopped.")
     except Exception:
         pass

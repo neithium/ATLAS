@@ -39,38 +39,6 @@ import gc
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-# ── OPENTELEMETRY TRACING SETUP ──────────────────────────────────────────
-try:
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    
-    # Initialize Tracing
-    resource = Resource(attributes={SERVICE_NAME: "atlas-ingestion"})
-    provider = TracerProvider(resource=resource)
-    # Jaeger collector usually runs on 4317 (OTLP gRPC)
-    otlp_exporter = OTLPSpanExporter(endpoint="http://jaeger:4317", insecure=True)
-    processor = BatchSpanProcessor(otlp_exporter)
-    provider.add_span_processor(processor)
-    trace.set_tracer_provider(provider)
-    tracer = trace.get_tracer(__name__)
-    TRACING_ENABLED = True
-except ImportError:
-    # Fallback: Create stub implementations if OpenTelemetry is not available
-    class StubSpan:
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-    
-    class StubTracer:
-        def start_as_current_span(self, name, attributes=None):
-            return StubSpan()
-    
-    tracer = StubTracer()
-    TRACING_ENABLED = False
-
 # Thread pool for synchronous background tasks (like Kafka flushing)
 _executor = ThreadPoolExecutor(max_workers=20)
 
@@ -129,8 +97,8 @@ class DeviceRegistration(BaseModel):
 _kafka: Optional[AIOKafkaProducer] = None
 _pool: Optional[asyncpg.Pool] = None
 _redis: Optional[Any] = None
-_executor = ThreadPoolExecutor(max_workers=24)  # 🧹 CRITICAL: Reduced to 32 (was 64) to save memory
-GLOBAL_IO_SEM = asyncio.Semaphore(8)  # 🧹 CRITICAL: Reduced to 50 (was 100) to limit concurrent file reads
+_executor = ThreadPoolExecutor(max_workers=24)  # OPTIMIZATION: Reduced to 32 (was 64) to save memory
+GLOBAL_IO_SEM = asyncio.Semaphore(8)  # OPTIMIZATION: Reduced to 50 (was 100) to limit concurrent file reads
 _WORKER_REGISTRY = {}
 _cpu_pool_internal = None
 
@@ -183,7 +151,7 @@ CACHED_REGISTRY = {}
 REGISTRY_DF = pd.DataFrame()
 REGISTRY_LOADED = False
 
-# 🚀 MEMORY OPTIMIZATION: Pre-indexed hierarchy lookup (O(1) vs O(N) full registry scan)
+# HIERARCHY OPTIMIZATION: Pre-indexed hierarchy lookup (O(1) vs O(N) full registry scan)
 # Structure: {(pcid, acid): [device_id1, device_id2, ...]}
 HIERARCHY_INDEX = {}
 
@@ -195,7 +163,7 @@ async def get_db_pool():
     if _pool is None:
         _pool = await asyncpg.create_pool(
             host=TSDB_HOST, port=TSDB_PORT, user=TSDB_USER, password=TSDB_PASS, database=TSDB_NAME,
-            min_size=10, max_size=30,  # 🧹 CRITICAL: Reduced from 30-150 to save connection pool memory
+            min_size=10, max_size=30,  # OPTIMIZATION: Reduced from 30-150 to save connection pool memory
             max_cached_statement_lifetime=3600,
             max_cacheable_statement_size=65536
         )
@@ -205,22 +173,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("api-v3")
 
 app = FastAPI(title="PowerPulse V3 Unified Ingestion API")
-if TRACING_ENABLED:
-    try:
-        FastAPIInstrumentor.instrument_app(app)
-    except Exception as e:
-        log.warning(f"⚠️ [TRACE] FastAPI instrumentation failed: {e}")
-
 # --- Concurrency & Safety Controls ---
 # Tier 1: Context Guard (Prevents redundant fetches for the SAME PCID/ACID)
 ACTIVE_HIERARCHIES = set() 
 HIERARCHY_LOCK = asyncio.Lock()
 
 # Tier 2: System Throttler (Prevents crashing Kafka if too many DIFFERENT hierarchies fetch)
-GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # 🚀 Reduced to 2 to prevent All-in-One container OOM
+GLOBAL_THROTTLE_SEM = asyncio.Semaphore(2)  # Limits concurrent exports to prevent OOM in containers
 
 # Tier 3: CPU Worker Guard (Ensures all concurrent exports share the cores fairly)
-GLOBAL_WORKER_SEM = asyncio.Semaphore(8)  # 🚀 Reduced to 3 (1 batch per concurrent hierarchy)
+GLOBAL_WORKER_SEM = asyncio.Semaphore(8)  # Reduced to ensure fair core sharing across concurrent exports
 
 # =============================================================================
 # THROTTLING WRAPPER
@@ -228,18 +190,17 @@ GLOBAL_WORKER_SEM = asyncio.Semaphore(8)  # 🚀 Reduced to 3 (1 batch per concu
 #queue explosion handler is pending
 async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
     """Wrapper to enforce global system limits and automatic cleanup of hierarchical locks."""
-    with tracer.start_as_current_span("queue_wait", attributes={"hierarchy": h_key}):
-        async with GLOBAL_THROTTLE_SEM:
-            try:
-                log.info(f"🚦 [THROTTLE] Starting export for {h_key} (Slots: {GLOBAL_THROTTLE_SEM._value} available)")
-                await task_func(*args, **kwargs)
-            except Exception as e:
-                log.error(f"💥 [GUARD] Task failed for {h_key}: {e}")
-            finally:
-                async with HIERARCHY_LOCK:
-                    if h_key in ACTIVE_HIERARCHIES:
-                        ACTIVE_HIERARCHIES.remove(h_key)
-                log.info(f"🟢 [GUARD] Export complete for {h_key}. Hierarchy lock released.")
+    async with GLOBAL_THROTTLE_SEM:
+        try:
+            log.info(f"[THROTTLE] Starting export for {h_key} (available slots: {GLOBAL_THROTTLE_SEM._value})")
+            await task_func(*args, **kwargs)
+        except Exception as e:
+            log.error(f"[GUARD] Task failed for {h_key}: {e}")
+        finally:
+            async with HIERARCHY_LOCK:
+                if h_key in ACTIVE_HIERARCHIES:
+                    ACTIVE_HIERARCHIES.remove(h_key)
+            log.info(f"[GUARD] Export complete for {h_key}. Hierarchy lock released.")
 
 # =============================================================================
 # HOURLY CACHE JOB (Optimized for API Exports)
@@ -250,7 +211,7 @@ async def hourly_cache_job():
     end = now.replace(minute=0, second=0, microsecond=0)
     start = end - timedelta(hours=1)
     
-    log.info(f"🕰️ [CACHE] Refreshing Hourly Cache: {start.strftime('%H:%M')} to {end.strftime('%H:%M')}...")
+    log.info(f"[CACHE] Hourly cache refresh starting: {start.strftime('%H:%M')} to {end.strftime('%H:%M')}")
     
     try:
         with open(REGISTRY_PATH, "rb") as f:
@@ -260,14 +221,14 @@ async def hourly_cache_job():
         pool = await get_db_pool()
         
         # Incremental Streaming
-        STREAM_BATCH = 1000  # 🧹 CRITICAL: Reduced to 1000 (was 2000) to prevent memory spikes during hourly job
+        STREAM_BATCH = 1000  # Reduced to 1000 (was 2000) to prevent memory spikes during hourly job
         total_records = 0
         base_path = f"date={start.strftime('%Y-%m-%d')}/hour={start.strftime('%H')}/"
         
         for i in range(0, len(all_device_ids), STREAM_BATCH):
             batch_devices = all_device_ids[i:i + STREAM_BATCH]
             async with pool.acquire() as conn:
-                # 🚀 MEMORY OPTIMIZATION: Explicit column selection (not SELECT * with 28+ columns)
+                # OPTIMIZATION: Explicit column selection (not SELECT * with 28+ columns)
                 col_list = ", ".join(DB_COLUMNS)
                 records = await conn.fetch(
                     f"SELECT {col_list} FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2 AND device_id = ANY($3)", 
@@ -276,9 +237,9 @@ async def hourly_cache_job():
             
             if not records: continue
             
-            log.info(f"📦 [CACHE] Processing batch of {len(records)} records...")
+            log.info(f"[CACHE] Processing batch of {len(records)} records...")
             
-            # 🏎️ VECTORIZED HYDRATION (No loops!)
+            # VECTORIZED HYDRATION (No loops!)
             # 1. Convert DB Records to DataFrame (Raw metrics only - exactly 16 columns)
             df_raw = pd.DataFrame([dict(r) for r in records])
             
@@ -307,7 +268,7 @@ async def hourly_cache_job():
                 group_df.to_parquet(cache_buf, engine='pyarrow', index=False, compression='snappy')
                 cache_content = cache_buf.getvalue()
                 
-                # 🚀 DIRECT FS CACHE: Write raw Parquet to local directory
+                # STORAGE: Write raw Parquet to local directory
                 local_dir = f"/app/telemetry-cache/{base_path}pcid={pcid}/acid={acid}"
                 os.makedirs(local_dir, exist_ok=True)
                 local_path = os.path.join(local_dir, "cache.parquet")
@@ -315,7 +276,7 @@ async def hourly_cache_job():
                 with open(local_path, "wb") as f:
                     f.write(cache_content)
                 
-                # 📝 Update Redis Index (Instant Discovery Heartbeat)
+                # INDEX UPDATE: Update Redis index for instant cache discovery
                 rd = await get_redis()
                 hour_key = start.strftime('%Y%m%d%H')
                 index_key = f"{REDIS_INDEX_PREFIX}:{pcid}:{acid}"
@@ -323,17 +284,17 @@ async def hourly_cache_job():
                 
                 total_records += len(group_df)
                 
-                # 🧹 AGGRESSIVE GC: Clean up group immediately after write
+                # MEMORY: Aggressive garbage collection after write
                 del cache_buf, cache_content
                 gc.collect()
             
             del df_raw, df, df_final, records
             gc.collect()
 
-        log.info(f"✅ [CACHE] Hourly refresh complete. Total records partitioned: {total_records:,}")
+        log.info(f"[CACHE] Hourly refresh complete. Total records partitioned: {total_records:,}")
         
     except Exception as e:
-        log.error(f"💥 [CACHE] Hourly Refresh Failed: {str(e)}")
+        log.error(f"[CACHE] Hourly Refresh Failed: {str(e)}")
 
 # =============================================================================
 # DAILY LONG-TERM ARCHIVAL JOB (Consolidated Data Lake)
@@ -344,7 +305,7 @@ async def daily_archival_job():
     end = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start = end - timedelta(days=7)
     
-    log.info(f"🕰️ [ARCHIVE] Consolidating 7-Day Sliding Window: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}...")
+    log.info(f"[ARCHIVE] Consolidating 7-day sliding window: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}")
     
     try:
         # 1. Prepare Local & Hive Paths
@@ -366,10 +327,10 @@ async def daily_archival_job():
         all_device_ids = list(CACHED_REGISTRY.keys())
         pool = await get_db_pool()
         
-        # 🏎️ LARGE SILO STRATEGY (Target: 128MB+)
+        # SILO STRATEGY: Target files 128MB+
         # 2,016 points/device/7-days -> ~1,000 devices per 128MB silo
         SILO_SIZE = 2600 
-        # 🧹 CRITICAL MEMORY FIX: Reduced MICRO_BATCH from 100 to 25.
+        # MEMORY OPTIMIZATION: Reduced MICRO_BATCH from 100 to 50
         # Python dicts for 200,000 nested records cause OOM in 1GB containers.
         MICRO_BATCH = 50
         total_records = 0
@@ -391,7 +352,7 @@ async def daily_archival_job():
                 
                 if not records: continue
                 
-                # 🚀 Group by Device and Hydrate using Unified Batch Builder
+                # Build batch using unified schema and hydrate using ProcessPool
                 from schema_builder import build_batch_power_detail
                 
                 # Group records by device_id
@@ -444,18 +405,18 @@ async def daily_archival_job():
                 content = pq_buf.getvalue()
                 fname = f"daily_silo_{i//SILO_SIZE}.parquet"
                 
-                # 🚀 LOCAL FS MIRRORING (Primary Storage)
+                # STORAGE: Parquet files to raw and archive directories
                 with open(os.path.join(raw_dir, fname), "wb") as f:
                     f.write(content)
                 with open(os.path.join(archive_dir, fname), "wb") as f:
                     f.write(content)
                 
                 total_records += silo_records_count
-                log.info(f"📦 [ARCHIVE] Silo {i//SILO_SIZE} Created: {silo_records_count:,} records | Size: {len(content)/1024/1024:.2f} MB")
+                log.info(f"[ARCHIVE] Silo {i//SILO_SIZE} created: {silo_records_count:,} records, {len(content)/1024/1024:.2f} MB")
                 del content, pq_buf
                 gc.collect()
 
-        log.info(f"✅ [ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
+        log.info(f"[ARCHIVE] Daily Local Consolidation complete. Total records: {total_records:,}")
 
         # Write _SUCCESS marker for downstream consumers (Spark, verification scripts)
         success_metadata = {
@@ -473,10 +434,10 @@ async def daily_archival_job():
             with open(success_path, "w") as f:
                 import json
                 json.dump(success_metadata, f, indent=2)
-        log.info(f"📝 [ARCHIVE] _SUCCESS marker written to {raw_dir} and {archive_dir}")
+        log.info(f"[ARCHIVE] _SUCCESS marker written to {raw_dir} and {archive_dir}")
         
     except Exception as e:
-        log.error(f"💥 [ARCHIVE] Daily Consolidation Failed: {str(e)}")
+        log.error(f"[ARCHIVE] Daily consolidation failed: {str(e)}")
 
 # =============================================================================
 # LIFECYCLE MANAGEMENT
@@ -491,7 +452,7 @@ def load_registry():
             
         # Build Vectorized Registry for Archival Performance
         registry_list = []
-        # 🚀 MEMORY OPTIMIZATION: Build hierarchy index while iterating (single pass)
+        # OPTIMIZATION: Build hierarchy index while iterating (single pass)
         hierarchy_dict = {}
         
         for did, meta in CACHED_REGISTRY.items():
@@ -503,7 +464,7 @@ def load_registry():
                 "model": meta.get("model")
             })
             
-            # 🏎️ Build hierarchy index: (pcid, acid) -> [device_ids]
+            # Build hierarchy index: (pcid, acid) -> [device_ids]
             pcid = meta.get("platform_customer_id")
             acid = meta.get("application_customer_id")
             if pcid and acid:
@@ -516,9 +477,9 @@ def load_registry():
         HIERARCHY_INDEX = hierarchy_dict
         
         REGISTRY_LOADED = True
-        log.info(f"✅ [CACHE] Registry pre-loaded with {len(CACHED_REGISTRY)} devices (indexed {len(HIERARCHY_INDEX)} hierarchies).")
+        log.info(f"[CACHE] Registry pre-loaded with {len(CACHED_REGISTRY)} devices ({len(HIERARCHY_INDEX)} hierarchies).")
     except Exception as e:
-        log.error(f"❌ [CACHE] Failed to load registry: {e}")
+        log.error(f"[CACHE] Failed to load registry: {e}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -531,7 +492,7 @@ async def startup_event():
     await get_kafka()
     if _kafka:
         await _kafka.start()
-        log.info("🛰️  [KAFKA] Producer STARTED")
+        log.info("[KAFKA] Producer started successfully")
     
     await get_db_pool()
     
@@ -541,9 +502,9 @@ async def startup_event():
     #     for bucket in ["telemetry-raw", "telemetry-archive", "telemetry-cache"]:
     #         if not s3.bucket_exists(bucket):
     #             s3.make_bucket(bucket)
-    #             log.info(f"🪣 [MINIO] Bucket created: {bucket}")
+    #             log.info(f"[MINIO] Bucket created: {bucket}")
     # except Exception as e:
-    #     log.error(f"❌ [MINIO] Bucket initialization failed: {e}")
+    #     log.error(f"[MINIO] Bucket initialization failed: {e}")
     
     # Schedule: Dual-Tier Archival Strategy
     _scheduler.add_job(hourly_cache_job, 'cron', minute=0, misfire_grace_time=600, coalesce=True)
@@ -572,13 +533,13 @@ async def get_kafka():
             _kafka = AIOKafkaProducer(
                 bootstrap_servers=KAFKA_BOOTSTRAP,
                 value_serializer=lambda v: v if isinstance(v, bytes) else orjson.dumps(v),
-                compression_type="lz4",     # 📦 Reduced to reduce Redpanda I/O bottleneck
-                linger_ms=5,                 # 🚀 Increased to 100ms for aggressive batching (was 5)
+                compression_type="lz4",     # Reduces Redpanda I/O bottleneck
+                linger_ms=5,                 # Increased for aggressive batching (was 5)
                 max_batch_size=16777216,       # 16MB (increased from 10MB)
                 max_request_size=16777216,     # 16MB (increased from 10MB)
                 request_timeout_ms=300000,
                 retry_backoff_ms=1000,
-                acks=1  # 🚀 Fire-and-forget for max throughput
+                acks=1  # Fire-and-forget for max throughput
             )
             # Startup handled in main.py
             log.info(f"[KAFKA] Production Producer Initialized (AIOKafka + Snappy + Aggressive Batching)")
@@ -601,7 +562,7 @@ async def get_redis():
 #     global _minio
 #     if _minio is None:
 #         import urllib3
-#         # 🚀 CUSTOM POOL: Expanded for 168+ parallel hourly downloads
+#         # CUSTOM POOL: Expanded for 168+ parallel hourly downloads
 #         http_client = urllib3.PoolManager(
 #             retries=False,
 #             maxsize=300,
@@ -692,7 +653,7 @@ async def query_tsdb_latest(
 # =============================================================================
 # BACKGROUND ASYNC WORKERS (Bulk Query Architecture)
 # =============================================================================
-BULK_BATCH_SIZE = 400  # 🎯 Dialed back to the 'Sweet Spot' for 1601 device sync
+BULK_BATCH_SIZE = 400  # Dialed back to the 'Sweet Spot' for 1601 device sync
 
 def process_device_batch_hydration(
     table: pa.Table, 
@@ -702,9 +663,9 @@ def process_device_batch_hydration(
     Vectorized Hydration: Processes a batch of devices via PyArrow.
     Runs in ProcessPoolExecutor to bypass GIL.
     
-    🚀 Memory Optimization: Reads from pre-initialized global worker registry
+    Memory Optimization: Reads from pre-initialized global worker registry
     to completely avoid IPC pickling overhead.
-    🧹 Aggressive GC: Collect after each device to prevent buildup.
+    Aggressive GC: Collect after each device to prevent buildup.
     """
     import pyarrow as pa
     import pyarrow.compute as pc
@@ -721,7 +682,7 @@ def process_device_batch_hydration(
     indices = pc.sort_indices(table, sort_keys=[("device_id", "ascending"), ("metric_time", "descending")])
     sorted_table = table.take(indices)
     
-    # 🏎️ Vectorized String Conversion for JSON Compatibility
+    #Vectorized String Conversion for JSON Compatibility
     if "metric_time" in sorted_table.column_names:
         ts_col = sorted_table["metric_time"]
         # Format as ISO string: 2026-05-03T07:27:31Z
@@ -747,7 +708,7 @@ def process_device_batch_hydration(
         "metric_time": "Time"
     }
     
-    # 🏎️ STEP 1: Vectorized Mapping (Arrow Native)
+    # STEP 1: Vectorized Mapping (Arrow Native)
     # Map the entire batch table to PascalCase names for PowerDetail in one shot
     field_map = {
         "amb_temp": "AmbTemp", "avg_watts": "Average", "cpu_avg_freq": "CpuAvgFreq",
@@ -765,7 +726,7 @@ def process_device_batch_hydration(
         
     # (Batch-level to_pylist removed to optimize memory)
 
-    # 🏎️ STEP 2: Vectorized Aggregates for the WHOLE BATCH (Arrow Native - No Dict)
+    # STEP 2: Vectorized Aggregates for the WHOLE BATCH (Arrow Native - No Dict)
     agg_table = sorted_table.group_by("device_id").aggregate([
         ("avg_watts", "mean"),
         ("peak_watts", "max"),
@@ -779,7 +740,7 @@ def process_device_batch_hydration(
     
     agg_lookup = {agg_device_ids[i]: (agg_means[i], agg_peaks[i], agg_mins[i]) for i in range(len(agg_device_ids))}
     
-    # 🏎️ STEP 3: Block Processing per Device with Object Reuse
+    # STEP 3: Block Processing per Device with Object Reuse
     n = len(dids)
     if n == 0: return []
     
@@ -826,7 +787,7 @@ def process_device_batch_hydration(
         limit = min(end_idx - start_idx, count)
         end_slice = start_idx + limit
         
-        # 🏎️ Zero-copy PyArrow slice of the sorted table
+        # Zero-copy PyArrow slice of the sorted table
         device_table = sorted_table.slice(start_idx, limit)
         
         # Convert ONLY this device's slice to list (~2016 rows) to keep memory near zero!
@@ -842,7 +803,7 @@ def process_device_batch_hydration(
         mi_list = device_table["min_watts"].to_pylist()
         pk_list = device_table["peak_watts"].to_pylist()
         
-        # 🏎️ Python Native List Slicing & Zipped List Comprehension (up to 25x faster than PyArrow slice struct conversion)
+        # Python Native List Slicing & Zipped List Comprehension (up to 25x faster than PyArrow slice struct conversion)
         power_detail_list = [
             {
                 "Time": t, "AmbTemp": at, "Average": av, "CpuAvgFreq": cf,
@@ -854,13 +815,13 @@ def process_device_batch_hydration(
             )
         ]
         
-        # 🏎️ Lookup pre-calculated aggregates (dict lookup O(1))
+        #  Lookup pre-calculated aggregates (dict lookup O(1))
         avg_v, max_v, min_v = agg_lookup.get(current_did, (0.0, 0.0, 0.0))
         
-        # 🏎️ Update reused payload dict (No new allocation!)
+        #  Update reused payload dict (No new allocation!)
         meta = _WORKER_REGISTRY.get(current_did, {})
         
-        # 🏎️ Serialization Optimization: Use orjson.Fragment
+        # Serialization Optimization: Use orjson.Fragment
         # This converts telemetry to bytes once and avoids re-walking the tree later
         pd_fragment = orjson.Fragment(orjson.dumps(power_detail_list))
         
@@ -886,11 +847,11 @@ def process_device_batch_hydration(
         data_block["Maximum"] = float(round(max_v or 0.0, 2))
         data_block["Minimum"] = float(round(min_v or 0.0, 2))
         data_block["Name"] = payload["server_name"]
-        data_block["PowerDetail"] = pd_fragment # 🚀 STITCHING: Zero-copy injection
+        data_block["PowerDetail"] = pd_fragment # STITCHING: Zero-copy injection
         
         results.append((current_did, orjson.dumps(payload)))
         
-        # 🧹 AGGRESSIVE GC: Clean up after every device to prevent memory buildup
+        #  AGGRESSIVE GC: Clean up after every device to prevent memory buildup
         del power_detail_list, pd_fragment, meta
         if len(results) % 5 == 0:  # Every 5 devices
             gc.collect(generation=0)  # Quick collect
@@ -928,11 +889,11 @@ async def _process_and_send(did, readings, DEVICES, kafka_prod):
     meta = DEVICES.get(did, {})
     loop = asyncio.get_event_loop()
     
-    # 🏎️ Parallel Serialization (Offloaded to separate CPU core)
+    #  Parallel Serialization (Offloaded to separate CPU core)
     pool = get_cpu_pool()
     payload_bytes = await loop.run_in_executor(pool, _serialize_record, did, readings, meta)
     
-    # 🛰️ Kafka Delivery
+    #  Kafka Delivery
     await kafka_prod.send(KAFKA_TOPIC, payload_bytes, key=did.encode())
 
 async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: str = None, acid: str = None, device_ids: List[str] = None):
@@ -955,13 +916,13 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
             target_ids = [did for did, meta in DEVICES.items() 
                           if meta.get('platform_customer_id') == pcid and meta.get('application_customer_id') == acid]
         else:
-            log.warning(f"⚠️ [WORKER] Missing hierarchy info")
+            log.warning(f" [WORKER] Missing hierarchy info")
             return
     else:
         target_ids = device_ids
     
     if not target_ids:
-        log.warning(f"⚠️ [WORKER] No devices found for {h_label}")
+        log.warning(f" [WORKER] No devices found for {h_label}")
         return
 
     # 1. CACHE PATH (Local FS) - Only if we have PCID/ACID
@@ -971,7 +932,7 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
     if pcid and acid:
         table_cached, found_slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
         if table_cached.num_rows > 0:
-            log.info(f"🎯 [CACHE] Found {table_cached.num_rows:,} records in Local FS for {pcid}:{acid}")
+            log.info(f" [CACHE] Found {table_cached.num_rows:,} records in Local FS for {pcid}:{acid}")
             
             # If we are targeting specific device_ids, filter the table
             if device_ids:
@@ -1002,13 +963,13 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
     
     # 2. HOT PATH (TimescaleDB Fallback)
     if missing_slots:
-        log.info(f"🔌 [HOT PATH] Fetching {len(missing_slots)} hourly slots from TimescaleDB...")
+        log.info(f" [HOT PATH] Fetching {len(missing_slots)} hourly slots from TimescaleDB...")
         pool = await get_db_pool()
         db_start = min(missing_slots)
         db_end = end_time
         
         async with pool.acquire() as conn:
-            # 🏎️ Use Compound Index (PCID, ACID, Time) for 100x faster lookup
+            # Use compound index (PCID, ACID, Time) for faster lookup
             if pcid and acid:
                 query = f"SELECT {', '.join(METRIC_COLUMNS + ['device_id'])} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time >= $3 AND metric_time < $4 ORDER BY device_id, metric_time ASC"
                 rows = await conn.fetch(query, pcid, acid, db_start, db_end)
@@ -1028,7 +989,7 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
                         processed_records += len(device_readings)
                         current_did = did
                         device_readings = []
-                    # 🚀 MEMORY OPTIMIZATION: Skip dict creation - pass asyncpg record directly
+                    #  MEMORY OPTIMIZATION: Skip dict creation - pass asyncpg record directly
                 device_readings.append(r)
                 
                 if current_did and device_readings:
@@ -1037,7 +998,7 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
 
     await kafka_prod.flush()
     t_total = time.monotonic() - t_start
-    log.info(f"✅ [HYBRID] Export Complete for {h_label} | Total Points: {processed_records:,} | Time: {t_total:.2f}s")
+    log.info(f" [HYBRID] Export Complete for {h_label} | Total Points: {processed_records:,} | Time: {t_total:.2f}s")
 
 
 
@@ -1076,19 +1037,19 @@ async def _fetch_from_cache_arrow(pcid, acid, start_time: datetime, end_time: da
             # Read all files and combine
             return pa.concat_tables([pq.read_table(f, memory_map=True) for f in files])
         except Exception as e:
-            log.warning(f"⚠️ [CACHE] Failed to read local parquets in {dir_path}: {e}")
+            log.warning(f"[CACHE] Failed to read local parquets in {dir_path}: {e}")
             return None
 
     async def throttled_read(h):
         async with GLOBAL_IO_SEM:
             return await loop.run_in_executor(_executor, read_local_parquet, h)
 
-    # log.info(f"🔍 [CACHE] Fetching {len(target_hours)} hours from Local FS for {pcid}:{acid}...")
+    # log.info(f"[CACHE] Fetching {len(target_hours)} hours from Local FS for {pcid}:{acid}...")
     loop = asyncio.get_event_loop()
     t_io_start = time.monotonic()
     tables = await asyncio.gather(*[throttled_read(h) for h in target_hours])
     t_io_end = time.monotonic()
-    # log.info(f"📦 [CACHE] Read {len(target_hours)} Parquet files for {pcid}:{acid} in {t_io_end - t_io_start:.2f}s")
+    # log.info(f"[CACHE] Read {len(target_hours)} Parquet files for {pcid}:{acid} in {t_io_end - t_io_start:.2f}s")
     
     # Filter target_hours to only include those where a table was actually found
     found_slots = [target_hours[i] for i, t in enumerate(tables) if t is not None]
@@ -1097,7 +1058,7 @@ async def _fetch_from_cache_arrow(pcid, acid, start_time: datetime, end_time: da
     if not final_tables:
         return pa.table([]), []
         
-    # 🎯 CONSISTENT SCHEMA ALIGNMENT (Prevents "Schema at index X was different")
+    # CONSISTENT SCHEMA ALIGNMENT (Prevents "Schema at index X was different")
     # We pick the schema from the first table as the "Master" (or a pre-defined one)
     # and strip virtual partition columns (date, hour, etc.)
     master_schema = None
@@ -1134,77 +1095,76 @@ async def _fetch_from_cache(s3, pcid, acid, start_time: datetime, end_time: date
 
 async def _export_first_task(device_ids: List[str], count: int = 2016):
     """Historical Task: Parallel Batch Engine (The Fastest Possible Strategy)."""
-    with tracer.start_as_current_span("export_historical_task_streaming", attributes={"device_count": len(device_ids)}):
-        t_start = time.monotonic()
-        kafka_prod = await get_kafka()
-        processed = 0
-        log.info(f"🌊 [STREAM] Parallel Streaming Fetch for OLDEST {count} points for {len(device_ids)} devices...")
-        
-        DEVICES = CACHED_REGISTRY
-        pool = await get_db_pool()
-        batch_size = 200
-        semaphore = asyncio.Semaphore(4)
+    t_start = time.monotonic()
+    kafka_prod = await get_kafka()
+    processed = 0
+    log.info(f" [STREAM] Parallel Streaming Fetch for OLDEST {count} points for {len(device_ids)} devices...")
+    
+    DEVICES = CACHED_REGISTRY
+    pool = await get_db_pool()
+    batch_size = 200
+    semaphore = asyncio.Semaphore(4)
 
-        async def process_batch_historical(batch_ids):
-            nonlocal processed
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    query = """
-                        SELECT 
-                            device_id,
-                            metric_time, 
-                            avg_watts, 
-                            peak_watts, 
-                            min_watts,
-                            amb_temp,
-                            cpu_avg_freq,
-                            cpu_max,
-                            cpu_pwr_sav_lim,
-                            cpu_util,
-                            cpu_watts,
-                            gpu_watts,
-                            status,
-                            error_reason
-                        FROM telemetry_live 
-                        WHERE device_id = ANY($1)
-                        ORDER BY device_id, metric_time ASC
-                    """
-                    cursor = conn.cursor(query, batch_ids)
+    async def process_batch_historical(batch_ids):
+        nonlocal processed
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                query = """
+                    SELECT 
+                        device_id,
+                        metric_time, 
+                        avg_watts, 
+                        peak_watts, 
+                        min_watts,
+                        amb_temp,
+                        cpu_avg_freq,
+                        cpu_max,
+                        cpu_pwr_sav_lim,
+                        cpu_util,
+                        cpu_watts,
+                        gpu_watts,
+                        status,
+                        error_reason
+                    FROM telemetry_live 
+                    WHERE device_id = ANY($1)
+                    ORDER BY device_id, metric_time ASC
+                """
+                cursor = conn.cursor(query, batch_ids)
+                
+                current_did = None
+                device_readings = []
+                
+                async for row in cursor:
+                    did = row['device_id']
+                    if current_did is None: current_did = did
                     
-                    current_did = None
-                    device_readings = []
+                    if did != current_did:
+                        if device_readings:
+                            await _process_and_send(current_did, device_readings[:count], DEVICES, kafka_prod)
+                            processed += 1
+                        current_did = did
+                        device_readings = []
                     
-                    async for row in cursor:
-                        did = row['device_id']
-                        if current_did is None: current_did = did
-                        
-                        if did != current_did:
-                            if device_readings:
-                                await _process_and_send(current_did, device_readings[:count], DEVICES, kafka_prod)
-                                processed += 1
-                            current_did = did
-                            device_readings = []
-                        
-                        if len(device_readings) < count:
-                            # 🚀 MEMORY OPTIMIZATION: Skip dict creation - pass asyncpg record directly
-                            device_readings.append(row)
+                    if len(device_readings) < count:
+                        #  MEMORY OPTIMIZATION: Skip dict creation - pass asyncpg record directly
+                        device_readings.append(row)
 
-                    if current_did and device_readings:
-                        await _process_and_send(current_did, device_readings[:count], DEVICES, kafka_prod)
-                        processed += 1
+                if current_did and device_readings:
+                    await _process_and_send(current_did, device_readings[:count], DEVICES, kafka_prod)
+                    processed += 1
 
-        batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
-        
-        async def run_with_sem(b):
-            async with semaphore:
-                await process_batch_historical(b)
-                await kafka_prod.flush()
-        
-        await asyncio.gather(*(run_with_sem(b) for b in batches))
-        await kafka_prod.flush()
+    batches = [device_ids[i:i + batch_size] for i in range(0, len(device_ids), batch_size)]
+    
+    async def run_with_sem(b):
+        async with semaphore:
+            await process_batch_historical(b)
+            await kafka_prod.flush()
+    
+    await asyncio.gather(*(run_with_sem(b) for b in batches))
+    await kafka_prod.flush()
 
-        t_total = time.monotonic() - t_start
-        log.info(f"✅ [STREAM] Completed {processed} historical devices in {t_total:.2f}s")
+    t_total = time.monotonic() - t_start
+    log.info(f"[STREAM] Completed {processed} historical devices in {t_total:.2f}s")
 
 
 async def _export_latest_task(device_ids: List[str], count: int = 2016):
@@ -1214,174 +1174,173 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
     2. Fetches archived hours from MinIO Cache.
     3. Fetches the remaining 'fresh' points from TimescaleDB.
     """
-    with tracer.start_as_current_span("export_latest_task_hybrid", attributes={"device_count": len(device_ids)}):
-        t_start = time.monotonic()
-        kafka_prod = await get_kafka()
-        processed_records = 0
-        loop = asyncio.get_running_loop()
-        
-        DEVICES = CACHED_REGISTRY
-        # Assuming 5-min intervals, calculate required lookback
-        days_lookback = (count // 288) + 1
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=days_lookback)
-        
-        # 1. CACHE PATH (Local FS)
-        pcid, acid = None, None
-        if device_ids:
-            first_meta = DEVICES.get(device_ids[0], {})
-            pcid = first_meta.get('platform_customer_id')
-            acid = first_meta.get('application_customer_id')
+    t_start = time.monotonic()
+    kafka_prod = await get_kafka()
+    processed_records = 0
+    loop = asyncio.get_running_loop()
+    
+    DEVICES = CACHED_REGISTRY
+    # Assuming 5-min intervals, calculate required lookback
+    days_lookback = (count // 288) + 1
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=days_lookback)
+    
+    # 1. CACHE PATH (Local FS)
+    pcid, acid = None, None
+    if device_ids:
+        first_meta = DEVICES.get(device_ids[0], {})
+        pcid = first_meta.get('platform_customer_id')
+        acid = first_meta.get('application_customer_id')
 
-        found_slots = []
-        table_cached = pa.table([])
-        if pcid and acid:
-            table_cached, found_slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
+    found_slots = []
+    table_cached = pa.table([])
+    if pcid and acid:
+        table_cached, found_slots = await _fetch_from_cache_arrow(pcid, acid, start_time, end_time)
 
-        # 2. HOT PATH (TimescaleDB)
-        # Use the latest timestamp from cache to find the starting point for the DB tail fetch
-        db_start_time = start_time
-        if table_cached.num_rows > 0:
-            # Get the maximum timestamp from the cache (vectorized)
-            db_start_time = pc.max(table_cached["metric_time"]).as_py()
-            log.info(f"🔌 [HYBRID] Cache ends at {db_start_time}. Fetching DB tail from there...")
-        
-        pool = await get_db_pool()
-        query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
-        
-        log.info(f"📥 [HYBRID] Fetching DB range from {db_start_time} to {end_time}...")
-        
-        async with pool.acquire() as conn:
-            # 🚀 TSDB OPTIMIZATION: If specific device_ids were passed (e.g. manual fetch), don't fetch the whole hierarchy
-            if device_ids and len(device_ids) < 100:
-                query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4 AND device_id = ANY($5::text[])"
-                rows = await conn.fetch(query, pcid, acid, db_start_time, end_time, device_ids)
-            else:
-                query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4"
-                rows = await conn.fetch(query, pcid, acid, db_start_time, end_time)
-            
-            
-            if rows:
-                def convert_to_table(r_list):
-                    return pa.Table.from_pylist([dict(r) for r in r_list])
-                
-                table_db = await loop.run_in_executor(_executor, convert_to_table, rows)
-                log.info(f"📥 [HYBRID] Fetched {table_db.num_rows:,} fresh records from TSDB")
-            else:
-                table_db = pa.table({k: [] for k in query_cols})
-                log.info(f"📥 [HYBRID] TSDB range was EMPTY")
-
-        # 3. VECTORIZED STITCHING (Pure Arrow)
-        if table_cached.num_rows > 0 and table_db.num_rows > 0:
-            # Step 1: Strip virtual partition columns from cache
-            db_cols = set(table_db.column_names)
-            strip_cols = [c for c in table_cached.column_names if c not in db_cols]
-            if strip_cols:
-                table_cached = table_cached.drop(strip_cols)
-                log.info(f"🧹 [HYBRID] Stripped virtual columns from cache: {strip_cols}")
-
-            # Step 2: Force DB table to match Cache schema exactly (order, ns vs us, etc.)
-            try:
-                # Reorder DB table columns to match Cache table exactly
-                table_db = table_db.select(table_cached.column_names)
-                # Now cast to match precision (ns vs us) and types
-                table_db = table_db.cast(table_cached.schema)
-            except Exception as cast_err:
-                log.warning(f"⚠️ [HYBRID] Schema alignment failed: {cast_err}")
-                # Final fallback attempt
-                table_db = table_db.select(table_cached.column_names)
-
-            full_table = pa.concat_tables([table_cached, table_db])
-        elif table_cached.num_rows > 0:
-            full_table = table_cached
+    # 2. HOT PATH (TimescaleDB)
+    # Use the latest timestamp from cache to find the starting point for the DB tail fetch
+    db_start_time = start_time
+    if table_cached.num_rows > 0:
+        # Get the maximum timestamp from the cache (vectorized)
+        db_start_time = pc.max(table_cached["metric_time"]).as_py()
+        log.info(f"[HYBRID] Cache ends at {db_start_time}. Fetching DB tail from there...")
+    
+    pool = await get_db_pool()
+    query_cols = list(set(["device_id", "metric_time", "platform_customer_id", "application_customer_id"] + METRIC_COLUMNS))
+    
+    log.info(f"[HYBRID] Fetching DB range from {db_start_time} to {end_time}...")
+    
+    async with pool.acquire() as conn:
+        # TSDB OPTIMIZATION: If specific device_ids were passed (e.g. manual fetch), don't fetch the whole hierarchy
+        if device_ids and len(device_ids) < 100:
+            query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4 AND device_id = ANY($5::text[])"
+            rows = await conn.fetch(query, pcid, acid, db_start_time, end_time, device_ids)
         else:
-            full_table = table_db
-
-        if full_table.num_rows == 0:
-            log.warning(f"⚠️ [LATEST] No data found for {pcid}:{acid}")
-            async with HIERARCHY_LOCK:
-                ACTIVE_HIERARCHIES.discard(f"{pcid}:{acid}")
-            return
-
-        # 🎯 SPECIFIC DEVICE FILTER
-        # If specific device_ids were requested, filter the fetched data down to just those devices
-        if device_ids:
-            mask = pc.is_in(full_table["device_id"], value_set=pa.array(device_ids))
-            full_table = full_table.filter(mask)
-
-        # ── HYBRID OPTIMIZATION: ARROW HYDRATION ────────────────────────────
-        unique_dids = pc.unique(full_table["device_id"]).to_pylist()
-        DEVICE_BATCH_SIZE = 35  # 🚀 Reduced to 35 (was 50) to enable 3+ concurrent hierarchies
-        cpu_pool = get_cpu_pool()
+            query = f"SELECT {', '.join(query_cols)} FROM telemetry_live WHERE platform_customer_id = $1 AND application_customer_id = $2 AND metric_time > $3 AND metric_time <= $4"
+            rows = await conn.fetch(query, pcid, acid, db_start_time, end_time)
         
-        # 🧹 Force garbage collection before batch processing
-        gc.collect()
         
-        async def process_batch(batch_dids):
-            # Filter table for this batch of devices
-            mask = pc.is_in(full_table["device_id"], value_set=pa.array(batch_dids))
+        if rows:
+            def convert_to_table(r_list):
+                return pa.Table.from_pylist([dict(r) for r in r_list])
             
-            # 🏎️ IPC OPTIMIZATION: Create a fresh table with only batch data 
-            raw_batch = full_table.filter(mask)
-            batch_table = pa.Table.from_batches(raw_batch.to_batches())
-            
-            # Offload to CPU Pool
-            loop = asyncio.get_running_loop()
-            # 🚀 MEMORY OPTIMIZATION: Don't pre-build batch_meta dict - lazy load in subprocess
-            # Pass just the batch_dids; process_device_batch_hydration will fetch via closure
-            
-            # This is the "Hot Path": No pickling of large dicts in main thread
-            results = await loop.run_in_executor(
-                cpu_pool, process_device_batch_hydration,
-                batch_table, count
-            )
-            
-            # Send results to Kafka (Non-Blocking: fire-and-forget after serialization)
-            if results:
-                result_count = len(results)
-                # 🚀 Non-blocking send: schedule as background task without awaiting
-                for did, payload in results:
-                    # Create task without awaiting (runs in background)
-                    asyncio.create_task(kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()))
-                # 🧹 Clean up references
-                del results
-                return result_count
-            return 0
+            table_db = await loop.run_in_executor(_executor, convert_to_table, rows)
+            log.info(f"[HYBRID] Fetched {table_db.num_rows:,} fresh records from TSDB")
+        else:
+            table_db = pa.table({k: [] for k in query_cols})
+            log.info(f"[HYBRID] TSDB range was EMPTY")
 
-        # 2. Stream Batches (Offloaded to CPU Pool) with BATCHED KAFKA SENDS
-        log.info(f"🌊 [ARROW] Delivering {len(unique_dids)} devices via parallel hydration...")
-        MAX_CONCURRENT_BATCHES = 3  # 🚀 Reduced to 3 for concurrent hierarchies
-        
-        async def throttled_batch(batch_dids):
-            async with GLOBAL_WORKER_SEM:
-                result = await process_batch(batch_dids)
-                # 🧹 AGGRESSIVE GC: Clean up immediately after each batch
-                gc.collect()
-                return result
-        
-        # 🏎️ Run batches with concurrency control
-        batch_tasks = []
-        for i in range(0, len(unique_dids), DEVICE_BATCH_SIZE):
-            batch_tasks.append(throttled_batch(unique_dids[i : i + DEVICE_BATCH_SIZE]))
-        
-        results_counts = await asyncio.gather(*batch_tasks)
-        processed_records = sum(results_counts)
+    # 3. VECTORIZED STITCHING (Pure Arrow)
+    if table_cached.num_rows > 0 and table_db.num_rows > 0:
+        # Step 1: Strip virtual partition columns from cache
+        db_cols = set(table_db.column_names)
+        strip_cols = [c for c in table_cached.column_names if c not in db_cols]
+        if strip_cols:
+            table_cached = table_cached.drop(strip_cols)
+            log.info(f"[HYBRID] Stripped virtual columns from cache: {strip_cols}")
 
-        await kafka_prod.flush()
-        
-        # 🧹 AGGRESSIVE OS-LEVEL MEMORY RELEASE
-        # Python's allocator does not return memory to the OS/Docker immediately.
-        # This forces glibc to release all freed memory pages back to the kernel.
-        import ctypes
+        # Step 2: Force DB table to match Cache schema exactly (order, ns vs us, etc.)
         try:
-            libc = ctypes.CDLL("libc.so.6")
-            libc.malloc_trim(0)
-            log.info("🧹 [MEMORY] malloc_trim(0) executed: OS memory released.")
-        except Exception as e:
-            pass
+            # Reorder DB table columns to match Cache table exactly
+            table_db = table_db.select(table_cached.column_names)
+            # Now cast to match precision (ns vs us) and types
+            table_db = table_db.cast(table_cached.schema)
+        except Exception as cast_err:
+            log.warning(f"[HYBRID] Schema alignment failed: {cast_err}")
+            # Final fallback attempt
+            table_db = table_db.select(table_cached.column_names)
+
+        full_table = pa.concat_tables([table_cached, table_db])
+    elif table_cached.num_rows > 0:
+        full_table = table_cached
+    else:
+        full_table = table_db
+
+    if full_table.num_rows == 0:
+        log.warning(f" [LATEST] No data found for {pcid}:{acid}")
+        async with HIERARCHY_LOCK:
+            ACTIVE_HIERARCHIES.discard(f"{pcid}:{acid}")
+        return
+
+    #  SPECIFIC DEVICE FILTER
+    # If specific device_ids were requested, filter the fetched data down to just those devices
+    if device_ids:
+        mask = pc.is_in(full_table["device_id"], value_set=pa.array(device_ids))
+        full_table = full_table.filter(mask)
+
+    # ── HYBRID OPTIMIZATION: ARROW HYDRATION ────────────────────────────
+    unique_dids = pc.unique(full_table["device_id"]).to_pylist()
+    DEVICE_BATCH_SIZE = 35  #  Reduced to 35 (was 50) to enable 3+ concurrent hierarchies
+    cpu_pool = get_cpu_pool()
+    
+    #  Force garbage collection before batch processing
+    gc.collect()
+    
+    async def process_batch(batch_dids):
+        # Filter table for this batch of devices
+        mask = pc.is_in(full_table["device_id"], value_set=pa.array(batch_dids))
         
-        t_total = time.monotonic() - t_start
-        log.info(f"✅ [HYBRID LATEST] Vector-Hydrated Export Complete | Devices: {processed_records:,} | Time: {t_total:.2f}s")
+        # IPC OPTIMIZATION: Create fresh table with batch data only 
+        raw_batch = full_table.filter(mask)
+        batch_table = pa.Table.from_batches(raw_batch.to_batches())
+        
+        # Offload to CPU Pool
+        loop = asyncio.get_running_loop()
+        #  MEMORY OPTIMIZATION: Don't pre-build batch_meta dict - lazy load in subprocess
+        # Pass just the batch_dids; process_device_batch_hydration will fetch via closure
+        
+        # This is the "Hot Path": No pickling of large dicts in main thread
+        results = await loop.run_in_executor(
+            cpu_pool, process_device_batch_hydration,
+            batch_table, count
+        )
+        
+        # Send results to Kafka (Non-Blocking: fire-and-forget after serialization)
+        if results:
+            result_count = len(results)
+            # Non-blocking send: schedule as background task without awaiting
+            for did, payload in results:
+                # Create task without awaiting (runs in background)
+                asyncio.create_task(kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()))
+            # Clean up references
+            del results
+            return result_count
+        return 0
+
+    # 2. Stream Batches (Offloaded to CPU Pool) with BATCHED KAFKA SENDS
+    log.info(f"[ARROW] Delivering {len(unique_dids)} devices via parallel hydration...")
+    MAX_CONCURRENT_BATCHES = 3  # Reduced to 3 for concurrent hierarchies
+    
+    async def throttled_batch(batch_dids):
+        async with GLOBAL_WORKER_SEM:
+            result = await process_batch(batch_dids)
+            # AGGRESSIVE GC: Clean up immediately after each batch
+            gc.collect()
+            return result
+    
+    # Run batches with concurrency control
+    batch_tasks = []
+    for i in range(0, len(unique_dids), DEVICE_BATCH_SIZE):
+        batch_tasks.append(throttled_batch(unique_dids[i : i + DEVICE_BATCH_SIZE]))
+    
+    results_counts = await asyncio.gather(*batch_tasks)
+    processed_records = sum(results_counts)
+
+    await kafka_prod.flush()
+    
+    # AGGRESSIVE OS-LEVEL MEMORY RELEASE
+    # Python's allocator does not return memory to the OS/Docker immediately.
+    # This forces glibc to release all freed memory pages back to the kernel.
+    import ctypes
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+        log.info("[MEMORY] malloc_trim(0) executed: OS memory released.")
+    except Exception as e:
+        pass
+    
+    t_total = time.monotonic() - t_start
+    log.info(f"[HYBRID LATEST] Vector-Hydrated Export Complete | Devices: {processed_records:,} | Time: {t_total:.2f}s")
 
 # =============================================================================
 # HIERARCHICAL API ENDPOINTS
@@ -1393,7 +1352,7 @@ async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tas
         end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(days=days)
         
-        # 🚀 MEMORY OPTIMIZATION: O(1) hierarchy lookup via pre-indexed dict (no full registry scan)
+        # MEMORY OPTIMIZATION: O(1) hierarchy lookup via pre-indexed dict (no full registry scan)
         device_ids = HIERARCHY_INDEX.get((pcid, acid), [])
         
         if not device_ids:
@@ -1415,27 +1374,25 @@ async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tas
 @app.post("/pcid/{pcid}/acid/{acid}/telemetry/latest/export")
 async def trigger_latest_telemetry_export(pcid: str, acid: str, background_tasks: BackgroundTasks, count: int = 2016):
     """Latest-Batch Fetch: Triggers Kafka Ingestion for EXACTLY N latest points (Sync Mode)."""
-    with tracer.start_as_current_span("api_trigger_latest_export", attributes={"pcid": pcid, "acid": acid}):
-        try:
-            registry_path = "/app/device_configs.json"
-            with tracer.start_as_current_span("api_registry_cache_access"):
-                device_ids = [did for did, meta in CACHED_REGISTRY.items() 
-                              if meta["platform_customer_id"] == pcid and meta["application_customer_id"] == acid]
-            
-            if not device_ids:
-                return {"status": "Empty Hierarchy"}
-            
-            # --- Hierarchical Lock Check ---
-            h_key = f"{pcid}:{acid}"
-            async with HIERARCHY_LOCK:
-                if h_key in ACTIVE_HIERARCHIES:
-                    return {"status": "error", "message": f"Latest Sync already active for {h_key}"}
-                ACTIVE_HIERARCHIES.add(h_key)
+    try:
+        registry_path = "/app/device_configs.json"
+        device_ids = [did for did, meta in CACHED_REGISTRY.items() 
+                    if meta["platform_customer_id"] == pcid and meta["application_customer_id"] == acid]
+        
+        if not device_ids:
+            return {"status": "Empty Hierarchy"}
+        
+        # --- Hierarchical Lock Check ---
+        h_key = f"{pcid}:{acid}"
+        async with HIERARCHY_LOCK:
+            if h_key in ACTIVE_HIERARCHIES:
+                return {"status": "error", "message": f"Latest Sync already active for {h_key}"}
+            ACTIVE_HIERARCHIES.add(h_key)
 
-            background_tasks.add_task(_handle_throttled_export, _export_latest_task, h_key, device_ids, count)
-            return {"status": "Latest Sync Accepted", "requested_points": count, "device_count": len(device_ids), "hierarchy": h_key}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        background_tasks.add_task(_handle_throttled_export, _export_latest_task, h_key, device_ids, count)
+        return {"status": "Latest Sync Accepted", "requested_points": count, "device_count": len(device_ids), "hierarchy": h_key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/pcid/{pcid}/acid/{acid}/id/{device_string}/export")
 async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, background_tasks: BackgroundTasks, count: int = 2016):
@@ -1443,7 +1400,7 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
     try:
         device_ids = [d.strip() for d in device_string.split(",")]
 
-        log.info(f"📥 [API] Manual Export Requested for {len(device_ids)} specific devices.")
+        log.info(f"[API] Manual export requested for {len(device_ids)} specific devices.")
         
         # Manual exports use a special key to ensure they don't block hierarchical ones
         m_key = f"manual:{uuid.uuid4().hex[:8]}"
@@ -1455,7 +1412,7 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
             "acid": acid
         }
     except Exception as e:
-        log.error(f"❌ Export failed: {e}")
+        log.error(f"Export failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/pcid/{pcid}/acid/{acid}/telemetry/historical/first/export")
@@ -1507,7 +1464,7 @@ async def register_new_device(device: DeviceRegistration):
             with open(REGISTRY_PATH, "wb") as f:
                 f.write(orjson.dumps(configs))
 
-            # 🚀 DYNAMIC UPDATE: Refresh in-memory caches so API recognizes device immediately
+            # DYNAMIC UPDATE: Refresh in-memory caches so API recognizes device immediately
             global CACHED_REGISTRY, REGISTRY_DF, HIERARCHY_INDEX
             CACHED_REGISTRY[device.device_id] = new_config
             
@@ -1528,11 +1485,11 @@ async def register_new_device(device: DeviceRegistration):
             }])
             REGISTRY_DF = pd.concat([REGISTRY_DF, new_row], ignore_index=True)
 
-            log.info(f"🆕 [REGISTRY] Device {device.device_id} registered successfully and hot-loaded.")
+            log.info(f"[REGISTRY] Device {device.device_id} registered successfully and hot-loaded.")
             return {"status": "success", "device_id": device.device_id, "message": "Device added to registry and hot-loaded"}
             
         except Exception as e:
-            log.error(f"❌ [REGISTRY] Registration failed for {device.device_id}: {str(e)}")
+            log.error(f"[REGISTRY] Registration failed for {device.device_id}: {str(e)}")
             raise HTTPException(status_code=500, detail="Internal server error during registration")
 
 @app.post("/telemetry/manual-cache-refresh")

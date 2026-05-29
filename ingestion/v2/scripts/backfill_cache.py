@@ -33,7 +33,7 @@ DB_COLUMNS = [
 ]
 
 async def backfill(days=7, offset_hours=0):
-    print(f"🚀 Starting Indexed Vectorized Cache Backfill ({days} Days, Offset: {offset_hours}h)...")
+    print(f"[BACKFILL] Starting Indexed Vectorized Cache Backfill ({days} Days, Offset: {offset_hours}h)...")
     
     with open(REGISTRY_PATH, "rb") as f:
         DEVICES = orjson.loads(f.read())
@@ -63,7 +63,7 @@ async def backfill(days=7, offset_hours=0):
         hour_end = current + timedelta(hours=1)
         base_path = f"date={hour_start.strftime('%Y-%m-%d')}/hour={hour_start.strftime('%H')}/"
         
-        print(f"🕰️  Indexing & Archiving {hour_start.strftime('%Y-%m-%d %H:00')}...")
+        print(f"[INDEXING] Indexing & Archiving {hour_start.strftime('%Y-%m-%d %H:00')}...")
         
         async with pool.acquire() as conn:
             records = await conn.fetch(
@@ -91,20 +91,20 @@ async def backfill(days=7, offset_hours=0):
                 
                 cache_fname = f"{base_path}pcid={pcid}/acid={acid}/cache.parquet"
                 
-                # 🚀 Mirror to Local FS (Crucial for Local-First API)
+                #Mirror to Local FS (Crucial for Local-First API)
                 local_path = os.path.join("/app/telemetry-cache", cache_fname)
                 os.makedirs(os.path.dirname(local_path), exist_ok=True)
                 with open(local_path, "wb") as f:
                     f.write(cache_content)
                 
-                # 📝 Update Redis Index
+                #Update Redis Index
                 hour_key = hour_start.strftime('%Y%m%d%H')
                 index_key = f"{REDIS_INDEX_PREFIX}:{pcid}:{acid}"
                 rd.sadd(index_key, hour_key)
                 
         current += timedelta(hours=1)
 
-    print("✅ Indexed Vectorized Backfill Complete!")
+    print("[BACKFILL] Indexed Vectorized Backfill Complete!")
 
 if __name__ == "__main__":
     import argparse
