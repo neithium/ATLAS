@@ -1,7 +1,9 @@
 import time
+import os
 from datetime import datetime
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import coalesce, to_timestamp, current_timestamp, col, lit
+from pyspark.sql.types import StructType, StructField, LongType, DoubleType, TimestampType
 from delta_core import (
     PipelineConfig,
     LatencyTracker,
@@ -12,6 +14,19 @@ from delta_core import (
     execute_merge_deduplication,
     optimize_delta_table
 )
+
+# Define metrics schema at module level to avoid scoping issues
+METRICS_SCHEMA = StructType([
+    StructField("batch_id", LongType()),
+    StructField("timestamp", TimestampType()),
+    StructField("total_time", DoubleType()),
+    StructField("merge_time", DoubleType()),
+    StructField("row_count", LongType())
+])
+
+# Debug log file
+DEBUG_LOG = "/tmp/livewire_debug.log"
+
 
 def run_livewire_pipeline(
     spark: SparkSession,
@@ -51,6 +66,32 @@ def run_livewire_pipeline(
             PipelineConfig.PARTITION_COLUMNS
         )
     
+    # Initialize the system metrics table for Micro-SLA Dashboard
+    metrics_table_path = "/refined/system_metrics"
+    try:
+        import os
+        delta_log_path = f"{metrics_table_path}/_delta_log"
+        
+        if not os.path.exists(delta_log_path):
+            print("         Initializing system metrics Delta table...")
+            df_metrics_init = spark.createDataFrame([], METRICS_SCHEMA)
+            df_metrics_init.write.format("delta").mode("overwrite").save(metrics_table_path)
+            
+            # Verify creation
+            import time as time_module
+            time_module.sleep(1)  # Give filesystem time to sync
+            if os.path.exists(delta_log_path):
+                print(f"         ✓ Metrics table initialized at {metrics_table_path}")
+            else:
+                print(f"         ⚠ Metrics table write may have failed - no _delta_log directory found")
+        else:
+            print(f"         ✓ Metrics table exists at {metrics_table_path}")
+    except Exception as e:
+        print(f"         ⚠ WARNING: Metrics table initialization error: {type(e).__name__}: {e}")
+
+
+
+    
     # Use readStream for continuous folder ingestion.
     # The schema is inferred from the Parquet files, making it schema-agnostic.
     try:
@@ -67,8 +108,17 @@ def run_livewire_pipeline(
     batch_counter = {"count": 0}
     
     def process_livewire_batch(batch_df: DataFrame, batch_id: int):
+        print(f"DEBUG: process_livewire_batch called with batch_id={batch_id}", flush=True)
+        
         start_time = time.perf_counter()
         rows = batch_df.count()
+        
+        # Log to both file and stdout for debugging
+        log_msg = f"[{datetime.now().isoformat()}] Batch {batch_id}: rows={rows}"
+        print(f"DEBUG: {log_msg}", flush=True)  # This will appear in container logs
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"{log_msg}\n")
+        
         if rows == 0:
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⏳ Waiting for stream data (Batch {batch_id}) - no new files detected.", flush=True)
             return
@@ -120,6 +170,36 @@ def run_livewire_pipeline(
         
         total_time = time.perf_counter() - start_time
         
+        # --- Persist Internal Performance Metrics to Micro-SLA Dashboard ---
+        # Record batch-level performance metrics independently of upstream latency
+        try:
+            metrics_data = [(
+                int(batch_id),
+                datetime.now(),
+                float(total_time),
+                float(merge_elapsed),
+                int(rows)
+            )]
+            
+            metrics_df = spark.createDataFrame(metrics_data, METRICS_SCHEMA)
+            
+            # Append to system metrics table (silent, non-blocking)
+            metrics_df.write.format("delta").mode("append").save("/refined/system_metrics")
+            
+            # Debug log
+            metrics_log_msg = f"[{datetime.now().isoformat()}] Batch {batch_id}: Metrics written - total_time={total_time:.3f}s, merge_time={merge_elapsed:.3f}s, rows={rows}"
+            print(f"DEBUG: {metrics_log_msg}", flush=True)
+            with open(DEBUG_LOG, "a") as f:
+                f.write(f"{metrics_log_msg}\n")
+        except Exception as metrics_error:
+            # Debug log the error
+            error_msg = f"[{datetime.now().isoformat()}] Batch {batch_id}: Metrics write FAILED - {type(metrics_error).__name__}: {str(metrics_error)[:100]}"
+            print(f"DEBUG: {error_msg}", flush=True)
+            with open(DEBUG_LOG, "a") as f:
+                f.write(f"{error_msg}\n")
+            # Silently log metrics failures to avoid disrupting the main pipeline
+            print(f"         ⚠ (Metrics recording skipped: {type(metrics_error).__name__})", flush=True)
+
         tracker.record_batch(
             batch_time=total_time,
             merge_time=merge_elapsed,
@@ -135,6 +215,12 @@ def run_livewire_pipeline(
             optimize_delta_table(spark, target_path, PipelineConfig.ZORDER_COLUMN)
 
     try:
+        # Write initialization log
+        startup_msg = f"[{datetime.now().isoformat()}] Pipeline starting - reading from {source_path}"
+        print(f"DEBUG: {startup_msg}", flush=True)
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"{startup_msg}\n")
+        
         query = (
             stream_df.writeStream
             .foreachBatch(process_livewire_batch)
@@ -142,12 +228,22 @@ def run_livewire_pipeline(
             .trigger(processingTime="5 seconds")
             .start()
         )
+        
+        startup_success_msg = f"[{datetime.now().isoformat()}] Stream started successfully"
+        print(f"DEBUG: {startup_success_msg}", flush=True)
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"{startup_success_msg}\n")
+        
         query.awaitTermination()
     except KeyboardInterrupt:
         print("\n         🛑 Stopping Livewire Stream...")
         query.stop()
     except Exception as e:
+        error_startup_msg = f"[{datetime.now().isoformat()}] Stream failed: {e}"
         print(f"\n         ❌ Livewire stream failed: {e}")
+        print(f"DEBUG: {error_startup_msg}", flush=True)
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"{error_startup_msg}\n")
         return {"status": "failed", "error": str(e)}
         
     return {"status": "completed"}
