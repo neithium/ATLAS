@@ -765,3 +765,16 @@ docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=b
 --- force recreate analytics if streamlit fails updating itself:
 
 docker compose up -d atlas-analytics --build --force-recreate -V
+
+
+
+#New changes -- 30th May, 2026 
+
+**Problem: Schema Drift and Transaction Log Desynchronization**
+The ATLAS streaming pipeline encountered two critical points of failure during real-time telemetry ingestion. First, the application threw fatal `AnalysisException` errors due to upstream schema drift; the PySpark engine attempted to evaluate hardcoded staging columns (like `window_start`) that were missing from the incoming micro-batches. Second, the Delta Lake `MERGE` operation suffered from a `SparkFileNotFoundException`. Concurrent micro-batch writes and background optimization tasks caused the Delta transaction log to fall out of sync with the physical Parquet files, creating a race condition where Spark attempted to read files that had already been compacted or modified.
+
+**Solution: Schema-Defensive Programming and State Reconciliation**
+To resolve this, a fault-tolerant layer was engineered across the Spark session and the ingestion scripts. A dynamic schema-inspection block was implemented to verify the existence of columns within the current micro-batch before applying `.withColumn()` transformations, safely routing temporal data using conditional fallbacks. For the storage layer, the `execute_merge_deduplication` function was hardened with explicit Delta log refreshes to force state reconciliation before execution. Additionally, an exponential backoff retry mechanism was introduced alongside strict Spark session configurations (`commitValidation.enabled`) to gracefully handle transient filesystem latency and prevent aborted jobs.
+
+**Architectural Impact: Resilient and Autonomous Execution**
+These implementations completely decouple the stability of the Lakehouse from the volatility of the upstream ingestion API. By treating schema variations and physical storage latency as expected environmental variables rather than fatal edge cases, the pipeline now autonomously self-corrects and maintains strict ACID compliance. Designing infrastructure with this kind of zero-trust, fault-tolerant logic ensures the foundational data remains unconditionally stable, which is the exact caliber of engineering required to support high-stakes, out-of-band security monitoring and anomaly detection workloads.
