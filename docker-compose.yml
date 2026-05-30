@@ -77,7 +77,7 @@ services:
       - REDIS_HOST=127.0.0.1
       - MINIO_HOST=127.0.0.1
       - MINIO_BUCKET=telemetry-raw
-      - KAFKA_BOOTSTRAP=broker1:9092,broker2:9092,broker3:9092
+      - KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-broker1:9092}
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
