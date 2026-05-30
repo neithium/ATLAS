@@ -10,7 +10,7 @@ async def check_msg():
     consumer = AIOKafkaConsumer(
         topic,
         bootstrap_servers=bootstrap,
-        auto_offset_reset='earliest',
+        auto_offset_reset='latest',
         value_deserializer=lambda v: orjson.loads(v)
     )
     
@@ -21,9 +21,6 @@ async def check_msg():
             payload = msg.value
             created_at = payload.get("created_at", "")
             
-            # Filter for the fresh run (Post-Fix)
-            if "2026-05-04T12" not in created_at:
-                continue
                 
             print("\n--- Kafka Message Metadata ---")
             print(f"Partition: {msg.partition}")

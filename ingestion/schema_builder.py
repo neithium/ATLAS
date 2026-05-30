@@ -65,8 +65,8 @@ def build_48_field_golden_record(
             "CpuUtil": int(reading.get("CpuUtil") or reading.get("cpu_util") or 50),
             "CpuWatts": int(reading.get("CpuWatts") or reading.get("cpu_watts") or 200),
             "GpuWatts": int(reading.get("GpuWatts") or reading.get("gpu_watts") or 0),
-            "Minimum": float(min_watts),
-            "Peak": float(peak_watts),
+            "Minimum": int(min_watts),
+            "Peak": int(peak_watts),
             "Time": timestamp_str
         }]
     
@@ -232,8 +232,8 @@ def build_batch_power_detail(raw_readings: List[dict], fresh_cutoff_str: Optiona
             "CpuUtil": int(reading[k_util] or 0) if needs_cast else (reading[k_util] or 0),
             "CpuWatts": int(reading[k_cw] or 0) if needs_cast else (reading[k_cw] or 0),
             "GpuWatts": int(reading[k_gw] or 0) if needs_cast else (reading[k_gw] or 0),
-            "Minimum": float(minimum),
-            "Peak": float(peak),
+            "Minimum": int(minimum),
+            "Peak": int(peak),
             "Time": timestamp_str
         }
     

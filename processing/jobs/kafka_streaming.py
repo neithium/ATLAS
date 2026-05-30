@@ -3,151 +3,34 @@ import time
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
-from pyspark.sql.types import *
+from input_schema import input_schema
 
-# =========================================================
-# WORKER CONFIG
-# =========================================================
-
-WORKER_ID = os.getenv("WORKER_ID", "1")
-
-print(f"🚀 STARTING WORKER {WORKER_ID}")
-
-# =========================================================
-# SPARK SESSION
-# =========================================================
-
-spark = (
-    SparkSession.builder
-    .appName(f"KafkaConsumerWorker-{WORKER_ID}")
-
-    # optimized for local machine
-    .master("local[1]")
-
-    .config("spark.sql.shuffle.partitions", "3")
-    .config("spark.default.parallelism", "3")
-
-    .config(
-        "spark.streaming.stopGracefullyOnShutdown",
-        "true"
-    )
-
-    .config(
-        "spark.sql.streaming.stateStore.providerClass",
-        "org.apache.spark.sql.execution.streaming.state.HDFSBackedStateStoreProvider"
-    )
-
-    .config(
-        "spark.serializer",
-        "org.apache.spark.serializer.KryoSerializer"
-    )
-
+# ---------------- SPARK ----------------
+spark = SparkSession.builder \
+    .appName("Streaming-Final-Correct") \
+    .master("local[6]") \
+    .config("spark.sql.shuffle.partitions", "12") \
+    .config("spark.default.parallelism", "12") \
+    .config("spark.sql.streaming.kafka.offsetFetch.timeoutMs", "120000") \
     .getOrCreate()
 )
 
-spark.sparkContext.setLogLevel("WARN")
+spark.sparkContext.setLogLevel("ERROR")
 
-# =========================================================
-# INPUT SCHEMA
-# =========================================================
+print("🚀 Streaming Started (FINAL CORRECT)")
 
-input_schema = StructType([
-
-    StructField("device_id", StringType()),
-    StructField("report_id", StringType()),
-    StructField("created_at", StringType()),
-    StructField("status", BooleanType()),
-    StructField("model", StringType()),
-    StructField("tags", StringType()),
-    StructField("report_type", StringType()),
-    StructField("server_name", StringType()),
-    StructField("error_reason", StringType()),
-
-    StructField("location_id", StringType()),
-    StructField("location_city", StringType()),
-    StructField("location_name", StringType()),
-    StructField("location_state", StringType()),
-    StructField("location_country", StringType()),
-
-    StructField("processor_vendor", StringType()),
-    StructField("server_generation", StringType()),
-
-    StructField("platform_customer_id", StringType()),
-    StructField("application_customer_id", StringType()),
-
-    StructField("metric_type", StringType()),
-
-    StructField(
-        "data",
-        StructType([
-            StructField(
-                "PowerDetail",
-                ArrayType(
-                    StructType([
-                        StructField("Average", DoubleType()),
-                        StructField("Minimum", DoubleType()),
-                        StructField("Peak", DoubleType()),
-                        StructField("Time", StringType())
-                    ])
-                )
-            )
-        ])
-    ),
-
-    StructField(
-        "inventory_data",
-        StructType([
-            StructField("socket_count", IntegerType())
-        ])
-    )
-])
-
-# =========================================================
-# READ FROM KAFKA
-# =========================================================
-
-df = (
-    spark.readStream
-    .format("kafka")
-
-    .option(
-        "kafka.bootstrap.servers",
-        "broker1:9092"
-    )
-
-    .option(
-        "subscribe",
-        "raw-server-metrics"
-    )
-
-    .option(
-        "startingOffsets",
-        "latest"
-    )
-
-    # SAME GROUP FOR BOTH WORKERS
-    .option(
-        "kafka.group.id",
-        "atlas-stream-group"
-    )
-
-    .option(
-        "failOnDataLoss",
-        "false"
-    )
-
-    # optimized microbatch size
-    .option(
-        "maxOffsetsPerTrigger",
-        "3000"
-    )
-
-    # kafka has 12 partitions
-    .option(
-        "minPartitions",
-        "12"
-    )
-
+# ---------------- READ KAFKA ----------------
+df = spark.readStream.format("kafka") \
+    .option("kafka.bootstrap.servers", "broker1:9092") \
+    .option("subscribe", "raw-server-metrics") \
+    .option("startingOffsets", "latest") \
+    .option("kafka.group.id", "atlas-processor-streaming-group") \
+    .option("failOnDataLoss", "false") \
+    .option("kafka.request.timeout.ms", "120000") \
+    .option("kafka.session.timeout.ms", "60000") \
+    .option("kafka.metadata.max.age.ms", "5000") \
+    .option("kafka.consumer.request.timeout.ms", "120000") \
+    .option("kafka.default.api.timeout.ms", "120000") \
     .load()
 )
 
