@@ -18,7 +18,7 @@ chown -R postgres:postgres $DATA_DIR/timescale $DATA_DIR/redis $DATA_DIR/minio $
 
 # ── 1.5. Initialize Postgres Cluster if empty ───────────────────────────
 if [ ! -s "$DATA_DIR/timescale/PG_VERSION" ]; then
-    echo "🏗️ Initializing empty TimescaleDB cluster in $DATA_DIR/timescale..."
+    echo "[TSDB] Initializing empty TimescaleDB cluster in $DATA_DIR/timescale..."
     su postgres -s /bin/bash -c "/usr/lib/postgresql/15/bin/initdb -D $DATA_DIR/timescale"
     echo "shared_preload_libraries = 'timescaledb'" >> $DATA_DIR/timescale/postgresql.conf
 fi
@@ -35,7 +35,7 @@ su postgres -s /bin/bash -c "/usr/lib/postgresql/15/bin/postgres -D $DATA_DIR/ti
 echo "Starting Redpanda (Kafka-compatible)..."
 # Start Redpanda in the background with persistent data dir
 # Boosted memory and message limits for 1,600-device history bursts (5MB payloads)
-rpk redpanda start --mode dev-container --smp 1 --memory 1G --overprovisioned --node-id 0 --check=false \
+rpk redpanda start --mode dev-container --smp 2 --memory 1.5G --overprovisioned --node-id 0 --check=false \
     --set redpanda.auto_create_topics_enabled=true \
     --set redpanda.log_segment_size=536870912 \
     --set redpanda.kafka_max_message_size=5242880 \
@@ -70,20 +70,8 @@ CREATE TABLE IF NOT EXISTS telemetry_live (
     gpu_watts INT,
     min_watts INT,
     peak_watts INT,
-    server_name TEXT,
-    model TEXT,
-    processor_vendor TEXT,
-    server_generation TEXT,
-    report_type TEXT,
-    metric_type TEXT,
     status BOOLEAN,
-    error_reason TEXT,
-    tags TEXT,
-    location_id TEXT,
-    location_city TEXT,
-    location_state TEXT,
-    location_country TEXT,
-    location_name TEXT
+    error_reason TEXT
 );\""
 su postgres -s /bin/bash -c "psql -c \"SELECT create_hypertable('telemetry_live', 'metric_time', if_not_exists => TRUE);\""
 su postgres -s /bin/bash -c "psql -c \"CREATE INDEX IF NOT EXISTS idx_device_time ON telemetry_live (device_id, metric_time DESC);\""
@@ -99,8 +87,8 @@ minio server $DATA_DIR/minio --address ":9000" --console-address ":9001" > $DATA
 # ── 6. Identity Auto-Bootstrap ──────────────────────────────────────────
 # Ensure the 80,000-device registry exists (Scaling from Zero)
 if [ ! -f "/app/device_configs.json" ]; then
-    echo "🏝️ Registry missing! Auto-Bootstrapping 80,000-device hierarchical fleet..."
-    python3 v2/scripts/generate_registry.py --scale ${SCALE_SIZE:-80000}
+    echo "[REGISTRY] Registry missing! Auto-Bootstrapping fleet..."
+    python3 v2/scripts/generate_registry.py --pcids 5 --acids 2 --devices 8000
 fi
 
 # ── 7. Start Unified Python Service ──────────────────────────────────
@@ -111,10 +99,15 @@ cd /app
 export ENABLE_POLLER=${ENABLE_POLLER:-true}
 export ENABLE_TSDB_PUSH=1
 export TS_CONN_STR="host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres"
-export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP:-broker1:9092}"
+#export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP:-broker1:9092}"
 
 # Execute Uvicorn in the background and stream to terminal
 python3 -m uvicorn main:app --host 0.0.0.0 --port 8001 2>&1 | tee -a $DATA_DIR/logs/api.log &
+
+# ── 8. Start PostWeb (TSDB UI) ──────────────────────────────────
+echo "Starting PostWeb (TSDB UI)..."
+chmod +x /app/postweb
+/app/postweb --url "postgres://postgres:postgres@127.0.0.1:5432/postgres" --bind "0.0.0.0" --listen "8081" > $DATA_DIR/logs/postweb.log 2>&1 &
 
 # ── 7. Start Nginx ────────────────────────────────────────────────────
 echo "Starting Nginx Proxy (Core Entry)..."

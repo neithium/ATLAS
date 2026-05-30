@@ -1,0 +1,25 @@
+============================================================
+FINAL CONSOLIDATED BENCHMARK RESULTS (2026-05-01)
+============================================================
+
+--- 10k Devices (Single Platform) ---
+Target: PLATCUST10K (10000 devices)
+Total Flow Time:     167.172s
+API Overhead:        1.000s
+Database + Kafka:    166.172s
+System Throughput:   120,594 data points / sec
+
+
+5000 platforms 
+5000 app_customers
+11 devices each
+
+--- Concurrent Multi-Platform Sweeps ---
+10 Platforms (110 devices):  2.141s  (103,578 pts/sec)
+50 Platforms (550 devices):  10.047s (110,361 pts/sec)
+100 Platforms (1100 devices): 23.625s (93,867 pts/sec)
+200 Platforms (2200 devices): 37.203s (119,216 pts/sec)
+500 Platforms (5500 devices): 109.015s (101,711 pts/sec)
+
+
+

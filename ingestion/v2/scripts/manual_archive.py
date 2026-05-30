@@ -51,10 +51,11 @@ async def manual_archival_push():
 
         # 🏎️ STABLE STREAMING STRATEGY
         # 2,016 points/device/7-days -> ~1,000 devices per 128MB silo
-        MICRO_BATCH = 20   # Lower batch size for stability
-        SILO_SIZE = 1000 
+        MICRO_BATCH = 50   # Lower batch size for stability
+        SILO_SIZE = 8000 
         
         batch_counter = 0
+        total_records = 0
         base_path = f"production/year={end.year}/month={end.month:02d}/day={end.day:02d}/full_7day/"
         
         log.info(f"🚀 Starting Streamed Archival (Goal: {len(all_device_ids)//SILO_SIZE + 1} Large Silos)...")
@@ -212,9 +213,23 @@ async def manual_archival_push():
                 t_silo_elapsed = time.monotonic() - t_silo_start
                 log.info(f"✅ Silo {batch_counter} Created & Mirrored: {silo_records_count:,} records | Local + MinIO | Time: {t_silo_elapsed:.1f}s")
                 
+                total_records += silo_records_count
                 batch_counter += 1
                 del content, pq_buf
                 gc.collect()
+
+        # Write _SUCCESS file to both raw and archive directories
+        success_payload = {
+            "status": "SUCCESS",
+            "total_records": total_records,
+            "hive_path": base_path,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }
+        success_json = orjson.dumps(success_payload, option=orjson.OPT_INDENT_2).decode()
+        for d in [raw_dir, archive_dir]:
+            with open(os.path.join(d, "_SUCCESS"), "w") as sf:
+                sf.write(success_json)
+        log.info(f"🚩 Written _SUCCESS metadata files to output directories")
 
         await pool.close()
         log.info(f"🏁 STREAMED ARCHIVAL COMPLETE in {(time.monotonic()-t_total_start)/60:.2f} minutes")

@@ -23,10 +23,6 @@
 #
 # =============================================================================
 
-networks:
-  atlas-network:
-    driver: bridge
-    name: atlas-network
 
 volumes:
   kafka-data:
@@ -46,6 +42,7 @@ volumes:
   redis-data:
   minio-data:
   ingestion-tsdb-data:
+  telemetry-cache-data:
   batch-data:
 
 services:
@@ -80,6 +77,7 @@ services:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
       - "9010:9001"    # MinIO Console
+      - "8081:8081"    # TSDB UI (PostWeb)
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
@@ -88,15 +86,17 @@ services:
       - REDIS_HOST=127.0.0.1
       - MINIO_HOST=127.0.0.1
       - MINIO_BUCKET=telemetry-raw
-      - KAFKA_BOOTSTRAP=broker1:9092
+      - KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-broker1:9092}
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=true  
+      - ENABLE_POLLER=true
       - SCALE_SIZE=80000
     networks:
       - atlas-network
+    shm_size: 1gb
     volumes:
       - ./ingestion:/app
+      - telemetry-cache-data:/app/telemetry-cache
       - redis-data:/data/redis
       - minio-data:/data/minio
       - ingestion-tsdb-data:/data/timescale
@@ -112,9 +112,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    depends_on:
-      broker1:
-        condition: service_healthy
     command: ["/app/v2/entrypoint.sh"]
 
 
@@ -204,6 +201,7 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
@@ -279,6 +277,7 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
@@ -354,6 +353,7 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
@@ -915,3 +915,8 @@ services:
           --devices $$DEVICE_COUNT \
           --rate $$RECORDS_PER_SECOND
       "
+
+networks:
+  atlas-network:
+    driver: bridge
+    name: atlas-network
