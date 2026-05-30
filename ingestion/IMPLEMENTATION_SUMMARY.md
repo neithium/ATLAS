@@ -310,6 +310,8 @@ df.select('value').limit(1).show()
 ## 📊 Baseline Performance Benchmarks (May 1, 2026 - Pre-Cache Layer)
 Before finalizing the high-performance local cache, the system was benchmarked using direct TimescaleDB fetches for multi-platform sweeps. These results represent the peak performance of the direct-DB architecture.
 
+> All benchmark scripts and raw results are stored in [v2/scripts/benchmarks/](./v2/scripts/benchmarks/).
+
 ### 10k Devices (Single Platform)
 - **Target**: PLATCUST10K (10,000 devices)
 - **Total Flow Time**: 167.172s (API: 1s | DB+Kafka: 166.1s)
@@ -447,4 +449,76 @@ The PowerPulse V3 Ingestion Engine has been successfully finalized and verified 
 - **Observability**: Integrated full-stack **Jaeger Tracing** across the hydration and delivery layers for deep-dive performance analysis.
 - **Container Hardening**: Resolved all environment-specific bottlenecks including Docker volume sync locks and graphics dependency issues for the visualization layer.
 
+---
 
+# Phase 7: Kafka Resiliency & Memory Optimization (May 30, 2026)
+
+## Overview
+This phase focused on making the ingestion API fully independent of Kafka's lifecycle and introducing aggressive memory reclamation to reduce idle container footprint. Additionally, the Kafka cluster switching workflow was unified via `single.bat` / `cluster.bat` with automatic environment injection.
+
+### 1. Kafka-Independent API Startup (`api_v2.py`, `main.py`)
+- **Before**: If Kafka was unreachable at boot, `AIOKafkaProducer.start()` threw a fatal `KafkaConnectionError` and crashed the entire FastAPI process. This made the API unusable during Kafka maintenance windows.
+- **After**: `get_kafka()` now uses a lazy-connect pattern with a `KAFKA_STARTED` flag. On failure, it logs a warning and lets the API boot normally. The producer automatically retries connection on the next export request.
+- Removed the unsafe `await producer.start()` from `main.py`'s startup handler that was independently crashing the app.
+
+### 2. Aggressive Memory Reclamation (`api_v2.py`)
+- **Problem**: After heavy benchmark runs (23 consecutive 10k-device exports), the container's idle memory remained at ~4.8 GB instead of settling back to ~3.4 GB.
+- **Root Cause**: PyArrow's internal C++ allocator (jemalloc/mimalloc) retains freed memory pages as a performance optimization, preventing the OS from reclaiming them.
+- **Solution**: Added `pa.default_memory_pool().release_unused()` to the post-export cleanup phase, combined with the existing `malloc_trim(0)`.
+- **Result**: Idle container memory drops from ~4.8 GB to ~3.4 GB after export completion.
+- **Trade-off**: ~5ms of CPU time per cleanup cycle, which is negligible against a 3,000ms+ export operation.
+
+### 3. Dynamic Kafka Bootstrap (`docker-compose.yml`)
+- Changed `KAFKA_BOOTSTRAP` from a hardcoded value to `${KAFKA_BOOTSTRAP:-broker1:9092}`.
+- Defaults to single-broker mode for development. `cluster.bat` overrides to `broker1:9092,broker2:9092,broker3:9092`.
+- Eliminates manual `docker-compose.yml` edits when switching between dev and cluster modes.
+
+### 4. Safe Cluster Switching Scripts (`single.bat`, `cluster.bat`)
+Both scripts now perform three operations:
+1. Stop and remove existing Kafka containers.
+2. Set `KAFKA_BOOTSTRAP` explicitly for their respective mode.
+3. Run `docker-compose up -d --force-recreate atlas-ingestion` to inject the updated env var.
+
+| Script | Brokers Started | `KAFKA_BOOTSTRAP` Value | Fault Tolerance |
+| :--- | :--- | :--- | :--- |
+| `single.bat` | `broker1` only | `broker1:9092` | None (dev mode) |
+| `cluster.bat` | `broker1`, `broker2`, `broker3` | `broker1:9092,broker2:9092,broker3:9092` | 1 broker can fail |
+
+**Data Safety**: TSDB, Redis, and MinIO volumes are never touched by either script. `--force-recreate` only rebuilds the container process, not the underlying data volumes.
+
+### 5. Kafka Fault Tolerance (Cluster Mode)
+With the 3-broker cluster properly configured:
+- **2 of 3 brokers alive**: Writes succeed (meets `min.insync.replicas=2`).
+- **1 of 3 brokers alive**: Writes rejected (cannot satisfy ISR requirement).
+- The `AIOKafkaProducer` handles failover transparently — no code changes or restarts required.
+
+### 6. Documentation (`ingestion/QUICKSTART.md`)
+- Added section `1a. Managing Kafka Modes` explaining `single.bat` vs `cluster.bat` usage.
+- Included a critical warning against using `docker compose down -v` to prevent accidental data loss.
+
+### Files Changed
+
+| File | Change |
+| :--- | :--- |
+| `v2/api/api_v2.py` | Lazy Kafka connect + PyArrow memory pool release |
+| `main.py` | Removed unsafe `producer.start()` from startup |
+| `docker-compose.yml` | `KAFKA_BOOTSTRAP` now env-var driven with default |
+| `single.bat` | Added `KAFKA_BOOTSTRAP` + force-recreate ingestion |
+| `cluster.bat` | Added `KAFKA_BOOTSTRAP` + force-recreate ingestion |
+| `QUICKSTART.md` | Added Kafka mode switching docs |
+
+---
+
+## 📂 Benchmark Results & Scripts
+
+All benchmark scripts, raw output logs, and historical throughput data are maintained in a dedicated directory for reproducibility and regression testing.
+
+📁 **Location**: [v2/scripts/benchmarks/](./v2/scripts/benchmarks/)
+
+| File | Description |
+| :--- | :--- |
+| `benchmark_e2e_multi.py` | End-to-end multi-platform benchmark script |
+| `bench_daily_job.py` | Daily archival consolidation benchmark |
+| `benchmark_latest.txt` | Latest benchmark run outputs |
+| `benchmark_results.txt` | Historical benchmark results archive |
+| `final_ingestion_benchmarks.txt` | Final production throughput numbers |
