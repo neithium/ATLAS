@@ -43,6 +43,16 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.databricks.delta.autoCompact.enabled", "false")
         .config("spark.databricks.delta.properties.defaults.targetFileSize", str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
         .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
+        # Delta Lake Transaction Consistency & File Resolution (Enterprise-Grade)
+        .config("spark.databricks.delta.commitInfo.enabled", "true")
+        .config("spark.databricks.delta.commitValidation.enabled", "true")
+        .config("spark.databricks.delta.stats.skipping.enabled", "true")
+        # Enhanced consistency for high-concurrency streaming
+        .config("spark.databricks.delta.streaming.enabled", "true")
+        .config("spark.databricks.delta.merge.enableBlindAppend", "true")
+        # File status cache & metadata consistency
+        .config("spark.sql.files.maxPartitionBytes", "134217728")  # 128MB to avoid small file issues
+        .config("spark.sql.files.ignoreCorruptFiles", "false")
         # Local Profile (Default): Vertical Monolith inside Lakehouse container
         .master("local[*]")
         .config("spark.executor.instances", "1")

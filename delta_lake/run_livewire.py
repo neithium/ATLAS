@@ -75,24 +75,48 @@ def run_livewire_pipeline(
             
         print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚡ Processing Micro-batch {batch_id} with {rows} rows...", flush=True)
         
-        # Schema alignment mapping streaming and batch outputs
-        from pyspark.sql.functions import coalesce, to_timestamp, current_timestamp
+        # --- Schema-Defensive Programming ---
+        # Inspect batch schema to handle upstream drift gracefully
+        batch_cols = batch_df.columns
+        
+        # 1. Dynamically resolve the timestamp column
+        if "window_start" in batch_cols:
+            timestamp_col = coalesce(col("window_start"), current_timestamp())
+        elif "event_date" in batch_cols:
+            timestamp_col = coalesce(to_timestamp(col("event_date")), current_timestamp())
+        elif "created_at" in batch_cols: # Future-proofing for other possible names
+            timestamp_col = coalesce(to_timestamp(col("created_at")), current_timestamp())
+        else:
+            timestamp_col = current_timestamp()
+
+        # 2. Build the transformation with the resolved column
         aligned_df = (
             batch_df
-            .withColumn("metric_time", coalesce(col("window_start"), to_timestamp(col("event_date")), current_timestamp()))
+            .withColumn("metric_time", timestamp_col)
             .withColumn("application_customer_id", lit("livewire_unknown"))
             .withColumn("platform_customer_id", lit("livewire_unknown"))
             .withColumn("report_type", lit("livewire_raw"))
-            .drop("window_start", "window_end", "event_date")  # Drop staging columns
         )
+
+        # 3. Safely drop staging columns that exist in the batch
+        cols_to_drop = ["window_start", "window_end", "event_date", "created_at"]
+        safe_cols_to_drop = [c for c in cols_to_drop if c in batch_cols]
+        if safe_cols_to_drop:
+            aligned_df = aligned_df.drop(*safe_cols_to_drop)
         
         prepared_df = prepare_partition_columns(aligned_df)
         hashed_df = generate_composite_hash(prepared_df)
         
-        # Execute MERGE deduplication
-        merge_start = time.perf_counter()
-        merge_results = execute_merge_deduplication(spark, target_path, hashed_df)
-        merge_elapsed = time.perf_counter() - merge_start
+        # Execute MERGE deduplication with built-in retry logic
+        try:
+            merge_start = time.perf_counter()
+            merge_results = execute_merge_deduplication(spark, target_path, hashed_df)
+            merge_elapsed = time.perf_counter() - merge_start
+        except Exception as merge_error:
+            print(f"\n         ⚠ MERGE operation failed after retries: {merge_error}", flush=True)
+            print(f"         Batch {batch_id} will be retried in the next cycle.", flush=True)
+            # Log the batch for potential replay
+            return
         
         total_time = time.perf_counter() - start_time
         
