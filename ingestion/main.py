@@ -24,11 +24,11 @@ app = api_app
 @app.on_event("startup")
 async def startup_event():
     # Pre-warm Kafka Producer to avoid first-request latency
-    from v2.api.api_v2 import get_kafka
+    from v2.api.api_v2 import get_kafka, KAFKA_STARTED
     log.info("Pre-warming Kafka Producer (Connecting to Redpanda)...")
     producer = await get_kafka()
-    await producer.start()
-    log.info("🛰️  [KAFKA] Production Producer CONNECTED.")
+    if KAFKA_STARTED:
+        log.info("[KAFKA] Production Producer CONNECTED.")
     
     enable_poller = os.getenv("ENABLE_POLLER", "true").lower() == "true"
     if enable_poller:

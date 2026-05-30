@@ -490,9 +490,6 @@ async def startup_event():
 
     # 2. Initialize Infrastructure
     await get_kafka()
-    if _kafka:
-        await _kafka.start()
-        log.info("[KAFKA] Producer started successfully")
     
     await get_db_pool()
     
@@ -525,8 +522,10 @@ async def shutdown_event():
 # =============================================================================
 # CONNECTION FACTORIES
 # =============================================================================
+KAFKA_STARTED = False
+
 async def get_kafka():
-    global _kafka
+    global _kafka, KAFKA_STARTED
     if _kafka is None:
         # AIOKafka for high-throughput async outgress
         try:
@@ -541,15 +540,18 @@ async def get_kafka():
                 retry_backoff_ms=1000,
                 acks=1  # Fire-and-forget for max throughput
             )
-            # Startup handled in main.py
             log.info(f"[KAFKA] Production Producer Initialized (AIOKafka + Snappy + Aggressive Batching)")
         except Exception as e:
             log.error(f"[KAFKA] Initialisation Failed: {e}")
-            _kafka = AIOKafkaProducer(
-                bootstrap_servers="broker1:9092",
-                value_serializer=lambda v: orjson.dumps(v),
-                compression_type=None
-            )
+
+    if _kafka and not KAFKA_STARTED:
+        try:
+            await _kafka.start()
+            KAFKA_STARTED = True
+            log.info("[KAFKA] Producer connected successfully to brokers!")
+        except Exception as e:
+            log.warning(f" [KAFKA] Connection failed. Is the broker down? Will retry later. Error: {e}")
+            
     return _kafka
 
 async def get_redis():
@@ -1333,6 +1335,10 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
     # This forces glibc to release all freed memory pages back to the kernel.
     import ctypes
     try:
+        # Force PyArrow to drop its internal C++ memory pools (jemalloc/mimalloc)
+        pa.default_memory_pool().release_unused()
+        log.info("[MEMORY] PyArrow default memory pool released.")
+        
         libc = ctypes.CDLL("libc.so.6")
         libc.malloc_trim(0)
         log.info("[MEMORY] malloc_trim(0) executed: OS memory released.")

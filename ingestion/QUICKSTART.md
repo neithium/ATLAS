@@ -7,8 +7,26 @@ Follow these steps in order to go from a fresh clone to a fully-warmed, high-per
 ## 1. Spin up Infrastructure
 Initialize the TimescaleDB, Redis, and Kafka containers:
 ```bash
-docker compose up -d
+docker compose up -d atlas-ingestion
 ```
+
+### 1a. Managing Kafka Modes
+ATLAS requires a Kafka Broker. You can run Kafka in two different modes using the `.bat` scripts located in the root `/atlas` directory:
+
+**Development Mode (Single Broker):**
+```bash
+.\single.bat
+```
+*(Spins up `broker1` and safely ignores the rest of the cluster.)*
+
+**Production Simulation Mode (3-Node Cluster):**
+```bash
+.\cluster.bat
+```
+*(Spins up a full 3-node KRaft quorum with Replication Factor 3.)*
+
+> [!WARNING]
+> Do **NOT** use `docker compose down -v` to switch modes, as it will ruthlessly delete your TimescaleDB and Cache data! The `.bat` scripts are specifically designed to safely swap Kafka brokers without touching your databases.
 
 ## 2. Generate a Simulated Fleet
 Create a virtual registry of 10,000 devices (or adjust as needed):
@@ -60,4 +78,4 @@ curl http://localhost:8001/health
 ---
 > **Target Performance**: ~163,000 pts/sec  
 > **Target Latency**: < 20s for 1k Device Cluster  
-> 🚀🏁🏆🥇
+

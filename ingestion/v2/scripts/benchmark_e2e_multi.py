@@ -9,7 +9,7 @@ from aiokafka import AIOKafkaConsumer
 async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     topic = "raw-server-metrics"
     # Default to localhost ports when running from host machine
-    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9064,localhost:9067,localhost:9070")
+    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9064")
     
     # 1. Load registry to find correct ACID and device counts
     import orjson
