@@ -726,12 +726,15 @@ services:
       # READ from the same refined-volume that Lakehouse writes to.
       # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
       - C:/Users/Public/atlas-data/refined:/data/refined:ro
+      # Mount Delta Lake volume for streaming metrics (READ-WRITE for DeltaTable metadata)
+      - delta-refined:/refined
       # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
       # Application code
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
+      - ./storage/app.py:/app/app.py:ro
       # Schema reference
       - ./schema:/app/schema:ro
     networks:
