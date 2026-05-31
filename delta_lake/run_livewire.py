@@ -1,9 +1,13 @@
 import time
 import os
 from datetime import datetime
+import pytz
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import coalesce, to_timestamp, current_timestamp, col, lit
 from pyspark.sql.types import StructType, StructField, LongType, DoubleType, TimestampType
+
+# Timezone setup - IST (Indian Standard Time)
+IST = pytz.timezone('Asia/Kolkata')
 from delta_core import (
     PipelineConfig,
     LatencyTracker,
@@ -113,17 +117,20 @@ def run_livewire_pipeline(
         start_time = time.perf_counter()
         rows = batch_df.count()
         
-        # Log to both file and stdout for debugging
-        log_msg = f"[{datetime.now().isoformat()}] Batch {batch_id}: rows={rows}"
+        # Log to both file and stdout for debugging (in IST)
+        now_ist = datetime.now(IST).isoformat()
+        log_msg = f"[{now_ist}] Batch {batch_id}: rows={rows}"
         print(f"DEBUG: {log_msg}", flush=True)  # This will appear in container logs
         with open(DEBUG_LOG, "a") as f:
             f.write(f"{log_msg}\n")
         
         if rows == 0:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⏳ Waiting for stream data (Batch {batch_id}) - no new files detected.", flush=True)
+            now_ist = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{now_ist}] ⏳ Waiting for stream data (Batch {batch_id}) - no new files detected.", flush=True)
             return
             
-        print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ⚡ Processing Micro-batch {batch_id} with {rows} rows...", flush=True)
+        now_ist = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"\n[{now_ist}] ⚡ Processing Micro-batch {batch_id} with {rows} rows...", flush=True)
         
         # --- Schema-Defensive Programming ---
         # Inspect batch schema to handle upstream drift gracefully
@@ -173,9 +180,10 @@ def run_livewire_pipeline(
         # --- Persist Internal Performance Metrics to Micro-SLA Dashboard ---
         # Record batch-level performance metrics independently of upstream latency
         try:
+            now_ist = datetime.now(IST)
             metrics_data = [(
                 int(batch_id),
-                datetime.now(),
+                now_ist,
                 float(total_time),
                 float(merge_elapsed),
                 int(rows)
@@ -186,14 +194,16 @@ def run_livewire_pipeline(
             # Append to system metrics table (silent, non-blocking)
             metrics_df.write.format("delta").mode("append").save("/refined/system_metrics")
             
-            # Debug log
-            metrics_log_msg = f"[{datetime.now().isoformat()}] Batch {batch_id}: Metrics written - total_time={total_time:.3f}s, merge_time={merge_elapsed:.3f}s, rows={rows}"
+            # Debug log (in IST)
+            now_ist_iso = datetime.now(IST).isoformat()
+            metrics_log_msg = f"[{now_ist_iso}] Batch {batch_id}: Metrics written - total_time={total_time:.3f}s, merge_time={merge_elapsed:.3f}s, rows={rows}"
             print(f"DEBUG: {metrics_log_msg}", flush=True)
             with open(DEBUG_LOG, "a") as f:
                 f.write(f"{metrics_log_msg}\n")
         except Exception as metrics_error:
-            # Debug log the error
-            error_msg = f"[{datetime.now().isoformat()}] Batch {batch_id}: Metrics write FAILED - {type(metrics_error).__name__}: {str(metrics_error)[:100]}"
+            # Debug log the error (in IST)
+            now_ist_iso = datetime.now(IST).isoformat()
+            error_msg = f"[{now_ist_iso}] Batch {batch_id}: Metrics write FAILED - {type(metrics_error).__name__}: {str(metrics_error)[:100]}"
             print(f"DEBUG: {error_msg}", flush=True)
             with open(DEBUG_LOG, "a") as f:
                 f.write(f"{error_msg}\n")
@@ -215,8 +225,9 @@ def run_livewire_pipeline(
             optimize_delta_table(spark, target_path, PipelineConfig.ZORDER_COLUMN)
 
     try:
-        # Write initialization log
-        startup_msg = f"[{datetime.now().isoformat()}] Pipeline starting - reading from {source_path}"
+        # Write initialization log (in IST)
+        now_ist_iso = datetime.now(IST).isoformat()
+        startup_msg = f"[{now_ist_iso}] Pipeline starting - reading from {source_path}"
         print(f"DEBUG: {startup_msg}", flush=True)
         with open(DEBUG_LOG, "a") as f:
             f.write(f"{startup_msg}\n")
@@ -229,7 +240,8 @@ def run_livewire_pipeline(
             .start()
         )
         
-        startup_success_msg = f"[{datetime.now().isoformat()}] Stream started successfully"
+        now_ist_iso = datetime.now(IST).isoformat()
+        startup_success_msg = f"[{now_ist_iso}] Stream started successfully"
         print(f"DEBUG: {startup_success_msg}", flush=True)
         with open(DEBUG_LOG, "a") as f:
             f.write(f"{startup_success_msg}\n")
@@ -239,7 +251,8 @@ def run_livewire_pipeline(
         print("\n         🛑 Stopping Livewire Stream...")
         query.stop()
     except Exception as e:
-        error_startup_msg = f"[{datetime.now().isoformat()}] Stream failed: {e}"
+        now_ist_iso = datetime.now(IST).isoformat()
+        error_startup_msg = f"[{now_ist_iso}] Stream failed: {e}"
         print(f"\n         ❌ Livewire stream failed: {e}")
         print(f"DEBUG: {error_startup_msg}", flush=True)
         with open(DEBUG_LOG, "a") as f:

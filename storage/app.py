@@ -7,8 +7,12 @@ import plotly.graph_objects as go
 import os
 from datetime import datetime, timedelta
 from deltalake import DeltaTable
+import pytz
 
 st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide")
+
+# Timezone setup - IST (Indian Standard Time)
+IST = pytz.timezone('Asia/Kolkata')
 
 # =============================================================================
 # Connection Configuration
@@ -72,9 +76,10 @@ def query_delta_metrics(limit=500):
         if df.empty:
             return df
         
-        # Convert timestamp and sort ONCE
+        # Convert timestamp and sort ONCE, also convert to IST
         if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+            df['timestamp'] = df['timestamp'].dt.tz_convert(IST)
             df = df.sort_values('timestamp', ascending=False).head(limit)
         
         return df
