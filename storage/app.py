@@ -170,13 +170,13 @@ with col2:
     if pg_conn and not pg_conn.closed: st.success("  PostgreSQL Online (Relational Metadata)")
     else: st.error("  PostgreSQL Offline")
 with col3:
-    if delta_client: st.success("  Delta Lake Online (Storage Metrics)")
+    if delta_client: st.success("  Delta Lake Online ")
     else: st.error("  Delta Lake Offline")
 
 st.markdown("---")
 
 # Added the new "Live Charts" tab
-tab_ch, tab_pg, tab_charts, tab_sla = st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "⚡ Micro-SLA Dashboard"])
+tab_ch, tab_pg, tab_charts, tab_sla = st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "Delta Lake Statistics"])
 
 # -----------------------------------------------------------------------------
 # ClickHouse Tab
@@ -273,8 +273,8 @@ with tab_charts:
 # Micro-SLA Dashboard Tab (NEW)
 # -----------------------------------------------------------------------------
 with tab_sla:
-    st.subheader("Lakehouse Statistics ")
-    st.markdown("Autonomous metrics from the Lakehouse layer proving sub-second latency independent of upstream APIs.")
+    st.subheader(" Delta Lake Streaming Metrics Dashboard")
+    st.markdown("Autonomous metrics from the Delta lake layer proving sub-second latency independent of upstream APIs.")
     
     # Check if metrics table exists and has data
     if not delta_client:
