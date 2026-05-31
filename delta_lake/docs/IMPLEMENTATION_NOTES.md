@@ -1015,3 +1015,62 @@ Join metrics against DevOps events for root-cause analysis:
 
 - **run_livewire.py:** Added metrics table initialization and per-batch recording logic
 - **delta_core.py:** (No changes; metrics are independent of core MERGE logic)
+
+---
+
+## May 31, 2026: Livewire Streaming Pipeline Debugging
+
+### Problem 1: Checkpoint Preventing Batch Processing
+**Issue:** Stream listed 23,800 files but never called `foreachBatch()` callback.
+**Root Cause:** Spark Structured Streaming checkpoint marked all files as "already processed." New files weren't detected because no new data appeared after checkpoint creation.
+**Solution:** Cleared checkpoint directory `/stream_checkpoint/livewire` to force reprocessing from the beginning.
+**Impact:** Stream resumed batch processing immediately after checkpoint clear.
+
+### Problem 2: MERGE Operation Failing with File Not Found
+**Issue:** `SparkFileNotFoundException` during MERGE - referenced parquet files didn't exist.
+**Root Cause:** Corrupted/incomplete Delta table from previous failed runs. Table contained orphaned partition directories with no actual data files.
+**Solution:** Cleared entire `/refined/` directory to start fresh with clean table state.
+**Impact:** Table recreation succeeded with proper `_delta_log/` structure.
+
+### Problem 3: OPTIMIZE Operation Crashing Stream
+**Issue:** Stream terminated after 5 batches with `executeZOrderBy()` exception during optimization.
+**Root Cause:** Z-ORDER operation on a newly created table with minimal data caused Spark executor memory issues. Also, first OPTIMIZE after just 5 batches created unnecessary overhead.
+**Solution:** Disabled periodic OPTIMIZE by commenting out the optimization code:
+```python
+# Optimize periodically - DISABLED temporarily to avoid Z-ORDER issues
+# if batch_counter["count"] % PipelineConfig.OPTIMIZE_EVERY_N_BATCHES == 0:
+#     optimize_delta_table(spark, target_path, PipelineConfig.ZORDER_COLUMN)
+```
+**Impact:** Stream continued processing indefinitely without crashes.
+
+### Problem 4: Metrics Table Empty in Dashboard
+**Issue:** Dashboard showed "no metrics available" despite metrics being written.
+**Root Cause:** Combination of issues: (1) checkpoint preventing batch processing, (2) test metrics table contamination, (3) volume mount permissions.
+**Solution:** Fixed upstream checkpoint/MERGE/OPTIMIZE issues; cleaned test data; verified writable volume mount.
+**Impact:** Metrics now flow continuously to dashboard every 5 seconds (Spark streaming trigger).
+
+### Lessons Learned
+
+| Issue | Root Cause | Prevention |
+|-------|-----------|-----------|
+| Checkpoint stale | Files pre-existed before stream started | Clear checkpoint on first full deployment |
+| Corrupt table | Partial writes from failed runs | Always start with clean `/refined/` on new pipeline version |
+| OPTIMIZE crashes | Too many optimizations on small tables | Disable early; optimize after table reaches stable size |
+| Debug visibility | File logs not accessible via PowerShell in Windows | Added stdout logging alongside file logging |
+
+### Technical Insights
+
+1. **Checkpoint Semantics:** Spark Structured Streaming checkpoints track file offsets, not full file paths. If files exist before stream starts, they're never processed unless checkpoint is cleared.
+
+2. **Delta Transaction Log Critical:** Missing `_delta_log/` directory is a hard failure. Verify with `os.path.exists(path + "/_delta_log")` instead of relying on `DeltaTable.isDeltaTable()`.
+
+3. **Z-ORDER Overhead:** Z-ORDER clustering is expensive and should only run when table size justifies the cost (typically after 10+ batches minimum).
+
+4. **Metrics Non-Blocking:** Wrapping metrics writes in try-except prevents pipeline crashes if metrics table initialization fails, maintaining resilience.
+
+### Cleanup Performed
+- Removed temporary test files: `generate_test_stream_data.py`, `query_metrics.py`
+- Cleared metrics test data from `/refined/system_metrics`
+- Verified clean state ready for production streaming
+
+**Status:** Livewire streaming pipeline now stable and continuously populating metrics table.

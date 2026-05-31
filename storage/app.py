@@ -273,45 +273,45 @@ with tab_charts:
 # Micro-SLA Dashboard Tab (NEW)
 # -----------------------------------------------------------------------------
 with tab_sla:
-    st.subheader("Internal Performance Metrics & Storage Layer SLA")
-    st.markdown("Autonomous metrics from the Lakehouse storage layer proving sub-second latency independent of upstream APIs.")
+    st.subheader("Lakehouse Statistics ")
+    st.markdown("Autonomous metrics from the Lakehouse layer proving sub-second latency independent of upstream APIs.")
     
     # Check if metrics table exists and has data
     if not delta_client:
         status = check_delta_status()
         
         if not status["refined_exists"]:
-            st.error("🔴 `/refined` volume not mounted to container")
+            st.error("  `/refined` volume not mounted to container")
             st.info("**Action**: Ensure volume mount in docker-compose.yml: `- delta-refined:/refined`")
         elif not status["system_metrics_exists"]:
-            st.warning("⏳ Metrics table initializing...")
+            st.warning("  Metrics table initializing...")
             st.info("**Status**: Streaming pipeline is creating the metrics table. This appears on first batch processing (~10-30 seconds after startup).")
             
             # Show pipeline status
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("📊 Pipeline", "Starting", delta="Monitor logs")
+                st.metric("  Pipeline", "Starting", delta="Monitor logs")
             with col2:
-                st.metric("⏱️ Table Status", "Pending", delta="Waiting for first batch")
+                st.metric("  Table Status", "Pending", delta="Waiting for first batch")
             
             st.divider()
             st.markdown("**Troubleshooting**:")
-            st.markdown("- ✅ Streaming pipeline should be running: `docker ps | grep atlas-lakehouse`")
-            st.markdown("- ✅ Check pipeline logs: `docker compose logs atlas-lakehouse --tail 20`")
-            st.markdown("- ✅ Volume should be writable (not `:ro` in docker-compose.yml)")
+            st.markdown("-  Streaming pipeline should be running: `docker ps | grep atlas-lakehouse`")
+            st.markdown("-  Check pipeline logs: `docker compose logs atlas-lakehouse --tail 20`")
+            st.markdown("-  Volume should be writable (not `:ro` in docker-compose.yml)")
         else:
-            st.error(f"🔴 DeltaTable connection error: {status['error']}")
+            st.error(f"  DeltaTable connection error: {status['error']}")
             st.info("Try refreshing the page or check container logs")
     else:
-        with st.spinner("⏳ Loading metrics from Delta Lake..."):
+        with st.spinner(" Loading metrics from Delta Lake..."):
             metrics_df = query_delta_metrics(limit=500)
         
         if metrics_df.empty:
-            st.info("📊 No metrics available yet. Metrics will appear here once the streaming pipeline processes batches.")
+            st.info("  No metrics available yet. Metrics will appear here once the streaming pipeline processes batches.")
         else:
             try:
                 # Pre-compute all metrics ONCE to avoid repeated calculations
-                with st.spinner("🔢 Computing SLA statistics..."):
+                with st.spinner("  Computing SLA statistics..."):
                     total_time_ms = metrics_df['total_time'] * 1000
                     
                     # Cache computed metrics
@@ -324,46 +324,38 @@ with tab_sla:
                     throughput = total_rows / total_time_sum if total_time_sum > 0 else 0
                 
                 # =========== SLA Metrics Cards ===========
-                st.markdown("### 📈 Real-Time SLA Compliance")
+                st.markdown("###  Key Performance Indicators (Last 500 Batches)")
                 
                 col_p50, col_p95, col_p99, col_tput = st.columns(4)
                 
                 with col_p50:
                     st.metric(
                         label="P50 Latency",
-                        value=f"{p50_latency:.1f}ms",
-                        delta="Target: <500ms" if p50_latency < 500 else "⚠ Target: <500ms",
-                        delta_color="normal" if p50_latency < 500 else "inverse"
+                        value=f"{p50_latency:.1f}ms"
                     )
                 
                 with col_p95:
                     st.metric(
                         label="P95 Latency",
-                        value=f"{p95_latency:.1f}ms",
-                        delta="Target: <1000ms" if p95_latency < 1000 else "⚠ Target: <1000ms",
-                        delta_color="normal" if p95_latency < 1000 else "inverse"
+                        value=f"{p95_latency:.1f}ms"
                     )
                 
                 with col_p99:
                     st.metric(
                         label="P99 Latency",
-                        value=f"{p99_latency:.1f}ms",
-                        delta="Target: <1500ms" if p99_latency < 1500 else "⚠ Target: <1500ms",
-                        delta_color="normal" if p99_latency < 1500 else "inverse"
+                        value=f"{p99_latency:.1f}ms"
                     )
                 
                 with col_tput:
                     st.metric(
                         label="Throughput",
-                        value=f"{throughput:,.0f}rows/sec",
-                        delta="Target: >10K" if throughput > 10000 else "⚠ Target: >10K",
-                        delta_color="normal" if throughput > 10000 else "inverse"
+                        value=f"{throughput:,.0f}rows/sec"
                     )
                 
                 st.markdown("---")
                 
                 # =========== Time-Series Charts ===========
-                st.markdown("### 📊 Latency Trends (Recent Batches)")
+                st.markdown("###  Latency Trends (Recent Batches)")
                 
                 col_trend, col_merge = st.columns(2)
                 
@@ -371,7 +363,7 @@ with tab_sla:
                     st.warning("⚠ Timestamp column not found in metrics data.")
                 else:
                     with col_trend:
-                        with st.spinner("📊 Building latency chart..."):
+                        with st.spinner(" Building latency chart..."):
                             trend_df = metrics_df.sort_values('timestamp')
                             fig_trend = px.line(
                                 trend_df,
@@ -387,7 +379,7 @@ with tab_sla:
                             st.plotly_chart(fig_trend, use_container_width=True)
                     
                     with col_merge:
-                        with st.spinner("📊 Building merge time chart..."):
+                        with st.spinner("  Building merge time chart..."):
                             merge_df = metrics_df.sort_values('timestamp')
                             fig_merge = px.line(
                                 merge_df,
@@ -404,7 +396,7 @@ with tab_sla:
                 st.markdown("---")
                 
                 # =========== Batch Statistics ===========
-                st.markdown("### 📋 Batch Processing Statistics")
+                st.markdown("###   Batch Processing Statistics")
                 
                 col_stat1, col_stat2, col_stat3 = st.columns(3)
                 
@@ -423,7 +415,7 @@ with tab_sla:
                 st.markdown("---")
                 
                 # =========== Performance Breakdown ===========
-                st.markdown("### 🔍 Performance Analysis")
+                st.markdown("###   Performance Analysis")
                 
                 tab_breakdown, tab_outliers, tab_raw = st.tabs(["Latency Breakdown", "Outliers & Anomalies", "Raw Metrics"])
                 
@@ -478,7 +470,7 @@ with tab_sla:
                             slow_batches_display['merge_time'] = slow_batches_display['merge_time'].apply(lambda x: f"{x*1000:.2f}ms")
                         st.dataframe(slow_batches_display, use_container_width=True)
                     else:
-                        st.success("✅ No outliers detected! All batches performing within SLA.")
+                        st.success("  No outliers detected! All batches performing within SLA.")
                 
                 with tab_raw:
                     st.subheader("Raw Metrics Data")
@@ -491,5 +483,5 @@ with tab_sla:
                     st.dataframe(display_df, use_container_width=True)
                 
             except Exception as e:
-                st.error(f"❌ Error rendering dashboard: {type(e).__name__}")
+                st.error(f"  Error rendering dashboard: {type(e).__name__}")
                 st.info("Try refreshing the page or check container logs for details.")

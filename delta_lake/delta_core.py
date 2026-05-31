@@ -352,8 +352,10 @@ def optimize_delta_table(spark: SparkSession, path: str, zorder_col: Optional[st
     """Run OPTIMIZE and Z-ORDER on the Delta table."""
     delta_table = DeltaTable.forPath(spark, path)
     if zorder_col:
-        print(f"        Running OPTIMIZE and Z-ORDER by {zorder_col}...")
-        delta_table.optimize().executeZOrderBy(zorder_col)
+        # Split comma-separated column names and pass as separate arguments
+        zorder_cols = [col.strip() for col in zorder_col.split(",")]
+        print(f"        Running OPTIMIZE and Z-ORDER by {', '.join(zorder_cols)}...")
+        delta_table.optimize().executeZOrderBy(*zorder_cols)
     else:
         print("        Running OPTIMIZE...")
         delta_table.optimize().executeCompaction()
