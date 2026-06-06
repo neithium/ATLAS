@@ -520,6 +520,19 @@ services:
       tail -f /dev/null
       "  
 
+  dlq-reviewer:
+
+    build: ./processing/dlq
+
+    container_name: dlq-reviewer
+
+    restart: always
+    networks:
+      - atlas-network
+
+    depends_on:
+      - broker1
+
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
   # ===========================================================================
