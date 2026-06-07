@@ -4,7 +4,7 @@ This document outlines the state-of-the-art ingestion and discovery architecture
 
 ---
 
-## 🏗️ The 10,000-Foot View
+## 🏗️ Architecture Diagram
 
 ![V3 Architecture Diagram](./assets/Ingestion%20(1).png)
 
