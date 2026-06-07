@@ -185,29 +185,45 @@ class CheckpointManager:
 
 def prepare_partition_columns(df: DataFrame) -> DataFrame:
     """
-    Add partition columns required for 5-level deep partitioning.
-    
+    Prepares partition columns defensively.
     Extracts partition_date from metric_time for date-based partitioning.
     Ensures all partition columns have non-null values for proper partitioning.
     """
-    if "partition_date" in df.columns:
+    from pyspark.sql.functions import date_format, to_date, col, lit, coalesce
+
+    batch_cols = df.columns
+    
+    # Defensively create partition_date
+    if "partition_date" in batch_cols:
         prepared = df.withColumn(
             "partition_date",
             date_format(col("partition_date"), "yyyy-MM-dd")
         )
-    else:
+    elif "metric_time" in batch_cols:
         prepared = df.withColumn(
             "partition_date",
             date_format(to_date(col("metric_time")), "yyyy-MM-dd")
         )
-    
-    return (   ## remove this while refactoring.. heavy partitioning causing small file problem as of now..
-        prepared
-        .withColumn("report_type", coalesce(col("report_type"), lit("unknown")))
-        .withColumn("platform_customer_id", coalesce(col("platform_customer_id"), lit("unknown")))
-        .withColumn("application_customer_id", coalesce(col("application_customer_id"), lit("unknown")))
-        .withColumn("device_id", coalesce(col("device_id"), lit("unknown")))
-    )
+    else:
+        # If no date source, create a null column that will be filled later
+        prepared = df.withColumn("partition_date", lit(None).cast("string"))
+
+    # Defensively apply coalesce to known columns if they exist
+    columns_to_coalesce = {
+        "report_type": "unknown",
+        "platform_customer_id": "unknown",
+        "application_customer_id": "unknown",
+        "device_id": "unknown"
+    }
+
+    for col_name, default_value in columns_to_coalesce.items():
+        if col_name in batch_cols:
+            prepared = prepared.withColumn(col_name, coalesce(col(col_name), lit(default_value)))
+        else:
+            # If the column doesn't exist, create it with the default value
+            prepared = prepared.withColumn(col_name, lit(default_value))
+            
+    return prepared
 
 
 def generate_composite_hash(df: DataFrame) -> DataFrame:
@@ -254,17 +270,18 @@ def initialize_delta_table(
 def execute_merge_deduplication(
     spark: SparkSession,
     target_path: str,
-    source_df: DataFrame
+    source_df: DataFrame,
+    max_retries: int = 3
 ) -> dict:
     """
-    Execute MERGE operation with deduplication logic.
+    Execute MERGE operation with deduplication logic and resilience.
     
     - Inserts new records.
     - Updates existing records if source has a more recent timestamp.
     - Deduplicates source data to prevent duplicate insertions.
+    - Implements retry logic and Delta Log consistency checks.
     """
-    
-    delta_table = DeltaTable.forPath(spark, target_path)
+    import time
     
     # Deduplicate source data based on PK, keeping the latest record
     # This is critical for idempotent writes when re-processing batches
@@ -287,23 +304,58 @@ def execute_merge_deduplication(
         AND target.application_customer_id = source.application_customer_id
     """
     
-    (
-        delta_table.alias("target")
-        .merge(
-            source_deduped.alias("source"),
-            condition=merge_condition
-        )
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll()
-        .execute()
-    )
+    # Retry logic with exponential backoff for transient failures
+    for attempt in range(max_retries):
+        try:
+            # Refresh Delta table metadata to ensure log consistency
+            delta_table = DeltaTable.forPath(spark, target_path)
+            
+            # Force invalidate the plan cache to ensure fresh file resolution
+            spark.catalog.refreshByPath(target_path)
+            
+            # Execute merge with materialized source to avoid reference errors
+            (
+                delta_table.alias("target")
+                .merge(
+                    source_deduped.alias("source"),
+                    condition=merge_condition
+                )
+                .whenMatchedUpdateAll()
+                .whenNotMatchedInsertAll()
+                .execute()
+            )
+            
+            return {"status": "success", "merge_executed": True}
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Check if it's a transient file-not-found error
+            if "does not exist" in error_msg or "SparkFileNotFoundException" in error_msg:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2 ** attempt
+                    print(f"        ⚠ Transient file error on attempt {attempt + 1}/{max_retries}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"        ❌ MERGE failed after {max_retries} attempts: {error_msg}")
+                    raise
+            else:
+                # Non-transient error - fail immediately
+                print(f"        ❌ MERGE failed with non-transient error: {error_msg}")
+                raise
+    
+    return {"status": "failed", "error": "Max retries exceeded"}
 
 def optimize_delta_table(spark: SparkSession, path: str, zorder_col: Optional[str] = None):
     """Run OPTIMIZE and Z-ORDER on the Delta table."""
     delta_table = DeltaTable.forPath(spark, path)
     if zorder_col:
-        print(f"        Running OPTIMIZE and Z-ORDER by {zorder_col}...")
-        delta_table.optimize().executeZOrderBy(zorder_col)
+        # Split comma-separated column names and pass as separate arguments
+        zorder_cols = [col.strip() for col in zorder_col.split(",")]
+        print(f"        Running OPTIMIZE and Z-ORDER by {', '.join(zorder_cols)}...")
+        delta_table.optimize().executeZOrderBy(*zorder_cols)
     else:
         print("        Running OPTIMIZE...")
         delta_table.optimize().executeCompaction()

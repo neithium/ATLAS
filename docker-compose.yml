@@ -78,6 +78,15 @@ services:
   #   - Cold Path: Daily Mega-Compaction to MinIO Parquet (Daily Archive)
   #   - Streaming: On-Demand Kafka Outgress for Hierarchical Exports
   # ===========================================================================
+  # ── OBSERVABILITY: JAEGER (Tracing UI) ──────────────────────────────────
+  # jaeger:
+  #   image: jaegertracing/all-in-one:1.47
+  #   container_name: atlas-tracing
+  #   ports:
+  #     - "16686:16686"   # Jaeger UI
+  #     - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
+  #   networks:
+  #     - atlas-network
 
   atlas-ingestion:
     build:
@@ -519,6 +528,18 @@ services:
 
     #   wait
     #   "
+    # command: >
+    #       bash -c "
+    #       mkdir -p /app/data/raw &&
+    #       mkdir -p /app/data/processed/stream &&
+    #       mkdir -p /app/data/processed/batch &&
+    #       mkdir -p /app/checkpoint/stream &&
+    #
+    #       echo '⏳ Waiting for Kafka to stabilize...' &&
+    #       sleep 40 &&
+    #
+    #       tail -f /dev/null
+    #       "  
     command: >
       bash -c "
       mkdir -p /app/data/raw &&
@@ -529,8 +550,14 @@ services:
       echo '⏳ Waiting for Kafka to stabilize...' &&
       sleep 40 &&
 
-      tail -f /dev/null
-      "  
+      echo '🚀 Starting Kafka Streaming...' &&
+      spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 /app/jobs/kafka_streaming.py &
+
+      echo '🚀 Starting Batch Job...' &&
+      spark-submit /app/jobs/batch_job.py &
+
+      wait
+      "
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
@@ -563,9 +590,8 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      # Shared volumes for inter-container data flow (bind mounts to /Users/Public/atlas-data)
-      - C:/Users/Public/atlas-data/raw:/raw
-      - C:/Users/Public/atlas-data/refined:/refined
+      # Shared volumes for inter-container data flow
+      - delta-refined:/refined
       - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
@@ -721,12 +747,15 @@ services:
       # READ from the same refined-volume that Lakehouse writes to.
       # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
       - C:/Users/Public/atlas-data/refined:/data/refined:ro
+      # Mount Delta Lake volume for streaming metrics (READ-WRITE for DeltaTable metadata)
+      - delta-refined:/refined
       # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
       # Application code
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
+      - ./storage/app.py:/app/app.py:ro
       # Schema reference
       - ./schema:/app/schema:ro
     networks:
@@ -767,32 +796,32 @@ services:
   #     - dev
 
   # Jupyter Notebook - Interactive development (uses Lakehouse image)
-  jupyter:
-    build:
-      context: ./delta_lake
-      dockerfile: Dockerfile
-    container_name: atlas-jupyter
-    hostname: jupyter
-    ports:
-      - "8888:8888"
-    volumes:
-      - C:/Users/Public/atlas-data/raw:/raw
-      - C:/Users/Public/atlas-data/refined:/refined
-      - ./delta_lake/data:/app/data
-      - ./delta_lake:/app/notebooks
-      - ./schema:/app/schema:ro
-    environment:
-      - SPARK_DRIVER_MEMORY=2g
-    working_dir: /app
-    networks:
-      - atlas-network
-    command: >
-      bash -c "
-        pip install jupyter &&
-        jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
-      "
-    profiles:
-      - jupyter
+  # jupyter:
+  #   build:
+  #     context: ./delta_lake
+  #     dockerfile: Dockerfile
+  #   container_name: atlas-jupyter
+  #   hostname: jupyter
+  #   ports:
+  #     - "8888:8888"
+  #   volumes:
+  #     - C:/Users/Public/atlas-data/raw:/raw
+  #     - C:/Users/Public/atlas-data/refined:/refined
+  #     - ./delta_lake/data:/app/data
+  #     - ./delta_lake:/app/notebooks
+  #     - ./schema:/app/schema:ro
+  #   environment:
+  #     - SPARK_DRIVER_MEMORY=2g
+  #   working_dir: /app
+  #   networks:
+  #     - atlas-network
+  #   command: >
+  #     bash -c "
+  #       pip install jupyter &&
+  #       jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
+  #     "
+  #   profiles:
+  #     - jupyter
 
   # ===========================================================================
   # STREAMING SERVICES (atlas-streaming, atlas-data-producer)
