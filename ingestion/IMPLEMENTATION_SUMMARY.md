@@ -509,6 +509,34 @@ With the 3-broker cluster properly configured:
 
 ---
 
+# Phase 8: V3 Finalization & Concurrency Hardening (June 7, 2026)
+
+## Overview
+This phase marked the absolute finalization of the PowerPulse V3 architecture, shifting from deadlock-prone multi-processing to high-stability thread pools, implementing realistic telemetry modeling for downstream machine learning, and completely overhauling the documentation suite.
+
+### 1. ThreadPool & Async IO Deadlock Resolution
+- **Problem**: Heavy concurrent requests under `ProcessPoolExecutor` paired with Uvicorn frequently resulted in ghost-hangs and deadlocks due to memory mapping issues.
+- **Solution**: Completely stripped out `ProcessPoolExecutor` in `api_v2.py`. Replaced it with a tuned `ThreadPoolExecutor` wrapped via `asyncio`.
+- **Result**: Validated extreme stability under load, achieving **147,000+ points/sec** for 10 concurrent heavy-hitter exports.
+
+### 2. Realistic Telemetry Modeling for ML
+- **Sinusoidal Curve Generation**: Upgraded `prefill_tsdb.py` to generate realistic 5-minute interval power metrics using sinusoidal waves with randomized anomalous spikes and drops. This was necessary to properly train the downstream `IsolationForest` models.
+- **Hardware Diversity**: Upgraded `generate_registry.py` to inject diverse architectures (Intel Xeon, AMD EPYC, DDR4/DDR5) and geographic locations across India for better anomaly context.
+
+### 3. Strict Local FS Lakehouse & Silo Tuning
+- **Silo Sizing**: Increased `SILO_SIZE` to 7,000 records in `api_v2.py` and `bench_daily_job.py`. 7,000 devices exactly hit the sweet spot of ~128MB per Parquet file when snappy-compressed.
+- **Dual-Write Architecture**: Cemented the cold path to strictly write local files to `/app/data/raw/` (for Spark streaming) and `/app/data/archive/` (for compliance), entirely dropping the MinIO abstraction overhead from this layer.
+
+### 4. TimescaleDB Networking & Observability Patch
+- **`fix_pg.sh`**: Created a networking patch to automatically update `postgresql.conf` (`listen_addresses = '*'`) and `pg_hba.conf` (`0.0.0.0/0 md5`). This opened the TSDB ports to external tools like Grafana and DBeaver.
+- **Tool Pruning**: Completely removed legacy references and configurations for Jaeger UI and Kafka UI, keeping the environment strictly focused on Grafana.
+
+### 5. Documentation Synchronization
+- **Consistency**: All primary docs (`README.md`, `BENCHMARKING_GUIDE.md`, `architecture_v3.md`, `QUICKSTART.md`) were audited and perfectly synchronized to the actual measured benchmarks (147k pts/sec).
+- **Projections**: Updated math projections for large fleets (a 100,000-device daily Parquet archive now calculates to complete in just ~1.3 hours).
+
+---
+
 ## 📂 Benchmark Results & Scripts
 
 All benchmark scripts, raw output logs, and historical throughput data are maintained in a dedicated directory for reproducibility and regression testing.
