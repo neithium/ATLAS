@@ -51,10 +51,16 @@ docker exec -it atlas-ingestion python3 /app/v2/scripts/backfill_cache.py --days
 ```
 
 ## 5. Run an End-to-End Benchmark
-Verify that the system is hitting the production-grade **163k pts/sec** threshold:
+Verify that the system is hitting the production-grade **147k pts/sec** threshold:
 ```bash
 docker exec atlas-ingestion python3 /app/v2/scripts/benchmark_e2e_multi.py --platforms 10
 ```
+
+## 6. View Real-Time Dashboard (Grafana)
+Once data is flowing into the system, you can visualize the telemetry streams and hardware metrics live.
+- **URL**: [http://localhost:3000](http://localhost:3000)
+- **Username**: `admin`
+- **Password**: `admin`
 
 ---
 
@@ -76,6 +82,6 @@ curl http://localhost:8001/health
 ```
 
 ---
-> **Target Performance**: ~163,000 pts/sec  
+> **Target Performance**: ~147,000 pts/sec  
 > **Target Latency**: < 20s for 1k Device Cluster  
 

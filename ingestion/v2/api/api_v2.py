@@ -329,7 +329,7 @@ async def daily_archival_job():
         
         # SILO STRATEGY: Target files 128MB+
         # 2,016 points/device/7-days -> ~1,000 devices per 128MB silo
-        SILO_SIZE = 2600 
+        SILO_SIZE = 7000 
         # MEMORY OPTIMIZATION: Reduced MICRO_BATCH from 100 to 50
         # Python dicts for 200,000 nested records cause OOM in 1GB containers.
         MICRO_BATCH = 50
@@ -1297,13 +1297,12 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             batch_table, count
         )
         
-        # Send results to Kafka (Non-Blocking: fire-and-forget after serialization)
+        # Send results to Kafka
         if results:
             result_count = len(results)
-            # Non-blocking send: schedule as background task without awaiting
+            # Blocking send: wait for all messages to be buffered before moving on
             for did, payload in results:
-                # Create task without awaiting (runs in background)
-                asyncio.create_task(kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()))
+                await kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode())
             # Clean up references
             del results
             return result_count

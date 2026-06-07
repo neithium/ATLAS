@@ -100,9 +100,29 @@ class PrefillEngine:
         """Updates the pre-allocated DataFrame with new metrics for a single slot."""
         cycle_factor = float(np.sin((dt.hour - 8) * np.pi / 12))
         
-        # In-place vectorized updates to minimize allocations
+        # 1. Normal Baseline Behavior (Vectorized)
         cpu_util = np.clip(40 + (cycle_factor * 30) + self.rng.uniform(-10, 10, self.n), 5, 95).astype(np.int32)
         cpu_watts = (200 + (cpu_util * 2.5) + self.rng.uniform(-5, 5, self.n)).astype(np.int32)
+        amb_temp = np.round(22.0 + (cycle_factor * 5.0) + self.rng.uniform(-0.5, 0.5, self.n), 1)
+
+        # 2. ANOMALY INJECTION (Vectorized)
+        # 2% Critical, 10% Warning, 88% Healthy
+        is_critical_capable = (np.arange(self.n) % 50 == 0)
+        is_warning_capable = (np.arange(self.n) % 10 == 1)
+
+        is_critical_now = is_critical_capable & (self.rng.uniform(0, 1, self.n) < 0.4)
+        is_warning_now = is_warning_capable & (self.rng.uniform(0, 1, self.n) < 0.6)
+
+        if np.any(is_critical_now):
+            cpu_util[is_critical_now] = self.rng.integers(95, 100, np.sum(is_critical_now))
+            cpu_watts[is_critical_now] = self.rng.integers(400, 550, np.sum(is_critical_now))
+            amb_temp[is_critical_now] = self.rng.uniform(35.0, 48.0, np.sum(is_critical_now))
+
+        if np.any(is_warning_now):
+            cpu_util[is_warning_now] = self.rng.integers(60, 95, np.sum(is_warning_now))
+            cpu_watts[is_warning_now] = self.rng.integers(250, 350, np.sum(is_warning_now))
+            amb_temp[is_warning_now] = self.rng.uniform(28.0, 36.0, np.sum(is_warning_now))
+        
         gpu_watts = (50 + (cycle_factor * 50) + self.rng.uniform(-5, 5, self.n)).astype(np.int32)
         avg_watts = np.round((cpu_watts + gpu_watts) / 2.0, 2)
         
@@ -113,7 +133,7 @@ class PrefillEngine:
         self.worker_df["avg_watts"] = avg_watts
         self.worker_df["min_watts"] = (avg_watts * 0.8).astype(np.int32)
         self.worker_df["peak_watts"] = (avg_watts * 1.4).astype(np.int32)
-        self.worker_df["amb_temp"] = np.round(22.0 + (cycle_factor * 5.0) + self.rng.uniform(-0.5, 0.5, self.n), 1)
+        self.worker_df["amb_temp"] = amb_temp
         self.worker_df["cpu_avg_freq"] = ((2800 + (cycle_factor * 1000) + self.rng.integers(-100, 100, self.n)) * 1000).astype(np.int64)
         
         return self.worker_df[COLUMNS]

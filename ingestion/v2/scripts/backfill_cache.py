@@ -66,8 +66,9 @@ async def backfill(days=7, offset_hours=0):
         print(f"[INDEXING] Indexing & Archiving {hour_start.strftime('%Y-%m-%d %H:00')}...")
         
         async with pool.acquire() as conn:
+            col_list = ", ".join(DB_COLUMNS)
             records = await conn.fetch(
-                "SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2",
+                f"SELECT {col_list} FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2",
                 hour_start, hour_end
             )
         

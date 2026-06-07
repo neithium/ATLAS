@@ -18,6 +18,26 @@
 # Usage:
 #   Start all:    docker-compose up -d
 #   View logs:    docker-compose logs -f [service_name]
+# =============================================================================
+# ATLAS - Advanced Telemetry Logging & Analytics System
+# 5-Container Architecture Docker Compose
+# =============================================================================
+#
+# Architecture:
+#   Container 1: atlas-ingestion   - The Generator (FastAPI Telemetry API)
+#   Container 2: atlas-broker      - The Broker (Kafka KRaft Mode)
+#   Container 3: atlas-processor   - The Processor (Spark Streaming)
+#   Container 4: atlas-lakehouse   - The Gatekeeper (Delta Lake MERGE) [ACTIVE]
+#   Container 5: atlas-analytics   - The Analytics Hub (ClickHouse + PostgreSQL)
+#
+# Data Flow:
+#   [Generator] → [Broker] → [Processor] → [Lakehouse] → [Analytics]
+#       ↓            ↓                                        ↑
+#   Raw Volume   Stream Buffer                          Dashboard
+#
+# Usage:
+#   Start all:    docker-compose up -d
+#   View logs:    docker-compose logs -f [service_name]
 #   Stop all:     docker-compose down
 #   Clean all:    docker-compose down -v
 #
@@ -25,6 +45,7 @@
 
 
 volumes:
+  grafana-data:
   kafka-data:
   postgres-data:
   clickhouse-data:
@@ -889,6 +910,18 @@ services:
           --devices $$DEVICE_COUNT \
           --rate $$RECORDS_PER_SECOND
       "
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: atlas-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - atlas-network
+    volumes:
+      - grafana-data:/var/lib/grafana
 
 networks:
   atlas-network:
