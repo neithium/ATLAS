@@ -39,9 +39,15 @@ minikube delete   # only if changing memory/CPU
 minikube start --cpus=4 --memory=7900 --disk-size=50g
 ```
 
+Do **not** run plain `minikube start` (defaults to ~3900MB / 2 CPUs). Kafka and other pods will stay `Pending` with `Insufficient memory` because base manifests request ~10.5 Gi total. Deploy uses `k8s/overlays/minikube` to lower requests.
+
 ---
 
-## 2. Load existing images (no rebuild)
+## 2. Load images (no rebuild — re-run after every `minikube delete`)
+
+> **Important:** `minikube delete` wipes all loaded images. You must reload after recreating the cluster.
+
+> **Don't trust** `minikube ssh -- docker images` alone — use **`minikube image ls`** to verify what Kubernetes can see.
 
 Your compose images:
 
@@ -52,11 +58,20 @@ Your compose images:
 | `atlas-atlas-lakehouse:latest` | `atlas-lakehouse:latest` |
 | `atlas-atlas-analytics:latest` | `atlas-analytics:latest` |
 
-**One-shot script** (handles env reset + tag + load):
+**One-shot scripts** (recommended):
 
 ```powershell
 cd C:\Users\manth\Documents\GitHub\ATLAS
-.\scripts\minikube-load-images.ps1
+.\scripts\minikube-load-images.ps1   # loads 6 images via docker save (reliable)
+minikube image ls | Select-String "atlas|kafka|busybox"
+.\scripts\minikube-deploy.ps1    # uses k8s/overlays/minikube (lower CPU/RAM requests)
+```
+
+Confirm scheduling:
+
+```powershell
+kubectl describe pod -n atlas atlas-kafka-0 | Select-String -Pattern "Events:" -Context 0,8
+kubectl get pods -n atlas
 ```
 
 **Or manually** (after section 0 reset):
@@ -73,6 +88,33 @@ minikube image load atlas-lakehouse:latest
 minikube image load atlas-analytics:latest
 minikube image load soldevelo/kafka:4.0
 ```
+
+---
+
+## Compose vs Kubernetes — what you need
+
+Docker Compose runs **more** services than the k8s manifests. You only need **5 images** for k8s:
+
+| Docker Compose service | K8s resource | Image needed |
+|------------------------|--------------|--------------|
+| `atlas-ingestion` | Deployment `atlas-fastapi` | `atlas-ingestion:latest` |
+| `broker1` | StatefulSet `atlas-kafka` | `soldevelo/kafka:4.0` |
+| `kafka-init` | Job `atlas-kafka-init` | (same kafka image) |
+| `atlas-processor` | Deployment `atlas-processor` | `atlas-processor:latest` |
+| `atlas-lakehouse` | StatefulSet `atlas-lakehouse` | `atlas-lakehouse:latest` |
+| `atlas-analytics` | Deployment `atlas-streamlit` | `atlas-analytics:latest` |
+
+**Not required for k8s** (optional compose profiles / extras):
+
+- `broker2`, `broker3` — HA cluster profile only
+- `atlas-streaming`, `atlas-data-producer` — `streaming` / `producer` profiles
+- `grafana`, `kafka-ui` — monitoring extras
+
+Required images (6 total — includes init-container `busybox`):
+
+- `atlas-ingestion`, `atlas-processor`, `atlas-lakehouse`, `atlas-analytics`
+- `soldevelo/kafka:4.0`
+- `busybox:1.36`
 
 ---
 

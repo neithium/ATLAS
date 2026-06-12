@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: atlas-kafka
+  namespace: atlas
+spec:
+  template:
+    spec:
+      containers:
+        - name: kafka
+          imagePullPolicy: Never
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: atlas-lakehouse
+  namespace: atlas
+spec:
+  template:
+    spec:
+      containers:
+        - name: lakehouse
+          imagePullPolicy: Never
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlas-fastapi
+  namespace: atlas
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-kafka
+          imagePullPolicy: Never
+      containers:
+        - name: ingestion
+          imagePullPolicy: Never
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlas-processor
+  namespace: atlas
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-kafka
+          imagePullPolicy: Never
+        - name: wait-for-topics
+          imagePullPolicy: Never
+      containers:
+        - name: spark-processor
+          imagePullPolicy: Never
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlas-streamlit
+  namespace: atlas
+spec:
+  template:
+    spec:
+      containers:
+        - name: streamlit
+          imagePullPolicy: Never
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: atlas-kafka-init
+  namespace: atlas
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-kafka
+          imagePullPolicy: Never
+      containers:
+        - name: topic-init
+          imagePullPolicy: Never
