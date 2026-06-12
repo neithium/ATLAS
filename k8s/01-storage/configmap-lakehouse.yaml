@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-lakehouse-config
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: delta-lake
+    app.kubernetes.io/name: atlas-lakehouse
+data:
+  RUN_GENERATOR: "n"
+  GENERATOR_MODE: "livewire"
+  RUN_PIPELINE: "y"
+  PIPELINE_MODE: "livewire"
+  DEVICE_COUNT: "100"
+  BATCH_SIZE: "1000"
+  NUM_DAYS: "7"
+  START_DATE: "2026-03-01"
+  OPTIMIZE_EVERY: "5"
+  KEEP_ALIVE: "y"
+  COMPRESSION_CODEC: "zstd"
+  RUN_VACUUM: "n"
+  VACUUM_RETENTION_DAYS: "14"
+  SPARK_MODE: "client"
+  SPARK_DRIVER_MEMORY: "2g"
+  SPARK_EXECUTOR_MEMORY: "2g"
+  SPARK_DYNAMIC_ALLOCATION: "false"
+  SPARK_EXECUTOR_INSTANCES: "1"
+  PYTHONUNBUFFERED: "1"

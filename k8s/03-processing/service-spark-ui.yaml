@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlas-spark-ui
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: processing
+    app.kubernetes.io/name: atlas-processor
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: atlas-processor
+  ports:
+    - name: spark-ui
+      port: 4040
+      targetPort: spark-ui
+      protocol: TCP
