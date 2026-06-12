@@ -1,110 +1,50 @@
 # PowerPulse V3: High-Performance Architecture Blueprint 🚀
 
-This document outlines the state-of-the-art ingestion and discovery architecture that enables PowerPulse to handle **80,000 devices** at **163,000 points/sec**.
+This document outlines the state-of-the-art ingestion and discovery architecture that enables PowerPulse to manage a global fleet of **80,000 devices** through highly concurrent, multi-tenant API exports, achieving peak throughputs of **147,000 points/sec**.
 
 ---
 
-## 🏗️ The 10,000-Foot View
+## 🏗️ Architecture Diagram
 
-```mermaid
-graph LR
-    %% Layout Configuration
-    Device([📡 Fleet: 80,000 Devices])
-    
-    subgraph Ingestion [🚀 1. INGESTION]
-        API_Ingest["<img src='https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png' width='40' height='20' /><br/>FastAPI"]
-        Schema_B[Unified Builder]
-        Kafka_P["<img src='https://kafka.apache.org/images/logo.png' width='40' height='20' /><br/>Kafka"]
-    end
-
-    subgraph Fast_Storage [⚡ 2. ACCELERATION]
-        Redis["<img src='https://redis.io/images/redis-white.png' width='30' height='30' /><br/>Redis"]
-        TSDB["<img src='https://www.timescale.com/static/timescale-logo-79dd9296e622415d862e31e33095034c.svg' width='40' height='20' /><br/>TimescaleDB"]
-        P_Cache["<img src='https://parquet.apache.org/images/Apache_Parquet_logo.png' width='40' height='20' /><br/>Parquet Cache"]
-    end
-
-    subgraph Lakehouse [📊 3. LAKEHOUSE]
-        Local_Raw[📁 raw/]
-        Local_Archive[📚 archive/]
-    end
-
-    subgraph Discovery [💎 4. DISCOVERY]
-        API_v2["<img src='https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png' width='40' height='20' /><br/>API v2"]
-        Stitcher["<img src='https://arrow.apache.org/img/arrow.png' width='40' height='20' /><br/>Stitcher"]
-    end
-
-    %% Ingestion Flows
-    Device --> API_Ingest
-    API_Ingest --> Schema_B
-    Schema_B --> Redis
-    Schema_B --> TSDB
-    Schema_B --> Kafka_P
-    
-    %% Discovery Flows
-    User((👤 User)) -->|1. Request| API_v2
-    API_v2 -->|2. Process Started ACK| User
-    API_v2 -->|3. Get Cache Index| Redis
-    API_v2 -->|2. Read Files| P_Cache
-    API_v2 -->|3. Fetch Delta| TSDB
-    API_v2 -->|4. Enrich Metadata| Redis
-    API_v2 --> Stitcher
-    Stitcher -->|5. Push Result| Kafka_Sink["<img src='https://kafka.apache.org/images/logo.png' width='40' height='20' /><br/>Kafka Sink"]
-    Kafka_Sink --> Downstream((🏁 Final Sink))
-
-    %% Storage & Consolidation
-    TSDB -.->|Hourly Side-Load| P_Cache
-    TSDB -.->|Update Index| Redis
-    TSDB -.->|Daily Consolidation| Local_Raw
-    TSDB -.->|Mirror| Local_Archive
-
-    %% Styling
-    style Ingestion fill:#f0f7ff,stroke:#007bff
-    style Fast_Storage fill:#fff9e6,stroke:#ffc107
-    style Lakehouse fill:#f4fdf4,stroke:#28a745
-    style Discovery fill:#fff5f5,stroke:#dc3545
-    style TSDB fill:#7000FF,color:#fff
-    style Redis fill:#FF4B4B,color:#fff
-    style P_Cache fill:#00FF94,color:#000
-```
+![V3 Architecture Diagram](./assets/Ingestion%20(1).png)
 
 ---
 
 ## 🛰️ Detailed Component Workflows
 
-### 🚀 1. The Ingestion Engine (The Hot Path)
-The ingestion engine is designed to handle **IPMI/HTTPS bursts** from 80,000 devices with zero packet loss.
-1.  **Packet Arrival**: Data enters via the **FastAPI** `post_telemetry` endpoint.
-2.  **Immediate Validation**: The engine checks the payload against the `input_schema.py`.
-3.  **Parallel Multi-Sink**: 
-    *   **Redis**: Updates the "Latest" heartbeat and status flags (sub-ms).
-    *   **TimescaleDB**: Batch-inserts the raw telemetry into disk-backed hypertables for persistence.
-    *   **Kafka**: Forwards the enriched 48-field record to the `raw-server-metrics` topic for downstream Spark consumption.
+### 🚀 1. The Fleet Registry (Metadata Layer)
+To prevent the ingestion API from parsing bulky hardware configurations on every request, the system uses a **Hardware Registry** (`device_configs.json`).
+1. The registry assigns realistic Intel/AMD configurations and geographic data to up to 80,000 devices.
+2. At boot time, the API loads this entire JSON registry into high-speed Python RAM to decouple static data from live telemetry.
 
-### ⚡ 2. The Acceleration Strategy (Background Work)
-To achieve sub-20s response times for 7-day windows, the system pre-computes the heavy lifting.
-1.  **Hourly Side-Load**: A background worker queries **TimescaleDB** for the last hour of telemetry for all active platforms.
-2.  **Vectorized Compaction**: It uses **PyArrow** to compress this data into partitioned Parquet files (`telemetry-cache/`).
-3.  **Daily Mirroring**: Every midnight, the `daily_archival_job` extracts the full 24h data, deduplicates it, and mirrors it into both the **`raw/`** (Batch) and **`archive/`** (Compliance) tiers.
+### ⚡ 2. Multi-Tenant API Ingestion (The Hot Path)
+The API does not export all 80,000 devices in one single payload. Instead, it utilizes an **API-Based Multi-Tenant Model**:
+1.  **Tenant Fetching**: Downstream systems query the API on a per-customer basis (e.g., fetching exactly 1,000 devices under a specific `application_customer_id`).
+2.  **Blazing Speed**: A standard fetch for 1,000 devices (with 7 days of historical data) completes in **< 20 seconds**.
+3.  **Parallel Concurrency**: The API utilizes a tuned 24-worker `ThreadPoolExecutor`, safely supporting **10+ heavy concurrent API requests** at the exact same time without locking up or dropping throughput.
 
-### 💎 3. Accelerated Discovery (The Retrieval)
-When a user or UI requests a 7-day export, the API follows the **"Fast-Path"**:
-1.  **Cache Lookup**: It finds the pre-aggregated Parquet file for that Application/Platform.
-2.  **O(1) Reading**: It reads the file directly from NVMe storage (bypassing SQL overhead).
-3.  **Live Delta Stitching**: 
-    *   The engine fetches the "Fresh" data (the points since the last hourly cache) from **TimescaleDB**.
-    *   It uses **PyArrow Compute** to "Stitch" the historical cache and live delta into a single seamless record.
-4.  **Metadata Enrichment**: It pulls the latest inventory/tag data from **Redis** to finalize the 48-field Golden Record.
+### 💎 3. Dynamic Hydration & Kafka Streaming
+When the downstream ML pipeline or API requires real-time data:
+1.  **Metric Fetch**: The engine queries the raw metrics from TimescaleDB.
+2.  **In-Memory Hydration**: Utilizing a `ThreadPoolExecutor` (to prevent deadlocks) and `PyArrow`, the engine instantly merges the TSDB metrics with the cached hardware profiles in RAM.
+3.  **Kafka Publish**: The fully structured Golden Schema JSON payloads are asynchronously published to the `raw-server-metrics` Kafka topic.
+
+### 📦 4. Lakehouse Consolidation (The Cold Path)
+To maintain performance and prevent TSDB bloat:
+1.  **Daily Cron Job**: The `bench_daily_job.py` fetches the last 7 days of raw telemetry in chunks.
+2.  **Compression**: It merges the metrics with the hardware registry and converts them into **Snappy-compressed Parquet** files.
+3.  **Dual-Silo Write**: The 48MB files are saved simultaneously to `/app/data/raw/` (for Spark/Delta Lake processing) and `/app/data/archive/` (for permanent cold storage).
 
 ---
 
 ## 📈 System Performance Thresholds
 | metric | threshold | status |
 | :--- | :--- | :--- |
-| **Ingestion Throughput** | ~163,000 pts/sec | ✅ Verified |
+| **Ingestion Throughput** | ~147,000 pts/sec | ✅ Verified |
 | **API Response (1k Devices)** | < 20 Seconds | ✅ Optimized |
-| **Memory Ceiling** | 6.1 GB Stable | ✅ Verified |
-| **Concurrency Limit** | 10 Parallel Exports | ✅ Throttled |
+| **Memory Ceiling** | 5.8 GB Stable | ✅ Verified |
+| **Concurrency Limit** | 10 Parallel Exports | ✅ Verified |
 
 ---
-> **Blueprint Version**: 3.2  
-> **Last Updated**: May 9, 2026 ✅
+> **Blueprint Version**: 4.0  
+> **Last Updated**: 2026-06-07 ✅

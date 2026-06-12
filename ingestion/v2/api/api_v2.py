@@ -329,7 +329,7 @@ async def daily_archival_job():
         
         # SILO STRATEGY: Target files 128MB+
         # 2,016 points/device/7-days -> ~1,000 devices per 128MB silo
-        SILO_SIZE = 2600 
+        SILO_SIZE = 7000 
         # MEMORY OPTIMIZATION: Reduced MICRO_BATCH from 100 to 50
         # Python dicts for 200,000 nested records cause OOM in 1GB containers.
         MICRO_BATCH = 50
@@ -1297,13 +1297,12 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
             batch_table, count
         )
         
-        # Send results to Kafka (Non-Blocking: fire-and-forget after serialization)
+        # Send results to Kafka
         if results:
             result_count = len(results)
-            # Non-blocking send: schedule as background task without awaiting
+            # Blocking send: wait for all messages to be buffered before moving on
             for did, payload in results:
-                # Create task without awaiting (runs in background)
-                asyncio.create_task(kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode()))
+                await kafka_prod.send(KAFKA_TOPIC, payload, key=did.encode())
             # Clean up references
             del results
             return result_count
@@ -1351,35 +1350,21 @@ async def _export_latest_task(device_ids: List[str], count: int = 2016):
 # =============================================================================
 # HIERARCHICAL API ENDPOINTS
 # =============================================================================
-@app.post("/pcid/{pcid}/acid/{acid}/telemetry/export")
-async def trigger_customer_telemetry_export(pcid: str, acid: str, background_tasks: BackgroundTasks, days: int = 7):
-    """Triggers Kafka Ingestion for ALL devices in a PCID/ACID hierarchy."""
-    try:
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=days)
-        
-        # MEMORY OPTIMIZATION: O(1) hierarchy lookup via pre-indexed dict (no full registry scan)
-        device_ids = HIERARCHY_INDEX.get((pcid, acid), [])
-        
-        if not device_ids:
-            return {"status": "Empty Hierarchy", "pcid": pcid, "acid": acid}
-            
-        # --- Hierarchical Lock Check ---
-        h_key = f"{pcid}:{acid}"
-        async with HIERARCHY_LOCK:
-            if h_key in ACTIVE_HIERARCHIES:
-                return {"status": "error", "message": f"Export already in progress for {h_key}"}
-            ACTIVE_HIERARCHIES.add(h_key)
-
-        background_tasks.add_task(_handle_throttled_export, _export_stream_task, h_key, start_time, end_time, pcid=pcid, acid=acid)
-        return {"status": "Archival Stream Accepted", "targeted_devices": len(device_ids), "hierarchy": h_key}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/pcid/{pcid}/acid/{acid}/telemetry/latest/export")
 async def trigger_latest_telemetry_export(pcid: str, acid: str, background_tasks: BackgroundTasks, count: int = 2016):
-    """Latest-Batch Fetch: Triggers Kafka Ingestion for EXACTLY N latest points (Sync Mode)."""
+    """
+    Core API Endpoint: Hierarchical Telemetry Export.
+    
+    Purpose: 
+    Used by downstream ML/Data teams to fetch a massive chunk of real-time telemetry 
+    (default 2016 points = 7 days) for an entire customer application hierarchy.
+    
+    Flow:
+    1. Looks up the customer (`pcid`) and application (`acid`) in the in-memory registry.
+    2. Gathers all associated `device_ids`.
+    3. Triggers an asynchronous PyArrow/TimescaleDB hydration task (`_export_latest_task`).
+    4. Instantly returns a 200 Accepted response while the task runs concurrently in the background.
+    """
     try:
         registry_path = "/app/device_configs.json"
         device_ids = [did for did, meta in CACHED_REGISTRY.items() 
@@ -1402,7 +1387,18 @@ async def trigger_latest_telemetry_export(pcid: str, acid: str, background_tasks
 
 @app.post("/pcid/{pcid}/acid/{acid}/id/{device_string}/export")
 async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, background_tasks: BackgroundTasks, count: int = 2016):
-    """Specific ID Export: Targets a comma-separated list of Device IDs."""
+    """
+    Surgical API Endpoint: Specific Device Telemetry Export.
+    
+    Purpose:
+    Used for troubleshooting or targeting a specific sub-set of devices instead of the whole hierarchy.
+    
+    Flow:
+    1. Takes a comma-separated string of specific `device_ids`.
+    2. Spawns an isolated background task with a unique manual UUID lock to prevent interfering 
+       with large-scale hierarchical exports.
+    3. Streams the results to Kafka.
+    """
     try:
         device_ids = [d.strip() for d in device_string.split(",")]
 
@@ -1421,34 +1417,19 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
         log.error(f"Export failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/pcid/{pcid}/acid/{acid}/telemetry/historical/first/export")
-async def trigger_historical_first_export(pcid: str, acid: str, background_tasks: BackgroundTasks, count: int = 2016):
-    """Triggers export of the OLDEST telemetry for a customer hierarchy."""
-    try:
-        # 1. Hot-Load Device IDs from Cache
-        target_ids = [
-            did for did, meta in CACHED_REGISTRY.items()
-            if meta.get('platform_customer_id') == pcid and meta.get('application_customer_id') == acid
-        ]
-        
-        if not target_ids:
-            return {"status": "error", "message": "No devices found for hierarchy"}
-            
-        # --- Hierarchical Lock Check ---
-        h_key = f"{pcid}:{acid}"
-        async with HIERARCHY_LOCK:
-            if h_key in ACTIVE_HIERARCHIES:
-                return {"status": "error", "message": f"Historical Sync already active for {h_key}"}
-            ACTIVE_HIERARCHIES.add(h_key)
-
-        background_tasks.add_task(_handle_throttled_export, _export_first_task, h_key, target_ids, count)
-        return {"status": "accepted", "job": "historical_first_sync", "device_count": len(target_ids), "hierarchy": h_key}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 @app.post("/register/device")
 async def register_new_device(device: DeviceRegistration):
-    """Dynamically adds a new device to the fleet registry."""
+    """
+    Metadata API Endpoint: Dynamic Fleet Registration.
+    
+    Purpose:
+    Allows new server assets to be registered in the system without requiring an API restart.
+    
+    Flow:
+    1. Receives the hardware profile (Intel/AMD, DDR4/5 config).
+    2. Writes it instantly to the persistent `device_configs.json`.
+    3. Immediately hot-loads it into the Python RAM `CACHED_REGISTRY`.
+    """
     async with REGISTRY_LOCK:
         try:
             # 1. Read existing registry
@@ -1498,27 +1479,15 @@ async def register_new_device(device: DeviceRegistration):
             log.error(f"[REGISTRY] Registration failed for {device.device_id}: {str(e)}")
             raise HTTPException(status_code=500, detail="Internal server error during registration")
 
-@app.post("/telemetry/manual-cache-refresh")
-async def manual_cache_refresh(background_tasks: BackgroundTasks):
-    """Manually trigger the hourly cache refresh job."""
-    background_tasks.add_task(hourly_cache_job)
-    return {"status": "Cache refresh triggered in background", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-@app.post("/telemetry/manual-archive")
-async def manual_archival_trigger(background_tasks: BackgroundTasks):
-    """Manually trigger the daily archival job."""
-    background_tasks.add_task(daily_archival_job)
-    return {"status": "Daily archival job triggered in background", "timestamp": datetime.now(timezone.utc).isoformat()}
-
 @app.get("/health")
 async def health():
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "registry_loaded": REGISTRY_LOADED,
-        "device_count": len(CACHED_REGISTRY)
-    }
-async def health():
+    """
+    System Reliability Endpoint: Deep Health Probe.
+    
+    Purpose:
+    Used by Docker/Kubernetes/Load Balancers to determine if the container is healthy 
+    and ready to accept ingestion requests. Probes Kafka and TSDB connections.
+    """
     # Deep Health Check with Safe Attribute Probing
     try:
         kafka_status = "connected" if (_kafka and not getattr(_kafka, '_closed', True)) else "disconnected"

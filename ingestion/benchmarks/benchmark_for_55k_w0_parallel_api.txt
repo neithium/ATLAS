@@ -1,5 +1,5 @@
 ============================================================
-FINAL CONSOLIDATED BENCHMARK RESULTS (2026-05-01)
+CONSOLIDATED BENCHMARK RESULTS (2026-05-01)
 ============================================================
 
 --- 10k Devices (Single Platform) ---
