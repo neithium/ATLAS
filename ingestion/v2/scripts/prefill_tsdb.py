@@ -22,7 +22,6 @@ from multiprocessing import Manager
 import numpy as np
 import psycopg2
 import pandas as pd
-from minio import Minio
 
 # Adjust path for V2/V3 structure
 V2_ROOT = Path(__file__).resolve().parent.parent
@@ -35,11 +34,6 @@ TSDB_USER = os.getenv("TSDB_USER", "postgres")
 TSDB_PASS = os.getenv("TSDB_PASS", "postgres")
 TSDB_NAME = os.getenv("TSDB_NAME", "postgres")
 
-MINIO_HOST = os.getenv("MINIO_HOST", "127.0.0.1:9000")
-MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-MINIO_BUCKET = os.getenv("MINIO_BUCKET", "telemetry-raw")
-
 READINGS_PER_HOUR = 12        
 INTERVAL_SEC = 300            
 
@@ -50,9 +44,7 @@ COLUMNS = [
     "metric_time", "device_id", "platform_customer_id", "application_customer_id",
     "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
     "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts",
-    "server_name", "model", "processor_vendor", "server_generation",
-    "report_type", "metric_type", "status", "error_reason", "tags",
-    "location_id", "location_city", "location_state", "location_country", "location_name"
+    "status", "error_reason"
 ]
 
 def get_registry_path():
@@ -108,9 +100,29 @@ class PrefillEngine:
         """Updates the pre-allocated DataFrame with new metrics for a single slot."""
         cycle_factor = float(np.sin((dt.hour - 8) * np.pi / 12))
         
-        # In-place vectorized updates to minimize allocations
+        # 1. Normal Baseline Behavior (Vectorized)
         cpu_util = np.clip(40 + (cycle_factor * 30) + self.rng.uniform(-10, 10, self.n), 5, 95).astype(np.int32)
         cpu_watts = (200 + (cpu_util * 2.5) + self.rng.uniform(-5, 5, self.n)).astype(np.int32)
+        amb_temp = np.round(22.0 + (cycle_factor * 5.0) + self.rng.uniform(-0.5, 0.5, self.n), 1)
+
+        # 2. ANOMALY INJECTION (Vectorized)
+        # 2% Critical, 10% Warning, 88% Healthy
+        is_critical_capable = (np.arange(self.n) % 50 == 0)
+        is_warning_capable = (np.arange(self.n) % 10 == 1)
+
+        is_critical_now = is_critical_capable & (self.rng.uniform(0, 1, self.n) < 0.4)
+        is_warning_now = is_warning_capable & (self.rng.uniform(0, 1, self.n) < 0.6)
+
+        if np.any(is_critical_now):
+            cpu_util[is_critical_now] = self.rng.integers(95, 100, np.sum(is_critical_now))
+            cpu_watts[is_critical_now] = self.rng.integers(400, 550, np.sum(is_critical_now))
+            amb_temp[is_critical_now] = self.rng.uniform(35.0, 48.0, np.sum(is_critical_now))
+
+        if np.any(is_warning_now):
+            cpu_util[is_warning_now] = self.rng.integers(60, 95, np.sum(is_warning_now))
+            cpu_watts[is_warning_now] = self.rng.integers(250, 350, np.sum(is_warning_now))
+            amb_temp[is_warning_now] = self.rng.uniform(28.0, 36.0, np.sum(is_warning_now))
+        
         gpu_watts = (50 + (cycle_factor * 50) + self.rng.uniform(-5, 5, self.n)).astype(np.int32)
         avg_watts = np.round((cpu_watts + gpu_watts) / 2.0, 2)
         
@@ -121,7 +133,7 @@ class PrefillEngine:
         self.worker_df["avg_watts"] = avg_watts
         self.worker_df["min_watts"] = (avg_watts * 0.8).astype(np.int32)
         self.worker_df["peak_watts"] = (avg_watts * 1.4).astype(np.int32)
-        self.worker_df["amb_temp"] = np.round(22.0 + (cycle_factor * 5.0) + self.rng.uniform(-0.5, 0.5, self.n), 1)
+        self.worker_df["amb_temp"] = amb_temp
         self.worker_df["cpu_avg_freq"] = ((2800 + (cycle_factor * 1000) + self.rng.integers(-100, 100, self.n)) * 1000).astype(np.int64)
         
         return self.worker_df[COLUMNS]
@@ -140,19 +152,13 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
     day_start = (now - timedelta(days=d_num + 1)).replace(hour=0, minute=0, second=0, microsecond=0)
     date_str = day_start.strftime("%Y-%m-%d")
     
-    log.info(f"🚀 Worker started Day {d_num+1}/{days_total} [{date_str}]")
+    log.info(f"[PREFILL TSDB] Worker started Day {d_num+1}/{days_total} [{date_str}]")
     
     conn = None
     try:
         conn = psycopg2.connect(host=TSDB_HOST, port=TSDB_PORT, user=TSDB_USER, password=TSDB_PASS, dbname=TSDB_NAME)
         cur = conn.cursor()
         
-        minio_client = None
-        if not skip_archive:
-            try:
-                minio_client = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
-            except Exception: pass
-
         total_rows = 0
         t0 = time.perf_counter()
         
@@ -162,7 +168,7 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
             # Resume Check: Skip if this hour already has data
             cur.execute("SELECT 1 FROM telemetry_live WHERE metric_time = %s LIMIT 1", (hour_dt,))
             if cur.fetchone():
-                log.info(f"⏭️ Skipping {date_str} H{h:02} (already has data)")
+                log.info(f"[PREFILL TSDB] Skipping {date_str} H{h:02} (already has data)")
                 continue
             
             h_start = time.perf_counter()
@@ -177,28 +183,14 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
                 push_to_tsdb(cur, slot_df)
                 total_rows += len(slot_df)
                 
-                if minio_client:
-                    hour_dfs.append(slot_df.copy()) # Copy only for archival if needed
-
             conn.commit() # Commit after each hour
-            
-            # 3. Optional MinIO Archival
-            if minio_client and hour_dfs:
-                try:
-                    df_hour = pd.concat(hour_dfs)
-                    pq_buf = io.BytesIO()
-                    df_hour.to_parquet(pq_buf, engine='pyarrow', index=False)
-                    obj_name = f"date={date_str}/hour={h:02}/compacted.parquet"
-                    pq_buf.seek(0)
-                    minio_client.put_object(MINIO_BUCKET, obj_name, data=pq_buf, length=pq_buf.getbuffer().nbytes, content_type="application/octet-stream")
-                except Exception: pass
 
-            log.info(f"  [DONE] {date_str} H{h:02} | Total: {total_rows:,} rows | Elapsed: {time.perf_counter()-h_start:.2f}s")
+            log.info(f"[PREFILL TSDB]  [DONE] {date_str} H{h:02} | Total: {total_rows:,} rows | Elapsed: {time.perf_counter()-h_start:.2f}s")
 
-        log.info(f"✅ Day {date_str} Complete. Final: {total_rows:,} rows. Total Elapsed: {time.perf_counter()-t0:.1f}s")
+        log.info(f"[PREFILL TSDB] Day {date_str} Complete. Final: {total_rows:,} rows. Total Elapsed: {time.perf_counter()-t0:.1f}s")
         
     except Exception as e:
-        log.error(f"❌ Error in worker {date_str}: {e}")
+        log.error(f"[PREFILL TSDB] Error in worker {date_str}: {e}")
         if conn: conn.rollback()
     finally:
         if conn:
@@ -207,15 +199,8 @@ def process_day_task(d_num, days_total, registry_path, limit, skip_archive):
 
 def run_prefill(days: int = 7, workers: int = 4, limit: int = None, skip_archive: bool = False):
     registry_path = get_registry_path()
-    log.info(f"🔥 Starting Memory-Safe Hyper-Velocity Prefill: {days} Days | {workers} Workers | Limit: {limit if limit else 'All'}")
+    log.info(f"[PREFILL TSDB] Starting Memory-Safe Hyper-Velocity Prefill: {days} Days | {workers} Workers | Limit: {limit if limit else 'All'}")
     
-    # Initialize MinIO Bucket if needed
-    if not skip_archive:
-        try:
-            m = Minio(MINIO_HOST, access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
-            if not m.bucket_exists(MINIO_BUCKET): m.make_bucket(MINIO_BUCKET)
-        except Exception: pass
-
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(process_day_task, d, days, registry_path, limit, skip_archive) for d in range(days)]
         for future in futures:
@@ -231,4 +216,4 @@ if __name__ == "__main__":
     
     start_time = time.time()
     run_prefill(days=args.days, workers=args.workers, limit=args.limit, skip_archive=args.skip_archive)
-    log.info(f"🏁 ALL DONE. Total time: {time.time()-start_time:.2f}s")
+    log.info(f"[PREFILL TSDB] ALL DONE. Total time: {time.time()-start_time:.2f}s")

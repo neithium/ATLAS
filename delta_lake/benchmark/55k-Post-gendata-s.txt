@@ -1,0 +1,726 @@
+Microsoft Windows [Version 10.0.26200.8246]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\manth\Documents\GitHub\ATLAS>docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=55000 -e BATCH_SIZE=11000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=20 atlas-lakehouse
+time="2026-05-13T14:14:31+05:30" level=warning msg="The \"PIPELINE_MODE\" variable is not set. Defaulting to a blank string."
+error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.51/networks?filters=%7B%22name%22%3A%7B%22atlas-network%22%3Atrue%7D%7D": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
+
+C:\Users\manth\Documents\GitHub\ATLAS>docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=55000 -e BATCH_SIZE=11000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=20 atlas-lakehouse
+time="2026-05-13T14:14:37+05:30" level=warning msg="The \"PIPELINE_MODE\" variable is not set. Defaulting to a blank string."
+error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.51/networks?filters=%7B%22name%22%3A%7B%22atlas-network%22%3Atrue%7D%7D": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
+
+C:\Users\manth\Documents\GitHub\ATLAS>docker compose run --rm -e RUN_GENERATOR=y -e RUN_PIPELINE=y -e GENERATOR_MODE=benchmark -e PIPELINE_MODE=benchmark -e DEVICE_COUNT=55000 -e BATCH_SIZE=11000 -e NUM_DAYS=1 -e START_DATE=2026-03-01 -e OPTIMIZE_EVERY=20 atlas-lakehouse
+time="2026-05-13T14:14:40+05:30" level=warning msg="The \"PIPELINE_MODE\" variable is not set. Defaulting to a blank string."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATLAS Lakehouse - Delta Lake Deduplication Engine
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  RUN_GENERATOR=y
+  GENERATOR_MODE=benchmark
+  DEVICE_COUNT=55000
+  BATCH_SIZE=11000
+  NUM_DAYS=1
+  START_DATE=2026-03-01
+  RUN_PIPELINE=y
+  PIPELINE_MODE=benchmark
+  OPTIMIZE_EVERY=20
+  COMPRESSION_CODEC=zstd
+  RUN_VACUUM=n
+  VACUUM_RETENTION_DAYS=14
+  KEEP_ALIVE=y
+
+[1/3] Generating benchmark data (7-day rolling windows) under /raw/benchmark_data ...
+
+================================================================================
+  ATLAS DATA GENERATOR
+================================================================================
+
+  Mode: BENCHMARK
+  Compression: ZSTD
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+26/05/13 08:44:52 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+================================================================================
+ATLAS Benchmark Generator - 7-Day Rolling Window Simulation
+================================================================================
+
+Output path:              /raw/benchmark_data
+Total devices:            55,000
+Device batch size:        11,000
+Number of daily files:    1
+Rows per device per file: 2,016 (7 days × 288)
+
+Real-World Simulation:
+- Each file contains 7-day rolling window
+- File for Day N: metric_time spans (Day N-6) to Day N
+- New rows per file: 288/device (1 day)
+- Duplicate rows per file: 1,728/device (6 days)
+
+Expected Results After Deduplication:
+- Total raw input rows:   110,880,000
+- Expected unique rows:   110,880,000
+- Expected duplicates:    0
+- Expected dedup ratio:   0.0%
+
+File date range: 2026-03-01 → 2026-03-01
+
+================================================================================
+DAILY FILE 1/1: file_date = 2026-03-01
+  → metric_time window: 2026-02-23 to 2026-03-01
+================================================================================
+
+  Batch 1/5: devices 1..11,000
+  Rows written: 22,176,000 | Time: 85.24s | Throughput: 260,164 rows/s
+
+  Batch 2/5: devices 11,001..22,000
+  Rows written: 22,176,000 | Time: 75.88s | Throughput: 292,240 rows/s
+
+  Batch 3/5: devices 22,001..33,000
+  Rows written: 22,176,000 | Time: 75.03s | Throughput: 295,570 rows/s
+
+  Batch 4/5: devices 33,001..44,000
+  Rows written: 22,176,000 | Time: 81.61s | Throughput: 271,728 rows/s
+
+  Batch 5/5: devices 44,001..55,000
+  Rows written: 22,176,000 | Time: 75.14s | Throughput: 295,134 rows/s
+
+================================================================================
+Benchmark Generation Complete
+================================================================================
+Output path:            /raw/benchmark_data
+Total raw rows:         110,880,000
+Expected unique after dedup: 110,880,000
+Expected dedup ratio:   0.0%
+Total elapsed:          395.05s
+================================================================================
+
+[2/3] Running deduplication pipeline (mode=benchmark)...
+:: loading settings :: url = jar:file:/opt/spark/jars/ivy-2.5.1.jar!/org/apache/ivy/core/settings/ivysettings.xml
+Ivy Default Cache set to: /root/.ivy2/cache
+The jars for the packages stored in: /root/.ivy2/jars
+io.delta#delta-spark_2.12 added as a dependency
+:: resolving dependencies :: org.apache.spark#spark-submit-parent-4f78511e-9f7a-4a5f-8472-976a881f5838;1.0
+        confs: [default]
+        found io.delta#delta-spark_2.12;3.1.0 in central
+        found io.delta#delta-storage;3.1.0 in central
+        found org.antlr#antlr4-runtime;4.9.3 in central
+downloading https://repo1.maven.org/maven2/io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-spark_2.12;3.1.0!delta-spark_2.12.jar (696ms)
+downloading https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar ...
+        [SUCCESSFUL ] io.delta#delta-storage;3.1.0!delta-storage.jar (141ms)
+downloading https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar ...
+        [SUCCESSFUL ] org.antlr#antlr4-runtime;4.9.3!antlr4-runtime.jar (164ms)
+:: resolution report :: resolve 3577ms :: artifacts dl 1006ms
+        :: modules in use:
+        io.delta#delta-spark_2.12;3.1.0 from central in [default]
+        io.delta#delta-storage;3.1.0 from central in [default]
+        org.antlr#antlr4-runtime;4.9.3 from central in [default]
+        ---------------------------------------------------------------------
+        |                  |            modules            ||   artifacts   |
+        |       conf       | number| search|dwnlded|evicted|| number|dwnlded|
+        ---------------------------------------------------------------------
+        |      default     |   3   |   3   |   3   |   0   ||   3   |   3   |
+        ---------------------------------------------------------------------
+:: retrieving :: org.apache.spark#spark-submit-parent-4f78511e-9f7a-4a5f-8472-976a881f5838
+        confs: [default]
+        3 artifacts copied, 0 already retrieved (5727kB/11ms)
+26/05/13 08:51:36 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+
+--------------------------------------------------------------------------------
+[STEP 2] Discovering file_date batches in benchmark data...
+--------------------------------------------------------------------------------
+         ✓ Found 1 daily file batches
+
+--------------------------------------------------------------------------------
+[STEP 3] Processing file batches with incremental MERGE...
+--------------------------------------------------------------------------------
+
+  ┌─ Batch 1/1: file_date=2026-03-01
+  │  Rows: 110,880,000 | Read: 0.68s
+        Initializing Delta table at: /refined
+[108.313s][warning][gc,alloc] Executor task launch worker for task 3.0 in stage 15.0 (TID 48): Retried waiting for GCLocker too often allocating 131074 words
+26/05/13 08:53:23 ERROR Executor: Exception in task 2.0 in stage 15.0 (TID 47)
+java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR SparkUncaughtExceptionHandler: Uncaught exception in thread Thread[Executor task launch worker for task 2.0 in stage 15.0 (TID 47),5,main]
+java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR Executor: Exception in task 3.0 in stage 15.0 (TID 48)
+java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR SparkUncaughtExceptionHandler: [Container in shutdown] Uncaught exception in thread Thread[Executor task launch worker for task 3.0 in stage 15.0 (TID 48),5,main]
+java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 WARN TaskSetManager: Lost task 2.0 in stage 15.0 (TID 47) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+
+26/05/13 08:53:23 ERROR TaskSetManager: Task 2 in stage 15.0 failed 1 times; aborting job
+26/05/13 08:53:23 ERROR Utils: Aborting task
+org.apache.spark.TaskKilledException
+        at org.apache.spark.TaskContextImpl.killTaskIfInterrupted(TaskContextImpl.scala:267)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.loadNext(UnsafeSorterSpillReader.java:110)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillMerger$1.loadNext(UnsafeSorterSpillMerger.java:87)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter$1.advanceNext(UnsafeExternalRowSorter.java:187)
+        at org.apache.spark.sql.execution.RowIteratorToScala.hasNext(RowIterator.scala:67)
+        at org.apache.spark.sql.execution.datasources.FileFormatDataWriter.writeWithIterator(FileFormatDataWriter.scala:91)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeTask$1(DeltaFileFormatWriter.scala:430)
+        at org.apache.spark.util.Utils$.tryWithSafeFinallyAndFailureCallbacks(Utils.scala:1397)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeTask(DeltaFileFormatWriter.scala:437)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$2(DeltaFileFormatWriter.scala:274)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR Utils: Aborting task
+org.apache.spark.TaskKilledException
+        at org.apache.spark.TaskContextImpl.killTaskIfInterrupted(TaskContextImpl.scala:267)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeInMemorySorter$SortedIterator.loadNext(UnsafeInMemorySorter.java:310)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter$SpillableIterator.loadNext(UnsafeExternalSorter.java:708)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillMerger$1.loadNext(UnsafeSorterSpillMerger.java:87)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter$1.advanceNext(UnsafeExternalRowSorter.java:187)
+        at org.apache.spark.sql.execution.RowIteratorToScala.hasNext(RowIterator.scala:67)
+        at org.apache.spark.sql.execution.datasources.FileFormatDataWriter.writeWithIterator(FileFormatDataWriter.scala:91)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeTask$1(DeltaFileFormatWriter.scala:430)
+        at org.apache.spark.util.Utils$.tryWithSafeFinallyAndFailureCallbacks(Utils.scala:1397)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeTask(DeltaFileFormatWriter.scala:437)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$2(DeltaFileFormatWriter.scala:274)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR Utils: Aborting task
+org.apache.spark.TaskKilledException
+        at org.apache.spark.TaskContextImpl.killTaskIfInterrupted(TaskContextImpl.scala:267)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeInMemorySorter$SortedIterator.loadNext(UnsafeInMemorySorter.java:310)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter$SpillableIterator.loadNext(UnsafeExternalSorter.java:708)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillMerger$1.loadNext(UnsafeSorterSpillMerger.java:87)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter$1.advanceNext(UnsafeExternalRowSorter.java:187)
+        at org.apache.spark.sql.execution.RowIteratorToScala.hasNext(RowIterator.scala:67)
+        at org.apache.spark.sql.execution.datasources.FileFormatDataWriter.writeWithIterator(FileFormatDataWriter.scala:91)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeTask$1(DeltaFileFormatWriter.scala:430)
+        at org.apache.spark.util.Utils$.tryWithSafeFinallyAndFailureCallbacks(Utils.scala:1397)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeTask(DeltaFileFormatWriter.scala:437)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$2(DeltaFileFormatWriter.scala:274)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR Utils: Aborting task
+org.apache.spark.TaskKilledException
+        at org.apache.spark.TaskContextImpl.killTaskIfInterrupted(TaskContextImpl.scala:267)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.loadNext(UnsafeSorterSpillReader.java:110)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillMerger$1.loadNext(UnsafeSorterSpillMerger.java:87)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter$1.advanceNext(UnsafeExternalRowSorter.java:187)
+        at org.apache.spark.sql.execution.RowIteratorToScala.hasNext(RowIterator.scala:67)
+        at org.apache.spark.sql.execution.datasources.FileFormatDataWriter.writeWithIterator(FileFormatDataWriter.scala:91)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeTask$1(DeltaFileFormatWriter.scala:430)
+        at org.apache.spark.util.Utils$.tryWithSafeFinallyAndFailureCallbacks(Utils.scala:1397)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeTask(DeltaFileFormatWriter.scala:437)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$2(DeltaFileFormatWriter.scala:274)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR Utils: Aborting task
+org.apache.spark.TaskKilledException
+        at org.apache.spark.TaskContextImpl.killTaskIfInterrupted(TaskContextImpl.scala:267)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.loadNext(UnsafeSorterSpillReader.java:110)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillMerger$1.loadNext(UnsafeSorterSpillMerger.java:87)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter$1.advanceNext(UnsafeExternalRowSorter.java:187)
+        at org.apache.spark.sql.execution.RowIteratorToScala.hasNext(RowIterator.scala:67)
+        at org.apache.spark.sql.execution.datasources.FileFormatDataWriter.writeWithIterator(FileFormatDataWriter.scala:91)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeTask$1(DeltaFileFormatWriter.scala:430)
+        at org.apache.spark.util.Utils$.tryWithSafeFinallyAndFailureCallbacks(Utils.scala:1397)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeTask(DeltaFileFormatWriter.scala:437)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$2(DeltaFileFormatWriter.scala:274)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+26/05/13 08:53:23 ERROR DeltaFileFormatWriter: Aborting job 584e0aca-a75a-4826-90be-ebd97a4734cf.
+org.apache.spark.SparkException: Job aborted due to stage failure: Task 2 in stage 15.0 failed 1 times, most recent failure: Lost task 2.0 in stage 15.0 (TID 47) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+
+Driver stacktrace:
+        at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2844)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2780)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2779)
+        at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+        at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+        at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+        at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2779)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1(DAGScheduler.scala:1242)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1$adapted(DAGScheduler.scala:1242)
+        at scala.Option.foreach(Option.scala:407)
+        at org.apache.spark.scheduler.DAGScheduler.handleTaskSetFailed(DAGScheduler.scala:1242)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3048)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:2982)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:2971)
+        at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+        at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:984)
+        at org.apache.spark.SparkContext.runJob(SparkContext.scala:2398)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$1(DeltaFileFormatWriter.scala:263)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.writeAndCommit(DeltaFileFormatWriter.scala:295)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeWrite(DeltaFileFormatWriter.scala:234)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.write(DeltaFileFormatWriter.scala:214)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.$anonfun$writeFiles$1(TransactionalWrite.scala:433)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles(TransactionalWrite.scala:391)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles$(TransactionalWrite.scala:364)
+        at org.apache.spark.sql.delta.OptimisticTransaction.writeFiles(OptimisticTransaction.scala:142)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles(TransactionalWrite.scala:239)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles$(TransactionalWrite.scala:235)
+        at org.apache.spark.sql.delta.OptimisticTransaction.writeFiles(OptimisticTransaction.scala:142)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles(TransactionalWrite.scala:228)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles$(TransactionalWrite.scala:225)
+        at org.apache.spark.sql.delta.OptimisticTransaction.writeFiles(OptimisticTransaction.scala:142)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.writeFiles(WriteIntoDelta.scala:341)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.write(WriteIntoDelta.scala:292)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.$anonfun$run$1(WriteIntoDelta.scala:105)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.$anonfun$run$1$adapted(WriteIntoDelta.scala:100)
+        at org.apache.spark.sql.delta.DeltaLog.withNewTransaction(DeltaLog.scala:223)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.run(WriteIntoDelta.scala:100)
+        at org.apache.spark.sql.delta.sources.DeltaDataSource.createRelation(DeltaDataSource.scala:201)
+        at org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand.run(SaveIntoDataSourceCommand.scala:48)
+        at org.apache.spark.sql.execution.command.ExecutedCommandExec.sideEffectResult$lzycompute(commands.scala:75)
+        at org.apache.spark.sql.execution.command.ExecutedCommandExec.sideEffectResult(commands.scala:73)
+        at org.apache.spark.sql.execution.command.ExecutedCommandExec.executeCollect(commands.scala:84)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.$anonfun$applyOrElse$1(QueryExecution.scala:107)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:107)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:98)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.$anonfun$transformDownWithPruning$1(TreeNode.scala:461)
+        at org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:76)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDownWithPruning(TreeNode.scala:461)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.org$apache$spark$sql$catalyst$plans$logical$AnalysisHelper$$super$transformDownWithPruning(LogicalPlan.scala:32)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning(AnalysisHelper.scala:267)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning$(AnalysisHelper.scala:263)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:32)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:32)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDown(TreeNode.scala:437)
+        at org.apache.spark.sql.execution.QueryExecution.eagerlyExecuteCommands(QueryExecution.scala:98)
+        at org.apache.spark.sql.execution.QueryExecution.commandExecuted$lzycompute(QueryExecution.scala:85)
+        at org.apache.spark.sql.execution.QueryExecution.commandExecuted(QueryExecution.scala:83)
+        at org.apache.spark.sql.execution.QueryExecution.assertCommandExecuted(QueryExecution.scala:142)
+        at org.apache.spark.sql.DataFrameWriter.runCommand(DataFrameWriter.scala:859)
+        at org.apache.spark.sql.DataFrameWriter.saveToV1Source(DataFrameWriter.scala:388)
+        at org.apache.spark.sql.DataFrameWriter.saveInternal(DataFrameWriter.scala:304)
+        at org.apache.spark.sql.DataFrameWriter.save(DataFrameWriter.scala:240)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(Unknown Source)
+        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(Unknown Source)
+        at java.base/java.lang.reflect.Method.invoke(Unknown Source)
+        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+        at py4j.Gateway.invoke(Gateway.java:282)
+        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+        at py4j.commands.CallCommand.execute(CallCommand.java:79)
+        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+        at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+        at java.base/java.lang.Thread.run(Unknown Source)
+Caused by: java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        ... 1 more
+26/05/13 08:53:23 ERROR DeltaFileFormatWriter: Job job_202605130852574723633522241028813_0015 aborted.
+26/05/13 08:53:23 ERROR DeltaFileFormatWriter: Job job_202605130852574723633522241028813_0015 aborted.
+26/05/13 08:53:23 ERROR DeltaFileFormatWriter: Job job_202605130852574723633522241028813_0015 aborted.
+26/05/13 08:53:23 ERROR DeltaFileFormatWriter: Job job_202605130852574723633522241028813_0015 aborted.
+26/05/13 08:53:23 ERROR DeltaFileFormatWriter: Job job_202605130852574723633522241028813_0015 aborted.
+Traceback (most recent call last):
+  File "run_benchmark.py", line 224, in <module>
+    result = run_benchmark_pipeline(spark, tracker, checkpoint_mgr, resume=False)
+  File "run_benchmark.py", line 140, in run_benchmark_pipeline
+    initialize_delta_table(
+  File "/app/delta_core.py", line 237, in initialize_delta_table
+    df.write
+  File "/usr/local/lib/python3.8/dist-packages/pyspark/sql/readwriter.py", line 1463, in save
+    self._jwrite.save(path)
+  File "/usr/local/lib/python3.8/dist-packages/py4j/java_gateway.py", line 1362, in __call__
+    return_value = get_return_value(
+  File "/usr/local/lib/python3.8/dist-packages/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+  File "/usr/local/lib/python3.8/dist-packages/py4j/protocol.py", line 327, in get_return_value
+    raise Py4JJavaError(
+py4j.protocol.Py4JJavaError: An error occurred while calling o124.save.
+: org.apache.spark.SparkException: Job aborted due to stage failure: Task 2 in stage 15.0 failed 1 times, most recent failure: Lost task 2.0 in stage 15.0 (TID 47) (lakehouse executor driver): java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        at java.base/java.lang.Thread.run(Unknown Source)
+
+Driver stacktrace:
+        at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2844)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2780)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2779)
+        at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+        at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+        at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+        at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2779)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1(DAGScheduler.scala:1242)
+        at org.apache.spark.scheduler.DAGScheduler.$anonfun$handleTaskSetFailed$1$adapted(DAGScheduler.scala:1242)
+        at scala.Option.foreach(Option.scala:407)
+        at org.apache.spark.scheduler.DAGScheduler.handleTaskSetFailed(DAGScheduler.scala:1242)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3048)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:2982)
+        at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:2971)
+        at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+        at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:984)
+        at org.apache.spark.SparkContext.runJob(SparkContext.scala:2398)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.$anonfun$executeWrite$1(DeltaFileFormatWriter.scala:263)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.writeAndCommit(DeltaFileFormatWriter.scala:295)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.executeWrite(DeltaFileFormatWriter.scala:234)
+        at org.apache.spark.sql.delta.files.DeltaFileFormatWriter$.write(DeltaFileFormatWriter.scala:214)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.$anonfun$writeFiles$1(TransactionalWrite.scala:433)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles(TransactionalWrite.scala:391)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles$(TransactionalWrite.scala:364)
+        at org.apache.spark.sql.delta.OptimisticTransaction.writeFiles(OptimisticTransaction.scala:142)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles(TransactionalWrite.scala:239)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles$(TransactionalWrite.scala:235)
+        at org.apache.spark.sql.delta.OptimisticTransaction.writeFiles(OptimisticTransaction.scala:142)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles(TransactionalWrite.scala:228)
+        at org.apache.spark.sql.delta.files.TransactionalWrite.writeFiles$(TransactionalWrite.scala:225)
+        at org.apache.spark.sql.delta.OptimisticTransaction.writeFiles(OptimisticTransaction.scala:142)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.writeFiles(WriteIntoDelta.scala:341)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.write(WriteIntoDelta.scala:292)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.$anonfun$run$1(WriteIntoDelta.scala:105)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.$anonfun$run$1$adapted(WriteIntoDelta.scala:100)
+        at org.apache.spark.sql.delta.DeltaLog.withNewTransaction(DeltaLog.scala:223)
+        at org.apache.spark.sql.delta.commands.WriteIntoDelta.run(WriteIntoDelta.scala:100)
+        at org.apache.spark.sql.delta.sources.DeltaDataSource.createRelation(DeltaDataSource.scala:201)
+        at org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand.run(SaveIntoDataSourceCommand.scala:48)
+        at org.apache.spark.sql.execution.command.ExecutedCommandExec.sideEffectResult$lzycompute(commands.scala:75)
+        at org.apache.spark.sql.execution.command.ExecutedCommandExec.sideEffectResult(commands.scala:73)
+        at org.apache.spark.sql.execution.command.ExecutedCommandExec.executeCollect(commands.scala:84)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.$anonfun$applyOrElse$1(QueryExecution.scala:107)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+        at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+        at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+        at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+        at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:107)
+        at org.apache.spark.sql.execution.QueryExecution$$anonfun$eagerlyExecuteCommands$1.applyOrElse(QueryExecution.scala:98)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.$anonfun$transformDownWithPruning$1(TreeNode.scala:461)
+        at org.apache.spark.sql.catalyst.trees.CurrentOrigin$.withOrigin(origin.scala:76)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDownWithPruning(TreeNode.scala:461)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.org$apache$spark$sql$catalyst$plans$logical$AnalysisHelper$$super$transformDownWithPruning(LogicalPlan.scala:32)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning(AnalysisHelper.scala:267)
+        at org.apache.spark.sql.catalyst.plans.logical.AnalysisHelper.transformDownWithPruning$(AnalysisHelper.scala:263)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:32)
+        at org.apache.spark.sql.catalyst.plans.logical.LogicalPlan.transformDownWithPruning(LogicalPlan.scala:32)
+        at org.apache.spark.sql.catalyst.trees.TreeNode.transformDown(TreeNode.scala:437)
+        at org.apache.spark.sql.execution.QueryExecution.eagerlyExecuteCommands(QueryExecution.scala:98)
+        at org.apache.spark.sql.execution.QueryExecution.commandExecuted$lzycompute(QueryExecution.scala:85)
+        at org.apache.spark.sql.execution.QueryExecution.commandExecuted(QueryExecution.scala:83)
+        at org.apache.spark.sql.execution.QueryExecution.assertCommandExecuted(QueryExecution.scala:142)
+        at org.apache.spark.sql.DataFrameWriter.runCommand(DataFrameWriter.scala:859)
+        at org.apache.spark.sql.DataFrameWriter.saveToV1Source(DataFrameWriter.scala:388)
+        at org.apache.spark.sql.DataFrameWriter.saveInternal(DataFrameWriter.scala:304)
+        at org.apache.spark.sql.DataFrameWriter.save(DataFrameWriter.scala:240)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(Unknown Source)
+        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(Unknown Source)
+        at java.base/java.lang.reflect.Method.invoke(Unknown Source)
+        at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+        at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+        at py4j.Gateway.invoke(Gateway.java:282)
+        at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+        at py4j.commands.CallCommand.execute(CallCommand.java:79)
+        at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+        at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+        at java.base/java.lang.Thread.run(Unknown Source)
+Caused by: java.lang.OutOfMemoryError: Java heap space
+        at java.base/java.nio.HeapByteBuffer.<init>(Unknown Source)
+        at java.base/java.nio.ByteBuffer.allocate(Unknown Source)
+        at org.apache.spark.io.ReadAheadInputStream.<init>(ReadAheadInputStream.java:105)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillReader.<init>(UnsafeSorterSpillReader.java:74)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeSorterSpillWriter.getReader(UnsafeSorterSpillWriter.java:159)
+        at org.apache.spark.util.collection.unsafe.sort.UnsafeExternalSorter.getSortedIterator(UnsafeExternalSorter.java:555)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:172)
+        at org.apache.spark.sql.execution.UnsafeExternalRowSorter.sort(UnsafeExternalRowSorter.java:228)
+        at org.apache.spark.sql.execution.SortExec.$anonfun$doExecute$1(SortExec.scala:119)
+        at org.apache.spark.sql.execution.SortExec$$Lambda$4878/0x0000000841952040.apply(Unknown Source)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2(RDD.scala:890)
+        at org.apache.spark.rdd.RDD.$anonfun$mapPartitionsInternal$2$adapted(RDD.scala:890)
+        at org.apache.spark.rdd.RDD$$Lambda$3011/0x00000008413a2840.apply(Unknown Source)
+        at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+        at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:364)
+        at org.apache.spark.rdd.RDD.iterator(RDD.scala:328)
+        at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+        at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:161)
+        at org.apache.spark.scheduler.Task.run(Task.scala:141)
+        at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620)
+        at org.apache.spark.executor.Executor$TaskRunner$$Lambda$1778/0x0000000840cd6440.apply(Unknown Source)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+        at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+        at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623)
+        at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+        at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+        ... 1 more
+
+
+
+C:\Users\manth\Documents\GitHub\ATLAS>

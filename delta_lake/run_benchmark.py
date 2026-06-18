@@ -43,11 +43,22 @@ def create_spark_session(app_name: str = "ATLAS-RefinedLayer-DeltaMerge-Benchmar
         .config("spark.databricks.delta.autoCompact.enabled", "false")
         .config("spark.databricks.delta.properties.defaults.targetFileSize", str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
         .config("spark.sql.shuffle.partitions", str(PipelineConfig.SPARK_SHUFFLE_PARTITIONS))
+        # Delta Lake Transaction Consistency & File Resolution (Enterprise-Grade)
+        .config("spark.databricks.delta.commitInfo.enabled", "true")
+        .config("spark.databricks.delta.commitValidation.enabled", "true")
+        .config("spark.databricks.delta.stats.skipping.enabled", "true")
+        # Enhanced consistency for high-concurrency streaming
+        .config("spark.databricks.delta.streaming.enabled", "true")
+        .config("spark.databricks.delta.merge.enableBlindAppend", "true")
+        # File status cache & metadata consistency
+        .config("spark.sql.files.maxPartitionBytes", "134217728")  # 128MB to avoid small file issues
+        .config("spark.sql.files.ignoreCorruptFiles", "false")
         # Local Profile (Default): Vertical Monolith inside Lakehouse container
         .master("local[*]")
         .config("spark.executor.instances", "1")
         .config("spark.executor.cores", "6")
-        .config("spark.executor.memory", "5g")
+        .config("spark.driver.memory", "8g")
+        .config("spark.executor.memory", "8g")
     )
     
     if os.getenv("SPARK_MASTER"):
@@ -169,12 +180,13 @@ def run_benchmark_pipeline(
             state = checkpoint_mgr.mark_batch_complete(file_date, row_count, state)
         
         optimize_counter += 1
-        if optimize_counter >= PipelineConfig.OPTIMIZE_EVERY_N_BATCHES:
-            print(f"  │  Running OPTIMIZE...", flush=True)
-            opt_start = time.perf_counter()
-            optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
-            print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s", flush=True)
-            optimize_counter = 0
+        # Deprecated: Replaced by Delta Auto-Compaction
+        # if optimize_counter >= PipelineConfig.OPTIMIZE_EVERY_N_BATCHES:
+        #     print(f"  │  Running OPTIMIZE...", flush=True)
+        #     opt_start = time.perf_counter()
+        #     optimize_delta_table(spark, PipelineConfig.REFINED_PATH, PipelineConfig.ZORDER_COLUMN)
+        #     print(f"  │  OPTIMIZE completed in {time.perf_counter() - opt_start:.2f}s", flush=True)
+        #     optimize_counter = 0
         
         print(f"  └─ ✓ Batch complete", flush=True)
     

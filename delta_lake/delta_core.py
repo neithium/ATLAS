@@ -7,7 +7,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import col, to_date, date_format, sha2, concat_ws, lit, coalesce
+from pyspark.sql.functions import col, to_date, date_format, sha2, concat_ws, lit, coalesce, row_number
+import pyspark.sql.functions as F
+from pyspark.sql.window import Window
 from delta import DeltaTable
 from py4j.protocol import Py4JJavaError
 
@@ -29,17 +31,11 @@ class PipelineConfig:
     # Triple-Hash Composite Primary Key columns
     PRIMARY_KEY_COLUMNS = ["device_id", "metric_time", "application_customer_id"]
     
-    # 5-Level Partition columns (order matters for directory structure)
-    PARTITION_COLUMNS = [
-        "report_type",
-        "partition_date",
-        "platform_customer_id",
-        "application_customer_id",
-        "device_id"
-    ]
+    # 1-Level Partition to fix small file problem
+    PARTITION_COLUMNS = ["partition_date"]
     
     # Z-ORDER clustering column for read optimization
-    ZORDER_COLUMN = "metric_time"
+    ZORDER_COLUMN = "application_customer_id, device_id"
     
     # Delta Lake optimizations
     TARGET_FILE_SIZE_MB = 128
@@ -60,12 +56,13 @@ class PipelineConfig:
     # Horizontal Scaling Configuration
     SPARK_EXECUTOR_INSTANCES = int(os.getenv("SPARK_EXECUTOR_INSTANCES", "1"))
     SPARK_EXECUTOR_CORES = int(os.getenv("SPARK_EXECUTOR_CORES", "6"))
-    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "4g")
+    SPARK_DRIVER_MEMORY = os.getenv("SPARK_DRIVER_MEMORY", "8g")
+    SPARK_EXECUTOR_MEMORY = os.getenv("SPARK_EXECUTOR_MEMORY", "8g")
+    
     SPARK_DYNAMIC_ALLOCATION = os.getenv("SPARK_DYNAMIC_ALLOCATION", "false").lower() == "true"
     SPARK_MIN_EXECUTORS = int(os.getenv("SPARK_MIN_EXECUTORS", "2"))
     SPARK_MAX_EXECUTORS = int(os.getenv("SPARK_MAX_EXECUTORS", "8"))
-    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "12"))
-
+    SPARK_SHUFFLE_PARTITIONS = int(os.getenv("SPARK_SHUFFLE_PARTITIONS", "200")) #earlier 12    
 
 # =============================================================================
 # LATENCY TRACKER
@@ -188,29 +185,45 @@ class CheckpointManager:
 
 def prepare_partition_columns(df: DataFrame) -> DataFrame:
     """
-    Add partition columns required for 5-level deep partitioning.
-    
+    Prepares partition columns defensively.
     Extracts partition_date from metric_time for date-based partitioning.
     Ensures all partition columns have non-null values for proper partitioning.
     """
-    if "partition_date" in df.columns:
+    from pyspark.sql.functions import date_format, to_date, col, lit, coalesce
+
+    batch_cols = df.columns
+    
+    # Defensively create partition_date
+    if "partition_date" in batch_cols:
         prepared = df.withColumn(
             "partition_date",
             date_format(col("partition_date"), "yyyy-MM-dd")
         )
-    else:
+    elif "metric_time" in batch_cols:
         prepared = df.withColumn(
             "partition_date",
             date_format(to_date(col("metric_time")), "yyyy-MM-dd")
         )
-    
-    return (
-        prepared
-        .withColumn("report_type", coalesce(col("report_type"), lit("unknown")))
-        .withColumn("platform_customer_id", coalesce(col("platform_customer_id"), lit("unknown")))
-        .withColumn("application_customer_id", coalesce(col("application_customer_id"), lit("unknown")))
-        .withColumn("device_id", coalesce(col("device_id"), lit("unknown")))
-    )
+    else:
+        # If no date source, create a null column that will be filled later
+        prepared = df.withColumn("partition_date", lit(None).cast("string"))
+
+    # Defensively apply coalesce to known columns if they exist
+    columns_to_coalesce = {
+        "report_type": "unknown",
+        "platform_customer_id": "unknown",
+        "application_customer_id": "unknown",
+        "device_id": "unknown"
+    }
+
+    for col_name, default_value in columns_to_coalesce.items():
+        if col_name in batch_cols:
+            prepared = prepared.withColumn(col_name, coalesce(col(col_name), lit(default_value)))
+        else:
+            # If the column doesn't exist, create it with the default value
+            prepared = prepared.withColumn(col_name, lit(default_value))
+            
+    return prepared
 
 
 def generate_composite_hash(df: DataFrame) -> DataFrame:
@@ -226,148 +239,140 @@ def generate_composite_hash(df: DataFrame) -> DataFrame:
 # =============================================================================
 
 def delta_table_exists(spark: SparkSession, path: str) -> bool:
-    """Check if Delta table exists at path."""
-    try:
-        DeltaTable.forPath(spark, path)
-        return True
-    except Exception:
-        return False
-
+    """Check if a Delta table exists at the given path."""
+    return DeltaTable.isDeltaTable(spark, path)
 
 def initialize_delta_table(
     spark: SparkSession,
     df: DataFrame,
     path: str,
-    partition_cols: list
+    partition_cols: List[str]
 ) -> None:
-    """Initialize Delta table with 5-level partitioning and Zstd compression."""
-    print(f"         Partition structure: /{'/'.join(partition_cols)}/")
-    print(f"         Compression: {PipelineConfig.COMPRESSION_CODEC}")
-    
+    """Create a new Delta table with partitioning."""
+    print(f"        Initializing Delta table at: {path}")
     (
         df.write
         .format("delta")
-        .mode("overwrite")
-        .option("overwriteSchema", "true")
         .partitionBy(*partition_cols)
-        .option("parquet.compression", PipelineConfig.COMPRESSION_CODEC)
-        .option("parquet.block.size", str(PipelineConfig.TARGET_FILE_SIZE_MB * 1024 * 1024))
+        .mode("overwrite")
+        .option("maxRecordsPerFile", PipelineConfig.MAX_RECORDS_PER_FILE)
         .save(path)
     )
+    # Inject advanced Delta Lake table properties
+    print("        Applying Auto-Compaction and Optimized Writes...")
+    spark.sql(f"""
+        ALTER TABLE delta.`{path}` SET TBLPROPERTIES (
+            'delta.autoOptimize.optimizeWrite' = 'true',
+            'delta.autoOptimize.autoCompact' = 'true'
+        )
+    """)
 
 def execute_merge_deduplication(
     spark: SparkSession,
     target_path: str,
-    source_df: DataFrame
+    source_df: DataFrame,
+    max_retries: int = 3
 ) -> dict:
     """
-    Execute Delta MERGE for deduplication using Triple-Hash composite key.
-    """
-    source_count = source_df.count()
+    Execute MERGE operation with deduplication logic and resilience.
     
-    delta_table = DeltaTable.forPath(spark, target_path)
-    target_count = spark.read.format("delta").load(target_path).count()
+    - Inserts new records.
+    - Updates existing records if source has a more recent timestamp.
+    - Deduplicates source data to prevent duplicate insertions.
+    - Implements retry logic and Delta Log consistency checks.
+    """
+    import time
+    
+    # Deduplicate source data based on PK, keeping the latest record
+    # This is critical for idempotent writes when re-processing batches
+    source_deduped = (
+        source_df
+        .withColumn("row_num", 
+            F.row_number().over(
+                Window.partitionBy(*PipelineConfig.PRIMARY_KEY_COLUMNS)
+                      .orderBy(F.col("metric_time").desc())
+            )
+        )
+        .filter(F.col("row_num") == 1)
+        .drop("row_num")
+    )
     
     merge_condition = """
-        target.device_id = source.device_id 
+        target.partition_date = source.partition_date
+        AND target.device_id = source.device_id 
         AND target.metric_time = source.metric_time 
         AND target.application_customer_id = source.application_customer_id
     """
     
-    max_retries = 2
-    for attempt in range(max_retries + 1):
+    # Retry logic with exponential backoff for transient failures
+    for attempt in range(max_retries):
         try:
-            merge_builder = (
-                delta_table.alias("target")
-                .merge(source_df.alias("source"), merge_condition)
-                .whenNotMatchedInsertAll()
-            )
-            merge_builder.execute()
-            break
-        except Py4JJavaError as exc:
-            msg = str(exc)
-            is_missing_file_error = (
-                "SparkFileNotFoundException" in msg
-                or "does not exist" in msg
-            )
-            if not is_missing_file_error or attempt == max_retries:
-                raise
-            print(f"         ⚠ MERGE retry {attempt + 1}/{max_retries} after file metadata refresh...")
-            spark.catalog.clearCache()
+            # Refresh Delta table metadata to ensure log consistency
             delta_table = DeltaTable.forPath(spark, target_path)
-            time.sleep(1)
+            
+            # Force invalidate the plan cache to ensure fresh file resolution
+            spark.catalog.refreshByPath(target_path)
+            
+            # Execute merge with materialized source to avoid reference errors
+            (
+                delta_table.alias("target")
+                .merge(
+                    source_deduped.alias("source"),
+                    condition=merge_condition
+                )
+                .whenMatchedUpdateAll()
+                .whenNotMatchedInsertAll()
+                .execute()
+            )
+            
+            return {"status": "success", "merge_executed": True}
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Check if it's a transient file-not-found error
+            if "does not exist" in error_msg or "SparkFileNotFoundException" in error_msg:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2 ** attempt
+                    print(f"        ⚠ Transient file error on attempt {attempt + 1}/{max_retries}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"        ❌ MERGE failed after {max_retries} attempts: {error_msg}")
+                    raise
+            else:
+                # Non-transient error - fail immediately
+                print(f"        ❌ MERGE failed with non-transient error: {error_msg}")
+                raise
     
-    delta_table_after = DeltaTable.forPath(spark, target_path)
-    target_count_after = spark.read.format("delta").load(target_path).count()
-    
-    rows_inserted = target_count_after - target_count
-    rows_matched = source_count - rows_inserted
-    match_ratio = (rows_matched / source_count * 100) if source_count > 0 else 0
-    insert_ratio = (rows_inserted / source_count * 100) if source_count > 0 else 0
-    
-    history_df = delta_table_after.history(1)
-    history_row = history_df.collect()[0]
-    
-    print(f"         ✓ MERGE Results (Day i vs Days 0..i-1):")
-    print(f"           - Source rows (day i): {source_count:,}")
-    print(f"           - Target rows before: {target_count:,}")
-    print(f"           - Matched/Duplicates: {rows_matched:,} ({match_ratio:.1f}%)")
-    print(f"           - Inserted/New: {rows_inserted:,} ({insert_ratio:.1f}%)")
-    print(f"           - Target rows after: {target_count_after:,}")
-    
-    return {
-        "operation": history_row["operation"],
-        "operationMetrics": history_row["operationMetrics"],
-        "timestamp": history_row["timestamp"],
-        "source_count": source_count,
-        "target_count_before": target_count,
-        "target_count_after": target_count_after,
-        "rows_matched": rows_matched,
-        "rows_inserted": rows_inserted,
-        "match_ratio_pct": match_ratio,
-        "insert_ratio_pct": insert_ratio
-    }
+    return {"status": "failed", "error": "Max retries exceeded"}
 
-
-def optimize_delta_table(spark: SparkSession, path: str, zorder_col: str) -> dict:
-    """Execute OPTIMIZE with Z-ORDER to resolve small file issues."""
+def optimize_delta_table(spark: SparkSession, path: str, zorder_col: Optional[str] = None):
+    """Run OPTIMIZE and Z-ORDER on the Delta table."""
     delta_table = DeltaTable.forPath(spark, path)
-    
-    optimize_result = delta_table.optimize().executeZOrderBy(zorder_col)
-    
-    if optimize_result.count() > 0:
-        metrics_row = optimize_result.collect()[0]
-        return {
-            "numFilesAdded": metrics_row["metrics"]["numFilesAdded"],
-            "numFilesRemoved": metrics_row["metrics"]["numFilesRemoved"],
-            "numBatches": metrics_row["metrics"]["numBatches"],
-            "totalConsideredFiles": metrics_row["metrics"]["totalConsideredFiles"],
-            "totalFilesSkipped": metrics_row["metrics"]["totalFilesSkipped"],
-            "preserveInsertionOrder": metrics_row["metrics"]["preserveInsertionOrder"]
-        }
-    return {"status": "no_files_to_optimize"}
+    if zorder_col:
+        # Split comma-separated column names and pass as separate arguments
+        zorder_cols = [col.strip() for col in zorder_col.split(",")]
+        print(f"        Running OPTIMIZE and Z-ORDER by {', '.join(zorder_cols)}...")
+        delta_table.optimize().executeZOrderBy(*zorder_cols)
+    else:
+        print("        Running OPTIMIZE...")
+        delta_table.optimize().executeCompaction()
 
-
-def vacuum_old_files(spark: SparkSession, path: str, retention_hours: int = None) -> Dict:
-    """Vacuum Delta table to remove old files beyond retention period."""
-    retention_hours = retention_hours or PipelineConfig.VACUUM_RETENTION_HOURS
-    
+def vacuum_delta_table(spark: SparkSession, path: str, retention_hours: int):
+    """Vacuum old files from the Delta table."""
+    if not PipelineConfig.VACUUM_ENABLED:
+        print("        VACUUM is disabled.")
+        return
+        
+    print(f"        Vacuuming files older than {retention_hours} hours...")
     delta_table = DeltaTable.forPath(spark, path)
-    
-    spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
-    
-    print(f"         Running VACUUM with {retention_hours}h ({retention_hours // 24}d) retention...")
-    vacuum_start = time.perf_counter()
-    
-    delta_table.vacuum(retention_hours)
-    
-    vacuum_elapsed = time.perf_counter() - vacuum_start
-    
-    spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "true")
-    
-    return {
-        "retention_hours": retention_hours,
-        "retention_days": retention_hours // 24,
-        "vacuum_time_sec": round(vacuum_elapsed, 3),
-        "status": "completed"
-    }
+    try:
+        delta_table.vacuum(retentionHours=retention_hours)
+    except Py4JJavaError as e:
+        # Gracefully handle error if retention period is not met
+        if "retention period" in str(e.java_exception):
+            print(f"        ⚠ VACUUM skipped: {e.java_exception}")
+        else:
+            raise e
