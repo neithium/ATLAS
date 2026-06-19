@@ -1,5 +1,8 @@
 from airflow import DAG
-from airflow.providers.http.operators.http import SimpleHttpOperator
+try:
+    from airflow.providers.http.operators.http import HttpOperator as SimpleHttpOperator
+except ImportError:
+    from airflow.providers.http.operators.http import SimpleHttpOperator
 from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta

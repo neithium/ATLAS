@@ -74,7 +74,12 @@ if __name__ == "__main__":
     parser.add_argument("--pcids", type=int, default=5, help="Number of platform customers")
     parser.add_argument("--acids", type=int, default=2, help="Number of application customers per platform")
     parser.add_argument("--devices", type=int, default=1000, help="Number of devices per application")
+    parser.add_argument("--scale", type=int, help="Total target scale size (overrides devices per application)")
     parser.add_argument("--output", type=str, default="device_configs.json")
     args = parser.parse_args()
     
-    generate_registry(pcids=args.pcids, acids=args.acids, devices_per_acid=args.devices, output_path=args.output)
+    devices_per_acid = args.devices
+    if args.scale is not None:
+        devices_per_acid = max(1, args.scale // (args.pcids * args.acids))
+    
+    generate_registry(pcids=args.pcids, acids=args.acids, devices_per_acid=devices_per_acid, output_path=args.output)

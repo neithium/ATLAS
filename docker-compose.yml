@@ -91,7 +91,7 @@ services:
       - KAFKA_BOOTSTRAP=broker1:9092
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
-      - ENABLE_POLLER=false
+      - ENABLE_POLLER=true
       - SCALE_SIZE=2000
     networks:
       - atlas-network
@@ -428,6 +428,7 @@ services:
       - spark-checkpoint:/app/checkpoint
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
+      - C:/Users/Public/atlas-data/refined:/app/data/processed/batch
       - delta-refined:/app/data/processed
 
     networks:
@@ -614,7 +615,9 @@ services:
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
+      - ./storage/clickhouse/delta_loader.py:/app/clickhouse/delta_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
+      - ./storage/supervisord.conf:/etc/supervisor/conf.d/atlas.conf:ro
       - ./schema:/app/schema:ro
     networks:
       - atlas-network
@@ -672,6 +675,7 @@ services:
       - ./orchestration/dags:/opt/airflow/dags
       - ./orchestration/plugins:/opt/airflow/plugins
       - /var/run/docker.sock:/var/run/docker.sock
+      - C:/Users/Public/atlas-data/refined:/opt/airflow/data/refined:ro
     networks:
       - atlas-network
     mem_limit: 768m
@@ -692,6 +696,7 @@ services:
       - ./orchestration/dags:/opt/airflow/dags
       - ./orchestration/plugins:/opt/airflow/plugins
       - /var/run/docker.sock:/var/run/docker.sock
+      - C:/Users/Public/atlas-data/refined:/opt/airflow/data/refined:ro
     networks:
       - atlas-network
     mem_limit: 512m

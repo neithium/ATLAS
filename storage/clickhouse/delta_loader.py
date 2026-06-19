@@ -9,15 +9,17 @@ Materialized Views (hourly_mv, daily_mv) fire automatically on insert.
 Supports incremental loading via a PostgreSQL watermark table so that
 re-runs only process new data.
 
-Scheduler Mode (SCHEDULE_INTERVAL_SECONDS):
-    0    → One-shot: run once and exit.
-    3600 → Persistent scheduler: run, sleep 3600 s (1 hour), repeat.
+Scheduling (Airflow-Driven):
+    This script runs in ONE-SHOT mode: execute once and exit.
+    Scheduling is handled externally by Apache Airflow via the
+    dag_master_pipeline DAG, which triggers this script through
+    docker exec on the atlas-analytics container.
 
-    Why 3600 s?  The upstream Spark processor produces 1-hour tumbling-
-    window aggregations and the Lakehouse MERGE runs after each batch.
-    Polling every 3600 s lets the loader pick up exactly the latest
-    hourly batch each cycle, avoiding redundant scans while keeping
-    the ClickHouse analytics layer at most 1 hour behind real-time.
+    The previous 3600s polling loop has been replaced by Airflow's
+    cron-based scheduling, which provides:
+      - Centralized orchestration with dependency management
+      - Retry logic and failure alerting via Airflow UI
+      - No wasted CPU cycles sleeping inside the container
 
 Partition-Aware Reading:
     The Refined Layer uses a 5-level Hive partition scheme:
@@ -55,12 +57,10 @@ Credentials:
     POSTGRES_DB              default: atlas_metadata
     REFINED_DATA_PATH        default: /data/refined
     BATCH_SIZE               default: 10000
-    SCHEDULE_INTERVAL_SECONDS    default: 0 (one-shot)
 """
 
 import os
 import sys
-import time
 import uuid
 import logging
 from datetime import datetime, timezone, date
@@ -104,7 +104,6 @@ PG_DB = os.getenv("POSTGRES_DB", "atlas_metadata")
 
 REFINED_PATH = os.getenv("REFINED_DATA_PATH", "/data/refined")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10000"))
-SCHEDULE_INTERVAL = int(os.getenv("SCHEDULE_INTERVAL_SECONDS", "0"))
 WATERMARK_SOURCE = "delta_refined"
 
 # ---------------------------------------------------------------------------
@@ -548,9 +547,7 @@ def prepare_for_clickhouse(df: pd.DataFrame) -> pd.DataFrame:
 
     # error_reason is Nullable(String) — must be Python None, NOT float NaN
     if "error_reason" in df.columns:
-        df["error_reason"] = [
-            None if pd.isna(v) else str(v) for v in df["error_reason"]
-        ]
+        df["error_reason"] = df["error_reason"].apply(lambda v: None if pd.isna(v) else str(v))
 
     return df
 
@@ -632,8 +629,7 @@ def main():
     log.info("PostgreSQL : %s:%s/%s  user=%s", PG_HOST, PG_PORT, PG_DB, PG_USER)
     log.info("Refined    : %s", REFINED_PATH)
     log.info("Batch size : %d", BATCH_SIZE)
-    log.info("Scheduler  : %s",
-             f"every {SCHEDULE_INTERVAL}s" if SCHEDULE_INTERVAL > 0 else "one-shot")
+    log.info("Mode       : one-shot (Airflow-scheduled)")
 
     # --- Check refined path exists before connecting to DBs ---------------
     refined_dir = Path(REFINED_PATH)
@@ -754,25 +750,5 @@ def main():
 
 
 if __name__ == "__main__":
-    if SCHEDULE_INTERVAL > 0:
-        log.info("=" * 60)
-        log.info("PERSISTENT SCHEDULER MODE — interval: %ds (%d min)",
-                 SCHEDULE_INTERVAL, SCHEDULE_INTERVAL // 60)
-        log.info("  Why %ds?  Matches the upstream 1-hour tumbling-window batch",
-                 SCHEDULE_INTERVAL)
-        log.info("  cadence so each cycle picks up exactly the latest hourly batch.")
-        log.info("=" * 60)
-        cycle = 0
-        while True:
-            cycle += 1
-            log.info("--- Scheduler cycle %d ---", cycle)
-            try:
-                main()
-            except Exception as exc:
-                log.error("Scheduler cycle %d failed: %s", cycle, exc)
-                log.error("Will retry in %ds...", SCHEDULE_INTERVAL)
-            log.info("Sleeping %ds until next run...", SCHEDULE_INTERVAL)
-            time.sleep(SCHEDULE_INTERVAL)
-    else:
-        log.info("One-shot mode (SCHEDULE_INTERVAL_SECONDS=0)")
-        main()
+    log.info("One-shot mode (scheduling handled by Airflow dag_master_pipeline)")
+    main()

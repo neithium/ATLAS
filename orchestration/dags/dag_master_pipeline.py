@@ -1,7 +1,11 @@
 from airflow import DAG
-from airflow.providers.http.operators.http import SimpleHttpOperator
+try:
+    from airflow.providers.http.operators.http import HttpOperator as SimpleHttpOperator
+except ImportError:
+    from airflow.providers.http.operators.http import SimpleHttpOperator
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
+from airflow.sensors.filesystem import FileSensor
 from datetime import datetime, timedelta
 
 default_args = {
@@ -53,7 +57,16 @@ with DAG(
         """,
     )
 
-    # Step 3: Trigger ClickHouse Analytics Load
+    # Step 3: Wait for Processed Spark Data
+    wait_for_spark_output = FileSensor(
+        task_id='wait_for_spark_output',
+        filepath='/opt/airflow/data/refined/_SUCCESS',
+        poke_interval=10,
+        timeout=600,
+        mode='poke'
+    )
+
+    # Step 4: Trigger ClickHouse Analytics Load
     trigger_analytics_load = BashOperator(
         task_id='trigger_clickhouse_load',
         bash_command="""
@@ -115,5 +128,5 @@ with DAG(
         python_callable=print_success
     )
 
-    # Chain: Export -> Spark -> ClickHouse -> Verify -> Log
-    trigger_export >> trigger_spark_batch >> trigger_analytics_load >> verify_data_load >> log_success
+    # Chain: Export -> Spark -> Wait for Data -> ClickHouse -> Verify -> Log
+    trigger_export >> trigger_spark_batch >> wait_for_spark_output >> trigger_analytics_load >> verify_data_load >> log_success
