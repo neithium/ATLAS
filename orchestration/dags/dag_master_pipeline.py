@@ -46,12 +46,12 @@ from atlas_utils import docker_exec_or_raise, _docker_exec
 log = logging.getLogger(__name__)
 
 # ─── Constants ──────────────────────────────────────────────────────────────
-CLICKHOUSE_HTTP = "http://localhost:8123"   # Port 8123 is exposed on host
+CLICKHOUSE_HTTP = "http://atlas-analytics:8123"
 REFINED_PATH_IN_ANALYTICS = "/data/refined" # refined-volume mount in atlas-analytics
 
 # ─── Default Args ───────────────────────────────────────────────────────────
 default_args = {
-    "owner": "atlas-nandini",
+    "owner": "atlas",
     "depends_on_past": False,
     "start_date": datetime(2026, 4, 19),
     "email_on_failure": False,
@@ -213,7 +213,7 @@ with DAG(
     schedule_interval="@hourly",   # Was @daily — changed to @hourly per requirements
     catchup=False,
     max_active_runs=1,             # Prevent overlapping runs during long Spark jobs
-    tags=["atlas", "batch", "master", "kafka", "nandini"],
+    tags=["atlas", "batch", "master"],
 ) as dag:
 
     # ── Step 1: Trigger fleet-wide ingestion export ──────────────────────────

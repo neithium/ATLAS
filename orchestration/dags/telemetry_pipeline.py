@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 # ─── Default Args ───────────────────────────────────────────────────────────
 default_args = {
-    "owner": "atlas-nandini",
+    "owner": "atlas",
     "depends_on_past": False,
     "start_date": datetime(2026, 4, 19),
     "email_on_failure": False,
@@ -121,7 +121,7 @@ with DAG(
     schedule_interval="@hourly",    # Was timedelta(days=1) — changed to @hourly
     catchup=False,
     max_active_runs=1,
-    tags=["atlas", "ingestion", "analytics", "nandini"],
+    tags=["atlas", "ingestion", "analytics"],
 ) as dag:
 
     # ── Step 1: Trigger customer-scoped ingestion export ────────────────────

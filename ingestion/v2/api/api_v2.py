@@ -756,7 +756,7 @@ async def _process_and_send(did, readings, DEVICES, kafka_prod):
     loop = asyncio.get_event_loop()
     
     # 🏎️ Parallel Serialization (Offloaded to separate CPU core)
-    payload_bytes = await loop.run_in_executor(_cpu_pool, _serialize_record, did, readings, meta)
+    payload_bytes = await loop.run_in_executor(get_cpu_pool(), _serialize_record, did, readings, meta)
     
     # 🛰️ Kafka Delivery
     await kafka_prod.send(KAFKA_TOPIC, payload_bytes, key=did.encode())
@@ -1279,7 +1279,7 @@ async def trigger_fleet_telemetry_export(days: int = 7):
         log.info(f"📢 [API] Global Fleet Export Triggered: {len(device_ids)} devices. (Synchronous Mode)")
         
         # We now AWAIT this task so the API doesn't return until the data is in Kafka
-        await _export_stream_task(device_ids, start_time, end_time)
+        await _export_stream_task(start_time=start_time, end_time=end_time, device_ids=device_ids)
         
         return {
             "status": "Fleet-wide Export Completed", 
