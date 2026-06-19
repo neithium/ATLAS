@@ -37,7 +37,8 @@ import urllib.error
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator, PythonSensor
+from airflow.operators.python import PythonOperator
+from airflow.sensors.python import PythonSensor
 from airflow.providers.http.operators.http import SimpleHttpOperator
 
 # Shared Docker exec helper (detached + polling)
