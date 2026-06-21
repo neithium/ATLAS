@@ -22,8 +22,6 @@ import asyncpg
 import pandas as pd
 import psycopg2
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from minio import Minio
-
 from config.devices import DEVICES, POLL_INTERVAL_SECONDS, ENABLE_POLLER
 from core.ipmi_reader import poll_batch_ipmi
 
@@ -38,22 +36,15 @@ POLL_STARTUP_DELAY = 1.0  # seconds between batch starts
 
 # Storage Enablers
 ENABLE_TSDB_PUSH = os.getenv("ENABLE_TSDB_PUSH", "1") == "1"
-ENABLE_MINIO_PUSH = os.getenv("ENABLE_MINIO_PUSH", "1") == "1"
+ENABLE_MINIO_PUSH = False
 TS_CONN_STR = os.getenv("TS_CONN_STR", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
-
-MINIO_HOST = os.getenv("MINIO_HOST", "127.0.0.1:9000")
-MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-MINIO_BUCKET = os.getenv("MINIO_BUCKET", "telemetry-raw")
 
 # Fleet Telemetry Schema (28 Columns)
 HOT_PATH_COLUMNS = [
     "metric_time", "device_id", "platform_customer_id", "application_customer_id",
     "amb_temp", "avg_watts", "cpu_avg_freq", "cpu_max", "cpu_pwr_sav_lim",
     "cpu_util", "cpu_watts", "gpu_watts", "min_watts", "peak_watts",
-    "server_name", "model", "processor_vendor", "server_generation",
-    "report_type", "metric_type", "status", "error_reason", "tags",
-    "location_id", "location_city", "location_state", "location_country", "location_name"
+    "status", "error_reason"
 ]
 
 # Scheduler State
@@ -88,7 +79,7 @@ async def poll_all():
     LAST_POLL["success_count"] = 0
     LAST_POLL["error_count"] = 0
     
-    log.info(f"🚀 [poller] Starting high-scale poll for {total_devices:,} devices...")
+    log.info(f"[poller] Starting high-scale poll for {total_devices:,} devices...")
     
     batches = [devices[i:i + POLL_BATCH_SIZE] for i in range(0, total_devices, POLL_BATCH_SIZE)]
     semaphore = asyncio.Semaphore(POLL_WORKERS)
@@ -111,12 +102,12 @@ async def poll_all():
     
     # Ingestion Path
     if total_results:
-        log.info(f"💾 [hot-path] Ingesting {LAST_POLL['success_count']:,} records to TimescaleDB...")
+        log.info(f"[hot-path] Ingesting {LAST_POLL['success_count']:,} records to TimescaleDB...")
         await _push_to_tsdb_hot(total_results)
 
     LAST_POLL["end_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     LAST_POLL["status"] = "idle"
-    log.info(f"✅ [poller] Poll Complete: {LAST_POLL['success_count']}/{total_devices} success.")
+    log.info(f"[poller] Poll Complete: {LAST_POLL['success_count']}/{total_devices} success.")
 
 
 async def _push_to_tsdb_hot(batch_results):
@@ -144,11 +135,7 @@ async def _push_to_tsdb_hot(batch_results):
                 250, int(reading.get('CpuUtil', 50)), int(reading.get('CpuWatts', 200)), 
                 int(reading.get('GpuWatts', 50)), int(reading.get('Minimum', 250)), 
                 int(reading.get('Peak', 400)), 
-                meta.get("server_name"), meta.get("model"), meta.get("processor_vendor"),
-                meta.get("server_generation"), "telemetry_live", "power_metrics", True, "", 
-                "production,critical", meta.get("location_id"),
-                meta.get("location_city"), meta.get("location_state"), 
-                meta.get("location_country"), meta.get("location_name")
+                True, ""
             ])
 
     if records and ENABLE_TSDB_PUSH:
@@ -158,7 +145,7 @@ async def _push_to_tsdb_hot(batch_results):
         f.seek(0)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: _do_tsdb_copy(f))
-        log.info(f"🔥 [hot-path] Bulk insert complete.")
+        log.info(f"[hot-path] Bulk insert complete.")
 
 def _do_tsdb_copy(f):
     conn = psycopg2.connect(TS_CONN_STR)
@@ -170,125 +157,13 @@ def _do_tsdb_copy(f):
     finally:
         conn.close()
 
-async def _archive_segment_task(start_time, end_time, bucket_name, partition_path, segment_id):
-    """Worker task to process a specific time segment into 48-field Parquet."""
-    try:
-        conn = await asyncpg.connect(TS_CONN_STR.replace("localhost", "127.0.0.1"))
-        records = await conn.fetch("SELECT * FROM telemetry_live WHERE metric_time >= $1 AND metric_time < $2", start_time, end_time)
-        await conn.close()
-
-        if not records:
-            return f"Segment {segment_id}: No Data"
-
-        # 💎 RESTRUCTURING TO 48-FIELD GOLDEN SCHEMA 💎
-        hydrated_records = []
-        for r in records:
-            did = r['device_id']
-            meta = DEVICES.get(did, {})
-            full_doc = {
-                "device_id": did,
-                "report_id": "ARCHIVE-" + str(uuid.uuid4())[:8],
-                "created_at": r['metric_time'].isoformat(),
-                "status": r.get('status', True),
-                "model": r.get('model', meta.get('model')),
-                "tags": r.get('tags', meta.get('tags')),
-                "report_type": "telemetry_archive",
-                "server_name": r.get('server_name', meta.get('server_name')),
-                "error_reason": r.get('error_reason'),
-                "location_id": r.get('location_id', meta.get('location_id')),
-                "location_city": r.get('location_city', meta.get('location_city', 'Unknown')),
-                "location_state": r.get('location_state', meta.get('location_state', 'Unknown')),
-                "location_country": r.get('location_country', meta.get('location_country', 'India')),
-                "location_name": r.get('location_name', meta.get('location_name', 'Unknown')),
-                "processor_vendor": r.get('processor_vendor', meta.get('processor_vendor', 'Intel')),
-                "server_generation": r.get('server_generation', meta.get('server_generation', 'Unknown')),
-                "platform_customer_id": r['platform_customer_id'],
-                "application_customer_id": r['application_customer_id'],
-                "metric_type": r.get('metric_type', 'power_metrics'),
-                "data": {
-                    "Id": did,
-                    "Average": r.get('avg_watts', 0),
-                    "Maximum": r.get('peak_watts', 0),
-                    "Minimum": r.get('min_watts', 0),
-                    "Name": r.get('server_name', meta.get('server_name')),
-                    "PowerDetail": [
-                        {
-                            "AmbTemp": r.get('amb_temp'),
-                            "Average": r.get('avg_watts'),
-                            "CpuAvgFreq": r.get('cpu_avg_freq'),
-                            "CpuMax": r.get('cpu_max'),
-                            "CpuPwrSavLim": r.get('cpu_pwr_sav_lim'),
-                            "CpuUtil": r.get('cpu_util'),
-                            "CpuWatts": r.get('cpu_watts'),
-                            "GpuWatts": r.get('gpu_watts'),
-                            "Minimum": r.get('min_watts'),
-                            "Peak": r.get('peak_watts'),
-                            "Time": r['metric_time'].isoformat()
-                        }
-                    ]
-                },
-                "inventory_data": {
-                    "cpu_count": 2,
-                    "socket_count": 2,
-                    "cpu_inventory": [{"model": r.get('model', 'Intel'), "speed": 2400, "total_cores": 16}],
-                    "memory_inventory": [{"memory_size": 128, "operating_freq": 3200, "memory_device_type": "DDR4"}]
-                }
-            }
-            hydrated_records.append(full_doc)
-
-        df = pd.DataFrame(hydrated_records)
-        pq_buf = io.BytesIO()
-        df.to_parquet(pq_buf, engine='pyarrow', index=False, compression="snappy")
-        data_size = len(pq_buf.getvalue())
-
-        s3 = Minio("127.0.0.1:9000", access_key=MINIO_ACCESS, secret_key=MINIO_SECRET, secure=False)
-        filename = f"part-{segment_id}_{start_time.strftime('%H%M')}.parquet"
-        
-        # PUSH TO RAW
-        s3.put_object(bucket_name, f"{partition_path}/{filename}", data=io.BytesIO(pq_buf.getvalue()), length=data_size)
-        # PUSH TO ARCHIVE
-        s3.put_object("telemetry-archive", f"recovery/{partition_path}/{filename}", data=io.BytesIO(pq_buf.getvalue()), length=data_size)
-        
-        return f"✅ Segment {segment_id} Synced ({len(records)} rows)"
-    except Exception as e:
-        return f"❌ Segment {segment_id} Failed: {e}"
-
-async def archive_daily_to_minio(target_date: Optional[datetime] = None):
-    """V3 Master Parallel Archiver (5 Segments/Workers)."""
-    if not ENABLE_MINIO_PUSH: return
-    
-    try:
-        now = datetime.now(timezone.utc)
-        target_day = target_date or (now - timedelta(days=1))
-        base_start = target_day.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        y, m, d = target_day.strftime("%Y"), target_day.strftime("%m"), target_day.strftime("%d")
-        partition_path = f"year={y}/month={m}/day={d}"
-        
-        log.info(f"🛰️ Starting 5-Batch Parallel Archival for {y}-{m}-{d}...")
-
-        # 5 Segments of 4.8 Hours (288 minutes) each
-        segment_duration = timedelta(hours=4.8)
-        tasks = []
-        for i in range(5):
-            seg_start = base_start + (segment_duration * i)
-            seg_end = seg_start + segment_duration
-            tasks.append(_archive_segment_task(seg_start, seg_end, MINIO_BUCKET, partition_path, i+1))
-        
-        results = await asyncio.gather(*tasks)
-        for res in results:
-            log.info(res)
-            
-        log.info("🏁 All 5 Batches Complete. Cold Storage Synced.")
-    except Exception as e:
-        log.error(f"❌ Parallel Compaction Failed: {e}")
+# (Legacy archival logic removed)
 
 def start(run_immediately: bool = True):
-    """Initializes the polling and archiving schedules."""
+    """Initializes the polling schedules."""
     scheduler.add_job(poll_all, trigger="interval", seconds=POLL_INTERVAL_SECONDS, id="ipmi_poller", max_instances=1, misfire_grace_time=300)
-    scheduler.add_job(archive_daily_to_minio, trigger="cron", hour=0, minute=0, id="minio_daily_archiver", max_instances=1)
     scheduler.start()
-    log.info(f"📅 [scheduler] Dual-Write Background Engine Started.")
+    log.info(f"[scheduler] Dual-Write Background Engine Started.")
     if run_immediately:
         asyncio.create_task(poll_all())
 
@@ -297,6 +172,6 @@ def stop():
     try:
         if scheduler.running:
             scheduler.shutdown()
-        log.info(f"🛑 [scheduler] Dual-Write Background Engine Stopped.")
+        log.info(f"[scheduler] Dual-Write Background Engine Stopped.")
     except Exception:
         pass

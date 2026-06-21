@@ -1,111 +1,497 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_date, avg, count
+from pyspark.sql.functions import *
 from pyspark.sql.types import *
-import time, json, os
-import logging
 
-# ---------------- LOGGING ----------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [%(name)s] - %(message)s"
-)
-logger = logging.getLogger("ATLAS")
+# =========================================================
+# INPUT SCHEMA
+# =========================================================
 
-# ---------------- SPARK ----------------
-spark = SparkSession.builder.appName("Batch").getOrCreate()
-spark.sparkContext.setLogLevel("ERROR")
+input_schema = StructType([
 
-logging.getLogger("py4j").setLevel(logging.ERROR)
-logging.getLogger("org.apache.kafka").setLevel(logging.ERROR)
+    StructField("data", StructType([
 
-# ---------------- PATHS ----------------
-INPUT = "/app/data/raw"
-OUTPUT = "/app/data/processed/batch"
-METRICS = "/app/data/metrics/batch_metrics.json"
+        StructField("Id", StringType(), True),
 
-os.makedirs("/app/data/metrics", exist_ok=True)
+        StructField("Average", DoubleType(), True),
 
-logger.info("BATCH JOB STARTED")
+        StructField("Maximum", DoubleType(), True),
 
-# ---------------- SCHEMA ----------------
-schema = StructType([
-    StructField("device_id", StringType()),
-    StructField("timestamp", StringType()),
-    StructField("cpu", IntegerType()),
-    StructField("mem", IntegerType())
-])
+        StructField("Minimum", DoubleType(), True),
 
-processed_days = set()
-run_id = 0
+        StructField("Name", StringType(), True),
 
-def ensure_scalar(df, c):
-    dt = dict(df.dtypes).get(c)
-    if dt and dt.startswith("array"):
-        return df.withColumn(c, col(c).getItem(0))
-    return df
+        StructField(
+            "PowerDetail",
 
-# ---------------- RUN ONCE ----------------
-try:
-    if not os.path.exists(INPUT) or not os.listdir(INPUT):
-        logger.info("No data found in input directory.")
-    else:
-        df = spark.read.schema(schema).json(INPUT)
+            ArrayType(
 
-        if df.rdd.isEmpty():
-            logger.info("Input dataframe is empty.")
-        else:
-            for c in ["device_id", "timestamp", "cpu", "mem"]:
-                df = ensure_scalar(df, c)
+                StructType([
 
-            df = df.select(
-                col("device_id").cast("string"),
-                col("timestamp").cast("string"),
-                col("cpu").cast("int"),
-                col("mem").cast("int")
-            ).where(col("device_id").isNotNull() & col("timestamp").isNotNull())
+                    StructField("AmbTemp", DoubleType(), True),
 
-            flat = df.select(
-                col("device_id"),
-                to_date("timestamp").alias("event_date"),
-                col("cpu"),
-                col("mem")
+                    StructField("Average", DoubleType(), True),
+
+                    StructField("CpuAvgFreq", LongType(), True),
+
+                    StructField("CpuMax", LongType(), True),
+
+                    StructField("CpuPwrSavLim", LongType(), True),
+
+                    StructField("CpuUtil", LongType(), True),
+
+                    StructField("CpuWatts", LongType(), True),
+
+                    StructField("GpuWatts", LongType(), True),
+
+                    StructField("Minimum", DoubleType(), True),
+
+                    StructField("Peak", DoubleType(), True),
+
+                    StructField("Time", StringType(), True),
+
+                    StructField("is_fresh", BooleanType(), True)
+
+                ])
+
+            ),
+
+            True
+        )
+
+    ]), True),
+
+    StructField("model", StringType(), True),
+
+    StructField("tags", StringType(), True),
+
+    StructField("status", BooleanType(), True),
+
+    StructField("device_id", StringType(), True),
+
+    StructField("report_id", StringType(), True),
+
+    StructField("created_at", StringType(), True),
+
+    StructField("location_id", StringType(), True),
+
+    StructField("report_type", StringType(), True),
+
+    StructField("server_name", StringType(), True),
+
+    StructField("error_reason", StringType(), True),
+
+    StructField("location_city", StringType(), True),
+
+    StructField("location_name", StringType(), True),
+
+    StructField("location_state", StringType(), True),
+
+    StructField("location_country", StringType(), True),
+
+    StructField("processor_vendor", StringType(), True),
+
+    StructField("server_generation", StringType(), True),
+
+    StructField("platform_customer_id", StringType(), True),
+
+    StructField("application_customer_id", StringType(), True),
+
+    StructField("metric_type", StringType(), True),
+
+    StructField(
+
+        "inventory_data",
+
+        StructType([
+
+            StructField("cpu_count", LongType(), True),
+
+            StructField("socket_count", LongType(), True),
+
+            StructField(
+
+                "cpu_inventory",
+
+                ArrayType(
+
+                    StructType([
+
+                        StructField("model", StringType(), True),
+
+                        StructField("speed", LongType(), True),
+
+                        StructField("total_cores", LongType(), True)
+
+                    ])
+
+                ),
+
+                True
+            ),
+
+            StructField(
+
+                "memory_inventory",
+
+                ArrayType(
+
+                    StructType([
+
+                        StructField("memory_size", LongType(), True),
+
+                        StructField("operating_freq", LongType(), True),
+
+                        StructField("memory_device_type", StringType(), True)
+
+                    ])
+
+                ),
+
+                True
             )
 
-            all_days = [r[0] for r in flat.select("event_date").distinct().collect()]
-            if all_days:
-                # Process all available data for this batch run
-                for day in sorted(all_days):
-                    logger.info(f"Processing day={day}")
-                    start = time.time()
+        ]),
 
-                    daily = flat.filter(col("event_date") == day)
+        True
+    )
+])
 
-                    result = daily.groupBy("device_id", "event_date").agg(
-                        avg("cpu").alias("avg_cpu"),
-                        avg("mem").alias("avg_mem"),
-                        count("*").alias("num_records")
-                    )
+# =========================================================
+# CREATE SPARK SESSION
+# =========================================================
 
-                    result.write.mode("append").parquet(OUTPUT)
+def create_spark():
 
-                    duration = time.time() - start
-                    rows = daily.count()
+    return (
+        SparkSession.builder
+        .appName("Batch-Pipeline")
 
-                    metrics_data = {
-                        "run_id": run_id,
-                        "event_date": str(day),
-                        "rows": rows,
-                        "duration": duration,
-                        "throughput": rows / duration if duration else 0
-                    }
+        .master("local[*]")
 
-                    with open(METRICS, "a") as f:
-                        f.write(json.dumps(metrics_data) + "\n")
+        .config("spark.sql.shuffle.partitions", "8")
 
-                    logger.info(f"Batch completed | {metrics_data}")
-                    run_id += 1
+        .config("spark.default.parallelism", "8")
 
-except Exception:
-    logger.exception("Batch failed")
+        .config("spark.driver.memory", "4g")
 
-logger.info("BATCH JOB FINISHED")
+        .getOrCreate()
+    )
+
+# =========================================================
+# RUN BATCH JOB
+# =========================================================
+
+def run_batch():
+
+    spark = create_spark()
+
+    spark.sparkContext.setLogLevel("ERROR")
+
+    print("Starting Batch Job...")
+
+    INPUT_PATH = "/app/data/raw/production"
+
+    OUTPUT_PATH = "/app/data/processed/batch"
+
+    # =====================================================
+    # READ PARQUET
+    # =====================================================
+
+    df = (
+        spark.read
+        .schema(input_schema)
+        .parquet(INPUT_PATH)
+    )
+
+    print("Raw parquet loaded")
+
+    # =====================================================
+    # EMPTY CHECK
+    # =====================================================
+
+    if df.limit(1).count() == 0:
+
+        print("No parquet data found")
+
+        spark.stop()
+
+        return
+
+    # =====================================================
+    # REPARTITION
+    # =====================================================
+
+    df = df.repartition(8)
+
+    print("Repartition completed")
+
+    # =====================================================
+    # EXPLODE POWER DETAIL
+    # =====================================================
+
+    flat = df.withColumn(
+
+        "power",
+
+        explode("data.PowerDetail")
+    )
+
+    print("PowerDetail exploded")
+
+    # =====================================================
+    # DEVICE LEVEL AGGREGATIONS
+    # =====================================================
+
+    agg_df = flat.groupBy(
+
+        "device_id",
+
+        "report_id",
+
+        "application_customer_id",
+
+        "platform_customer_id",
+
+        "status",
+
+        "report_type",
+
+        "error_reason",
+
+        "model",
+
+        "tags",
+
+        "location_state",
+
+        "location_country",
+
+        "processor_vendor",
+
+        "server_generation",
+
+        "location_id",
+
+        "location_name",
+
+        "location_city",
+
+        "server_name"
+
+    ).agg(
+
+        avg("power.Average")
+        .alias("avg_metric_value"),
+
+        max("power.Average")
+        .alias("max_metric_value"),
+
+        min("power.Average")
+        .alias("min_metric_value"),
+
+        avg("power.AmbTemp")
+        .alias("amb_temp"),
+
+        avg("power.CpuWatts")
+        .alias("avg_cpu_watts"),
+
+        max("power.CpuWatts")
+        .alias("max_cpu_watts"),
+
+        avg("power.GpuWatts")
+        .alias("avg_gpu_watts"),
+
+        avg("power.Peak")
+        .alias("avg_peak_power"),
+
+        max("power.Peak")
+        .alias("max_peak_power"),
+
+        max("power.Time")
+        .alias("metric_time"),
+
+        first("inventory_data.socket_count")
+        .alias("socket_count"),
+
+        first("inventory_data.cpu_inventory")
+        .alias("cpu_inventory"),
+
+        first("inventory_data.memory_inventory")
+        .alias("memory_inventory")
+    )
+
+    print("Aggregations completed")
+
+    # =====================================================
+    # FINAL OUTPUT
+    # =====================================================
+
+    final_df = agg_df.select(
+
+        col("report_id"),
+
+        col("device_id"),
+
+        col("application_customer_id"),
+
+        col("platform_customer_id"),
+
+        col("status"),
+
+        col("report_type"),
+
+        col("error_reason"),
+
+        round(col("avg_metric_value"), 2)
+        .alias("MetricValue"),
+
+        col("model"),
+
+        col("tags"),
+
+        col("location_state"),
+
+        col("location_country"),
+
+        col("processor_vendor"),
+
+        col("server_generation"),
+
+        col("location_id"),
+
+        col("location_name"),
+
+        col("location_city"),
+
+        col("server_name"),
+
+        lit("power_metric")
+        .alias("metric_id"),
+
+        to_json(col("cpu_inventory"))
+        .alias("cpu_inventory"),
+
+        to_json(col("memory_inventory"))
+        .alias("memory_inventory"),
+
+        lit(0)
+        .cast("int")
+        .alias("pcie_devices_count"),
+
+        col("socket_count")
+        .cast("int")
+        .alias("socket_count"),
+
+        round(col("avg_metric_value"), 2)
+        .alias("avg_metric_value"),
+
+        round(col("max_metric_value"), 2)
+        .alias("max_metric_value"),
+
+        round(col("min_metric_value"), 2)
+        .alias("min_metric_value"),
+
+        round(col("avg_cpu_watts"), 2)
+        .alias("avg_cpu_watts"),
+
+        round(col("max_cpu_watts"), 2)
+        .alias("max_cpu_watts"),
+
+        round(col("avg_gpu_watts"), 2)
+        .alias("avg_gpu_watts"),
+
+        round(col("avg_peak_power"), 2)
+        .alias("avg_peak_power"),
+
+        round(col("max_peak_power"), 2)
+        .alias("max_peak_power"),
+
+        col("metric_time"),
+
+        unix_timestamp("metric_time")
+        .cast("double")
+        .alias("datetime"),
+
+        (
+            unix_timestamp("metric_time") + 60
+        )
+        .cast("double")
+        .alias("timeRangeEnd"),
+
+        round(col("amb_temp"), 2)
+        .alias("amb_temp"),
+
+        unix_timestamp()
+        .cast("double")
+        .alias("Insertiontime"),
+
+        lit(0.5)
+        .cast("double")
+        .alias("co2_factor"),
+
+        lit(1.2)
+        .cast("double")
+        .alias("energy_cost_factor"),
+
+        col("metric_time")
+        .alias("max_metric_time"),
+
+        to_date("metric_time")
+        .cast("string")
+        .alias("location_date"),
+
+        to_date("metric_time")
+        .cast("string")
+        .alias("inventory_date")
+    )
+
+    print("Final output dataframe ready")
+
+    # =====================================================
+    # WRITE OUTPUT
+    # =====================================================
+
+    (
+        final_df
+        .coalesce(2)
+        .write
+        .mode("overwrite")
+        .parquet(OUTPUT_PATH)
+    )
+
+    print(f"Batch parquet written → {OUTPUT_PATH}")
+
+    # =====================================================
+    # STOP SPARK
+    # =====================================================
+
+    spark.stop()
+
+    print("Batch Job Completed Successfully")
+
+# =========================================================
+# MAIN
+# =====================================================
+
+if __name__ == "__main__":
+
+    run_batch()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

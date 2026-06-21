@@ -17,7 +17,6 @@ input_schema = StructType([
             StructField("Minimum", LongType(), True),
             StructField("Peak", LongType(), True),
             StructField("Time", StringType(), True),
-            StructField("is_fresh", BooleanType(), True)
         ])), True)
     ]), True),
     StructField("model", StringType(), True),

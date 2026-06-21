@@ -134,6 +134,7 @@ def _read_mock(device_id: str) -> dict:
     """
     Generates realistic simulated readings with a diurnal power curve.
     Used when MOCK_IPMI=true (default for dev/test).
+    Includes deliberate anomaly injection for Machine Learning training.
     """
     now   = datetime.now(timezone.utc)
     hour  = now.hour + now.minute / 60
@@ -143,9 +144,6 @@ def _read_mock(device_id: str) -> dict:
     seed  = sum(ord(c) for c in device_id)
     base += (seed % 40) - 20
 
-    avg_w   = max(50.0, base + random.gauss(0, 8))
-    peak_w  = int(avg_w * random.uniform(1.05, 1.20))
-    min_w   = int(avg_w * random.uniform(0.80, 0.95))
     import hashlib
     hash_val = int(hashlib.md5(device_id.encode('utf-8')).hexdigest(), 16)
     dev_seed = hash_val % 10000
@@ -153,14 +151,41 @@ def _read_mock(device_id: str) -> dict:
     cpu_max = 3600000 + (dev_seed % 600000)
     cpu_freq = random.randint(2_000_000, cpu_max)
 
+    # ANOMALY INJECTION LOGIC
+    # 2% Critical, 10% Warning, 88% Healthy
+    is_critical = (dev_seed % 50 == 0)
+    is_warning = (dev_seed % 10 == 1)
+
+    if is_critical and random.random() < 0.4:
+        # Critical: Thermal runaway, persistent CPU saturation
+        avg_w = random.uniform(400.0, 550.0)
+        amb_temp = random.uniform(35.0, 48.0)
+        cpu_util = random.randint(95, 100)
+        cpu_watts = random.randint(250, 400)
+    elif is_warning and random.random() < 0.6:
+        # Warning: Higher variability, slight thermal drift, more spikes
+        avg_w = base + random.gauss(50, 25)
+        amb_temp = round(random.uniform(28.0, 36.0), 1)
+        cpu_util = random.randint(60, 95)
+        cpu_watts = random.randint(150, 300)
+    else:
+        # Healthy: Normal behavior
+        avg_w   = max(50.0, base + random.gauss(0, 8))
+        amb_temp = round(random.uniform(18.0, 32.0), 1)
+        cpu_util = random.randint(10, 95)
+        cpu_watts = random.randint(80, 280)
+
+    peak_w  = int(avg_w * random.uniform(1.05, 1.20))
+    min_w   = int(avg_w * random.uniform(0.80, 0.95))
+
     return _make_reading(
-        amb_temp    = round(random.uniform(18.0, 32.0), 1),
+        amb_temp    = amb_temp,
         average     = round(avg_w, 2),
         cpu_avg_freq= cpu_freq,
         cpu_max     = cpu_max,
         cpu_pwr_sav = random.randint(150, 300),
-        cpu_util    = random.randint(10, 95),
-        cpu_watts   = random.randint(80, 280),
+        cpu_util    = cpu_util,
+        cpu_watts   = cpu_watts,
         gpu_watts   = random.randint(0, 400),
         minimum     = min_w,
         peak        = peak_w,

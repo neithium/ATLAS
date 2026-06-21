@@ -1,6 +1,7 @@
 import orjson
 import os
 import argparse
+import random
 
 def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="device_configs.json"):
     """
@@ -31,6 +32,25 @@ def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="devi
             for d_idx in range(1, devices_per_acid + 1):
                 dev_id = f"PLAT{p_idx:04}-APP{a_idx:02}-DEV-{d_idx:04}"
                 
+                # Hardware Pools for diversity
+                MODELS = [
+                    ("PowerEdge R750", "Intel", "15G", {"model": "Intel Xeon Platinum 8380", "speed": 2300, "total_cores": 40}),
+                    ("ProLiant DL385", "AMD", "Gen10", {"model": "AMD EPYC 7763", "speed": 2450, "total_cores": 64}),
+                    ("ThinkSystem SR650", "Intel", "V2", {"model": "Intel Xeon Gold 6330", "speed": 2000, "total_cores": 28}),
+                    ("Cisco UCS C240", "AMD", "M6", {"model": "AMD EPYC 7313", "speed": 3000, "total_cores": 16})
+                ]
+                
+                RAM_OPTIONS = [
+                    {"memory_size": 32, "operating_freq": 3200, "memory_device_type": "DDR4"},
+                    {"memory_size": 64, "operating_freq": 3200, "memory_device_type": "DDR4"},
+                    {"memory_size": 128, "operating_freq": 4800, "memory_device_type": "DDR5"},
+                    {"memory_size": 256, "operating_freq": 4800, "memory_device_type": "DDR5"}
+                ]
+
+                # Select Hardware
+                hw_model, hw_vendor, hw_gen, hw_cpu = random.choice(MODELS)
+                hw_ram = random.choice(RAM_OPTIONS)
+                
                 # Select Geographic Location (Rotation)
                 loc = LOCATIONS[global_counter % len(LOCATIONS)]
                 
@@ -39,9 +59,9 @@ def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="devi
                     "application_customer_id": acid,
                     "device_id": dev_id,
                     "server_name": f"host-{global_counter:06}",
-                    "model": "PowerEdge R750",
-                    "processor_vendor": "Intel",
-                    "server_generation": "15G",
+                    "model": hw_model,
+                    "processor_vendor": hw_vendor,
+                    "server_generation": hw_gen,
                     "tags": "production,critical",
                     "status": True,
                     "report_type": "telemetry_live",
@@ -53,10 +73,10 @@ def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="devi
                     "location_state": loc["state"],
                     "location_country": loc["country"],
                     "inventory_data": {
-                        "cpu_count": 2,
-                        "socket_count": 2,
-                        "cpu_inventory": [{"model": "Intel Xeon Platinum 8380", "speed": 2300, "total_cores": 40}],
-                        "memory_inventory": [{"memory_size": 32, "operating_freq": 3200, "memory_device_type": "DDR4"}]
+                        "cpu_count": random.choice([1, 2, 4]),
+                        "socket_count": random.choice([1, 2]),
+                        "cpu_inventory": [hw_cpu],
+                        "memory_inventory": [hw_ram]
                     }
                 }
                 

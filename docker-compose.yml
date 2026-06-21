@@ -23,12 +23,9 @@
 #
 # =============================================================================
 
-networks:
-  atlas-network:
-    driver: bridge
-    name: atlas-network
 
 volumes:
+  grafana-data:
   kafka-data:
   postgres-data:
   clickhouse-data:
@@ -47,6 +44,8 @@ volumes:
   minio-data:
   ingestion-tsdb-data:
   airflow-db-data:
+  telemetry-cache-data:
+  batch-data:
 
 services:
   # ===========================================================================
@@ -61,14 +60,14 @@ services:
   #   - Streaming: On-Demand Kafka Outgress for Hierarchical Exports
   # ===========================================================================
   # ── OBSERVABILITY: JAEGER (Tracing UI) ──────────────────────────────────
-  jaeger:
-    image: jaegertracing/all-in-one:1.47
-    container_name: atlas-tracing
-    ports:
-      - "16686:16686"   # Jaeger UI
-      - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
-    networks:
-      - atlas-network
+  # jaeger:
+  #   image: jaegertracing/all-in-one:1.47
+  #   container_name: atlas-tracing
+  #   ports:
+  #     - "16686:16686"   # Jaeger UI
+  #     - "4317:4317"     # OTLP gRPC receiver (Ingestion sends traces here)
+  #   networks:
+  #     - atlas-network
 
   atlas-ingestion:
     build:
@@ -79,7 +78,8 @@ services:
     ports:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
-      - "9002:9001"    # MinIO Console (Moved to 9002 to avoid conflict)
+      - "9002:9001"    # MinIO Console
+      - "8082:8081"    # TSDB UI (PostWeb) — 8081 reserved for Airflow
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
@@ -90,18 +90,21 @@ services:
       - MINIO_BUCKET=telemetry-raw
       # All 3 brokers listed — producer stays up even if broker1 crashes.
       # Kafka needs only ONE reachable bootstrap to discover the full cluster.
-      - KAFKA_BOOTSTRAP=broker1:9092,broker2:9092,broker3:9092
+      - KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-broker1:9092,broker2:9092,broker3:9092}
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
-      - SCALE_SIZE=2000
+      - SCALE_SIZE=${SCALE_SIZE:-80000}
     networks:
       - atlas-network
+    shm_size: 1gb
     volumes:
       - ./ingestion:/app
+      - telemetry-cache-data:/app/telemetry-cache
       - redis-data:/data/redis
       - minio-data:/data/minio
       - ingestion-tsdb-data:/data/timescale
+      - batch-data:/app/data
     deploy:
       resources:
         limits:
@@ -113,9 +116,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    depends_on:
-      broker1:
-        condition: service_healthy
     command: ["/app/v2/entrypoint.sh"]
 
 
@@ -188,6 +188,7 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
@@ -263,6 +264,7 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
@@ -338,6 +340,7 @@ services:
       - KAFKA_CFG_LOG_SEGMENT_BYTES=1073741824
       - KAFKA_CFG_MESSAGE_MAX_BYTES=524288000
       - KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES=524288000
+      - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
@@ -401,6 +404,8 @@ services:
   #   - Maintains checkpointing for fault tolerance
   # ===========================================================================
 
+  # TODO: Sanjula - Implement Spark Structured Streaming job
+
   atlas-processor:
     depends_on:
       broker1:
@@ -416,11 +421,13 @@ services:
 
     ports:
       - "0:4040"
+    # ports:
+    #   - "4041:4040"
 
     environment:
       - SPARK_MODE=driver
-      - SPARK_DRIVER_MEMORY=1g
-      - SPARK_EXECUTOR_MEMORY=1g
+      - SPARK_DRIVER_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=2g
 
     mem_limit: 2g
 
@@ -432,30 +439,36 @@ services:
       - ./ingestion/data/archive:/app/data/archive
       - C:/Users/Public/atlas-data/refined:/app/data/processed/batch
       - delta-refined:/app/data/processed
+      - batch-data:/app/data 
 
     networks:
       - atlas-network
       
+    
     command: >
-      bash -c "
-      mkdir -p /app/data/raw &&
-      mkdir -p /app/data/processed/stream &&
-      mkdir -p /app/data/processed/batch &&
-      mkdir -p /app/checkpoint/stream &&
+          bash -c "
+          mkdir -p /app/data/raw &&
+          mkdir -p /app/data/processed/stream &&
+          mkdir -p /app/data/processed/batch &&
+          mkdir -p /app/checkpoint/stream &&
+    
+          echo '⏳ Waiting for Kafka to stabilize...' &&
+          sleep 40 &&
+    
+          tail -f /dev/null
+          "  
 
-      echo '⏳ Waiting for Kafka to stabilize...' &&
-      sleep 40 &&
+  dlq-reviewer:
+    build: ./processing/dlq
 
-      echo '🚀 Starting Kafka Streaming...' &&
-      spark-submit \
-      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
-      /app/jobs/kafka_streaming.py &
+    container_name: dlq-reviewer
 
-      echo '🚀 Starting Batch Job...' &&
-      spark-submit /app/jobs/batch_job.py &
+    restart: always
+    networks:
+      - atlas-network
 
-      wait
-      "
+    depends_on:
+      - broker1
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
@@ -488,9 +501,8 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     volumes:
-      # Shared volumes for inter-container data flow (bind mounts to /Users/Public/atlas-data)
-      - C:/Users/Public/atlas-data/raw:/raw
-      - C:/Users/Public/atlas-data/refined:/refined
+      # Shared volumes for inter-container data flow
+      - delta-refined:/refined
       - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
@@ -614,12 +626,17 @@ services:
       - clickhouse-data:/var/lib/clickhouse
       - postgres-data:/var/lib/postgresql/data
       - C:/Users/Public/atlas-data/refined:/data/refined:ro
+      # Mount Delta Lake volume for streaming metrics (READ-WRITE for DeltaTable metadata)
+      - delta-refined:/refined
+      # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
       - ./storage/clickhouse/delta_loader.py:/app/clickhouse/delta_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/supervisord.conf:/etc/supervisor/conf.d/atlas.conf:ro
+      - ./storage/app.py:/app/app.py:ro
+      # Schema reference
       - ./schema:/app/schema:ro
     networks:
       - atlas-network
@@ -703,3 +720,20 @@ services:
       - atlas-network
     mem_limit: 512m
     command: scheduler
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: atlas-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - atlas-network
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+networks:
+  atlas-network:
+    driver: bridge
+    name: atlas-network

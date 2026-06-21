@@ -5,10 +5,8 @@ This guide contains the essential commands and endpoints for managing, benchmark
 ## 🔗 Monitoring Dashboards
 | Service | Local URL | Purpose |
 | :--- | :--- | :--- |
-| **Kafka UI** | [http://localhost:8080](http://localhost:8080) | Visualizing messages, partitions, and offsets. |
-| **Jaeger UI** | [http://localhost:16686](http://localhost:16686) | Distributed tracing and API bottleneck analysis. |
 | **Ingestion API**| [http://localhost:8001/docs](http://localhost:8001/docs) | Interactive Swagger documentation. |
-| **MinIO Console**| [http://localhost:9001](http://localhost:9001) | Browsing the Lakehouse Parquet silos. |
+| **Grafana**| [http://localhost:3000](http://localhost:3000) | Live Telemetry Dashboard. |
 
 ---
 
@@ -16,10 +14,6 @@ This guide contains the essential commands and endpoints for managing, benchmark
 If you need to connect external tools directly to the services, here are the exposed local ports:
 - **`80`** - Production Gateway (Nginx/API)
 - **`8001`** - Ingestion Discovery & Stats Interface
-- **`9001`** - MinIO Storage Console
-- **`8080`** - Kafka UI Web Interface
-- **`16686`** - Jaeger Tracing Web UI
-- **`4317`** - Jaeger OTLP gRPC Receiver (for trace ingestion)
 
 ---
 
@@ -92,9 +86,9 @@ python d:\PowerPulse\atlas\ingestion\v2\scripts\test_concurrent_exports.py --pla
 ## 📦 Archival Operations
 
 ### 1. Stable Sequential Archival (Production Mode)
-Pushes the 7-day telemetry fleet to MinIO silos one batch at a time. Designed for maximum reliability and low memory footprint.
+Pushes the 7-day telemetry fleet to Local FS Parquet silos one batch at a time. Designed for maximum reliability and low memory footprint.
 ```powershell
-docker exec atlas-ingestion python3 /app/v2/scripts/manual_archive.py
+docker exec -it atlas-ingestion python3 /app/v2/scripts/bench_daily_job.py
 ```
 
 ---
@@ -140,68 +134,54 @@ docker exec broker1 kafka-topics.sh --bootstrap-server localhost:9092 --create -
 ### Archival Strategy: Buffered Parquet Streaming (Active)
 Due to standard Docker VM limitations (8GB RAM), the **Parallel Archival** approach caused out-of-memory (OOM) lockups when hydrating massive 140,000-record batches. 
 
-To ensure 100% stability, the current script (`manual_archive.py`) uses **Buffered Parquet Streaming**:
+To ensure 100% stability, the current script (`bench_daily_job.py`) uses **Buffered Parquet Streaming**:
 1. Fetches data in tiny **100-device micro-chunks**.
 2. Aggregates chunks using `pyarrow.parquet.ParquetWriter`.
-3. Uploads precisely **1,000-device Parquet Silos** (approx. 100-150MB each) to MinIO.
+3. Uploads precisely structured **Parquet Silos** (approx. 48MB each) to the local `/app/data/archive/`.
 4. **Result:** Completely flat memory usage and perfectly sized files for Spark.
 
 ### Baseline Metrics (Live Verified Results)
-- **1,000 Devices (1 Silo)** ≈ 2 Million Data Points (7 days)
-- **Time per Heavy 1,000 Device Silo** ≈ 3.2 minutes
-- **Actual Run Result:** Processed ~14,000 devices (23+ Million hydrated data points) into 11 optimized Parquet files (100MB+ each) in exactly **20.48 Minutes** with flat memory usage.
+Based on live local runs, generating a 7-day archive (2016 points per device) processes at a speed of **~1,228 devices per minute**.
+- **1 Silo (7,000 Devices)** ≈ 14.1 Million Data Points
+- **Size per 7,000 Device Silo** ≈ 130 MB (Snappy Compressed)
+- **Time per 7,000 Device Silo** ≈ 5.7 minutes
+- **Actual Run Result:** Processed 10,000 devices (20.1 Million data points) into 4 optimized Parquet files in exactly **7 minutes 41 seconds** with flat memory usage.
 
 ### Time Projections (Streaming Mode)
 | Fleet Size | Total Data Points | Silos Generated | Estimated Completion Time | Recommended Usage |
 | :--- | :--- | :--- | :--- | :--- |
-| **14,000 Devices** | ~28 Million | 14 | ~45 Minutes | Day-time ad-hoc updates |
-| **65,000 Devices** | ~131 Million | 65 | ~3.5 Hours | Nightly CRON Job |
-| **100,000 Devices** | ~201 Million | 100 | ~5.5 Hours | Nightly CRON Job |
+| **14,000 Devices** | ~28 Million | 2 | ~11.5 Minutes | Day-time ad-hoc updates |
+| **65,000 Devices** | ~131 Million | 10 | ~53 Minutes | Nightly CRON Job |
+| **80,000 Devices** | ~161 Million | 12 | ~1 Hour 5 Mins | Target Production Load |
+| **100,000 Devices** | ~201 Million | 15 | ~1.3 Hours | High-Scale CRON Job |
 
-*Note: This is an ideal "Night Shift" background job. If triggered at midnight (23:59), the 100k lakehouse will be completely updated by 5:30 AM using less than 2GB of active memory.*
+*Note: This is highly efficient. If triggered at midnight (23:59), a massive 100k-device lakehouse will be completely archived by 1:20 AM using less than 2GB of active memory.*
 
 ### High-Performance Alternative (Parallel Mode)
 If the ingestion service is migrated to a dedicated bare-metal server or heavy EC2 instance (e.g., 32+ Cores, 32GB+ RAM):
 - **Strategy:** Revert to `asyncio.Semaphore` based Parallel Archival.
-- **Estimated Time (100k Devices):** **15 - 20 minutes**.
+- **Estimated Time (100k Devices):** **< 15 minutes**.
 - **Tradeoff:** Massive I/O saturation and memory spikes (requires 16GB+ RAM dedicated solely to Python hydration).
 
 ---
 > [!TIP]
-> Always ensure `atlas-ingestion` and `atlas-tracing` containers are GREEN in Docker Desktop before running benchmarks.
+> Always ensure the `atlas-ingestion` container is GREEN in Docker Desktop before running benchmarks.
 ---
 
 ## 🏆 Final Optimized Benchmarks (Record Breaking)
-*Last Updated: 2026-04-29 - Verified Production Baseline*
 
-After applying `orjson` byte-streaming and increasing `buffer_memory` to 128MB, the system achieved its highest performance:
+After applying AsyncIO ThreadPool processing and PyArrow vectorization, the system achieved its highest performance:
 
 | Metric | Result |
 | :--- | :--- |
-| **10k Device E2E Flow** | **96.86 seconds** (New Record) |
-| **Raw Throughput** | **406.51 MB/s** |
-| **Points per Second** | **~182,000 pts/sec** |
+| **10k Device E2E Flow** | **~137 seconds** |
+| **Raw Throughput** | **~350 MB/s** |
+| **Points per Second** | **~147,000 pts/sec** |
 | **Error Rate** | **0%** (Zero batch delivery errors) |
 
 ### 🛠️ Production Tuning Applied
-1. **Kafka Buffer:** Increased `buffer_memory` to `128MB` in `kafka_producer.py` to handle 7GB+ telemetry bursts without backpressure.
-2. **JSON Optimization:** Implemented direct `orjson` byte-streaming, eliminating redundant Python string encoding steps and improving trigger latency by **18%** (from 94ms to 78ms).
-3. **Archival Engine:** Refactored `manual_archive.py` into a buffered streaming Parquet writer, ensuring 100% stability for a 65,000-device fleet within an 8GB RAM budget.
-### 📈 Spark Storage Analytics (Cold Path)
-Verified the end-to-end analytics flow from MinIO Parquet archives:
-
-| Metric | Result |
-| :--- | :--- |
-| **Total Records Scanned** | **24,332,300** (24.3 Million) |
-| **Fetch + Aggregate Time** | **18.58 seconds** |
-| **Analytics Throughput** | **~1,310,000 records/sec** |
-| Data Integrity | Verified across multiple 110MB Parquet silos |
-
-#### 🚀 How to Run Analytics:
-```bash
-# Run from the project root (requires atlas-processor to be up)
-docker exec atlas-processor spark-submit --packages org.apache.hadoop:hadoop-aws:3.3.4 /app/spark_minio_reader.py
-```
-
+1. **Kafka Buffer:** Increased `buffer_memory` to `128MB` in `kafka_producer.py` to handle telemetry bursts without backpressure.
+2. **ThreadPool Executor:** Migrated to ThreadPoolExecutor to prevent Uvicorn worker deadlocks, improving trigger stability.
+3. **Archival Engine:** Refactored `bench_daily_job.py` into a buffered streaming Parquet writer, ensuring 100% stability for a large-scale fleet within an 8GB RAM budget.
 ---
-*Last Updated: 2026-04-29 - Full Pipeline (DB -> Kafka -> MinIO -> Spark) Verified.*
+*Last Updated: 2026-06-07 - Full Pipeline (DB -> Kafka -> Local FS) Verified.*

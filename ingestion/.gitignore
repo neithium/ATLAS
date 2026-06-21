@@ -29,3 +29,5 @@ ingestion/device_configs.json
 /data/
 /archive/
 /telemetry-cache/
+/media/
+v2/scripts/powerpulse_viz.py

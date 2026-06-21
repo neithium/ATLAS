@@ -115,5 +115,22 @@ if [ -s "$PGDATA/PG_VERSION" ]; then
     su -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w stop" postgres 2>/dev/null
 fi
 
+# ---------- Clear Streamlit cache on every start ----------
+# Ensures latest app.py changes are reflected without browser cache issues
+echo "[entrypoint] Clearing Streamlit cache..."
+rm -rf ~/.streamlit/cache 2>/dev/null || true
+mkdir -p ~/.streamlit
+cat > ~/.streamlit/config.toml <<EOF
+[client]
+showErrorDetails = true
+
+[logger]
+level = "info"
+
+[client]
+toolbarMode = "minimal"
+EOF
+echo "[entrypoint] Streamlit cache cleared and config initialized."
+
 echo "[entrypoint] Starting supervisord..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/atlas.conf
