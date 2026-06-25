@@ -490,18 +490,18 @@ services:
           tail -f /dev/null
           "  
 
-  dlq-reviewer:
+  # dlq-reviewer:
 
-    build: ./processing/dlq
+  #   build: ./processing/dlq
 
-    container_name: dlq-reviewer
+  #   container_name: dlq-reviewer
 
-    restart: always
-    networks:
-      - atlas-network
+  #   restart: always
+  #   networks:
+  #     - atlas-network
 
-    depends_on:
-      - broker1
+  #   depends_on:
+  #     - broker1
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
@@ -884,17 +884,17 @@ services:
           --rate $$RECORDS_PER_SECOND
       "
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: atlas-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    networks:
-      - atlas-network
-    volumes:
-      - grafana-data:/var/lib/grafana
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: atlas-grafana
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #   networks:
+  #     - atlas-network
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
 
 networks:
   atlas-network:
