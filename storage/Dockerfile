@@ -54,8 +54,9 @@ RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 COPY supervisord.conf /etc/supervisor/conf.d/atlas.conf
 COPY entrypoint.sh /app/entrypoint.sh
 COPY loader-start.sh /app/loader-start.sh
+COPY ml-loader-start.sh /app/ml-loader-start.sh
 COPY app.py /app/app.py
-RUN chmod +x /app/entrypoint.sh /app/loader-start.sh
+RUN chmod +x /app/entrypoint.sh /app/loader-start.sh /app/ml-loader-start.sh
 
 # ---------- Directories ----------
 RUN mkdir -p /app/init-scripts /var/lib/clickhouse /var/lib/postgresql/data \

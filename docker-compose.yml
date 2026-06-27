@@ -685,6 +685,10 @@ services:
       # must use 127.0.0.1 since all three services share one network namespace.
       - CLICKHOUSE_HOST=127.0.0.1
       - POSTGRES_HOST=127.0.0.1
+      # ML Loader configuration
+      - ML_PREDICTIONS_PATH=/data/ml_predictions
+      - ML_SCHEDULE_INTERVAL_SECONDS=300
+      - ML_BATCH_SIZE=10000
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - postgres-data:/var/lib/postgresql/data
@@ -698,8 +702,11 @@ services:
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
       # Application code
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
+      - ./storage/clickhouse/ml_loader.py:/app/ml_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/app.py:/app/app.py:ro
+      # ML predictions from inference layer (read-only)
+      - C:/Users/Public/atlas-data/ml_predictions:/data/ml_predictions:ro
       # Schema reference
       - ./schema:/app/schema:ro
     networks:
