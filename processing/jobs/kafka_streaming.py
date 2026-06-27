@@ -3,34 +3,193 @@ import time
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
-from input_schema import input_schema
+from pyspark.sql.types import *
 
-# ---------------- SPARK ----------------
-spark = SparkSession.builder \
-    .appName("Streaming-Final-Correct") \
-    .master("local[6]") \
-    .config("spark.sql.shuffle.partitions", "12") \
-    .config("spark.default.parallelism", "12") \
-    .config("spark.sql.streaming.kafka.offsetFetch.timeoutMs", "120000") \
+# =========================================================
+# WORKER CONFIG
+# =========================================================
+
+WORKER_ID = os.getenv("WORKER_ID", "1")
+
+print(f"STARTING WORKER {WORKER_ID}")
+
+# =========================================================
+# SPARK SESSION
+# =========================================================
+
+spark = (
+
+    SparkSession.builder
+
+    .appName(f"KafkaConsumerWorker-{WORKER_ID}")
+
+    .master("local[1]")
+
+    .config("spark.sql.shuffle.partitions", "3")
+
+    .config("spark.default.parallelism", "3")
+
+    .config(
+        "spark.streaming.stopGracefullyOnShutdown",
+        "true"
+    )
+
+    .config(
+        "spark.sql.streaming.stateStore.providerClass",
+        "org.apache.spark.sql.execution.streaming.state.HDFSBackedStateStoreProvider"
+    )
+
+    .config(
+        "spark.serializer",
+        "org.apache.spark.serializer.KryoSerializer"
+    )
+
     .getOrCreate()
 )
 
-spark.sparkContext.setLogLevel("ERROR")
+spark.sparkContext.setLogLevel("WARN")
 
-print("🚀 Streaming Started (FINAL CORRECT)")
+# =========================================================
+# INPUT SCHEMA
+# =========================================================
 
-# ---------------- READ KAFKA ----------------
-df = spark.readStream.format("kafka") \
-    .option("kafka.bootstrap.servers", "broker1:9092") \
-    .option("subscribe", "raw-server-metrics") \
-    .option("startingOffsets", "latest") \
-    .option("kafka.group.id", "atlas-processor-streaming-group") \
-    .option("failOnDataLoss", "false") \
-    .option("kafka.request.timeout.ms", "120000") \
-    .option("kafka.session.timeout.ms", "60000") \
-    .option("kafka.metadata.max.age.ms", "5000") \
-    .option("kafka.consumer.request.timeout.ms", "120000") \
-    .option("kafka.default.api.timeout.ms", "120000") \
+input_schema = StructType([
+
+    StructField("device_id", StringType()),
+
+    StructField("report_id", StringType()),
+
+    StructField("created_at", StringType()),
+
+    StructField("status", BooleanType()),
+
+    StructField("model", StringType()),
+
+    StructField("tags", StringType()),
+
+    StructField("report_type", StringType()),
+
+    StructField("server_name", StringType()),
+
+    StructField("error_reason", StringType()),
+
+    StructField("location_id", StringType()),
+
+    StructField("location_city", StringType()),
+
+    StructField("location_name", StringType()),
+
+    StructField("location_state", StringType()),
+
+    StructField("location_country", StringType()),
+
+    StructField("processor_vendor", StringType()),
+
+    StructField("server_generation", StringType()),
+
+    StructField("platform_customer_id", StringType()),
+
+    StructField("application_customer_id", StringType()),
+
+    StructField("metric_type", StringType()),
+
+    StructField(
+        "data",
+
+        StructType([
+
+            StructField(
+
+                "PowerDetail",
+
+                ArrayType(
+
+                    StructType([
+
+                        StructField(
+                            "Average",
+                            DoubleType()
+                        ),
+
+                        StructField(
+                            "Minimum",
+                            DoubleType()
+                        ),
+
+                        StructField(
+                            "Peak",
+                            DoubleType()
+                        ),
+
+                        StructField(
+                            "Time",
+                            StringType()
+                        )
+                    ])
+                )
+            )
+        ])
+    ),
+
+    StructField(
+
+        "inventory_data",
+
+        StructType([
+
+            StructField(
+                "socket_count",
+                IntegerType()
+            )
+        ])
+    )
+])
+
+# =========================================================
+# READ FROM KAFKA
+# =========================================================
+
+df = (
+
+    spark.readStream
+
+    .format("kafka")
+
+    .option(
+        "kafka.bootstrap.servers",
+        "broker1:9092"
+    )
+
+    .option(
+        "subscribe",
+        "raw-server-metrics,raw-server-metrics-retry"
+    )
+
+    .option(
+        "startingOffsets",
+        "latest"
+    )
+
+    .option(
+        "groupIdPrefix",
+        "atlas-stream-group"
+    )
+
+    .option(
+        "failOnDataLoss",
+        "false"
+    )
+
+    .option(
+        "maxOffsetsPerTrigger",
+        "3000"
+    )
+
+    .option(
+        "minPartitions",
+        "12"
+    )
+
     .load()
 )
 
@@ -38,8 +197,18 @@ df = spark.readStream.format("kafka") \
 # RAW JSON
 # =========================================================
 
-raw_df = df.selectExpr(
-    "CAST(value AS STRING) as raw_json"
+raw_df = df.select(
+
+    col("topic"),
+
+    col("partition"),
+
+    col("offset"),
+
+    col("timestamp").alias("kafka_timestamp"),
+
+    expr("CAST(value AS STRING)")
+    .alias("raw_json")
 )
 
 # =========================================================
@@ -47,6 +216,15 @@ raw_df = df.selectExpr(
 # =========================================================
 
 parsed = raw_df.select(
+
+    col("topic"),
+
+    col("partition"),
+
+    col("offset"),
+
+    col("kafka_timestamp"),
+
     col("raw_json"),
 
     from_json(
@@ -56,30 +234,100 @@ parsed = raw_df.select(
 )
 
 # =========================================================
-# VALID / INVALID
+# ERROR CLASSIFICATION ENGINE
 # =========================================================
 
-valid_df = parsed.filter(
-    col("data").isNotNull() &
-    col("data.data.PowerDetail").isNotNull()
+classified_df = parsed.withColumn(
+
+    "error_type",
+
+    when(
+        col("data").isNull(),
+
+        when(
+            col("raw_json").contains("socket_count"),
+            "INVALID_SOCKET_COUNT"
+        ).otherwise("INVALID_SCHEMA")
+    )
+    .when(
+        col("data.device_id").isNull(),
+        "MISSING_DEVICE_ID"
+    )
+
+    .when(
+        col("data.data.PowerDetail").isNull(),
+        "MISSING_POWERDETAIL"
+    )
+
+    .when(
+        col("data.inventory_data.socket_count")
+        .cast("int")
+        .isNull(),
+
+        "INVALID_SOCKET_COUNT"
+    )
+
+    .otherwise("VALID")
 )
 
-invalid_df = parsed.filter(
-    col("data").isNull() |
-    col("data.data.PowerDetail").isNull()
+# =========================================================
+# VALID / INVALID SPLIT
+# =========================================================
+
+valid_df = classified_df.filter(
+    col("error_type") == "VALID"
+)
+
+invalid_df = classified_df.filter(
+    col("error_type") != "VALID"
+)
+
+# =========================================================
+# DLQ PAYLOAD
+# =========================================================
+
+invalid_kafka_df = invalid_df.select(
+
+    to_json(
+
+        struct(
+
+            col("raw_json"),
+
+            col("error_type"),
+
+            col("topic"),
+
+            col("partition"),
+
+            col("offset"),
+
+            col("kafka_timestamp"),
+
+            current_timestamp()
+            .alias("failed_at"),
+
+            lit(WORKER_ID)
+            .alias("worker_id")
+        )
+
+    ).alias("value")
+
+).selectExpr(
+
+    "CAST(null AS STRING) AS key",
+
+    "CAST(value AS STRING) AS value"
 )
 
 # =========================================================
 # DLQ STREAM
 # =========================================================
 
-invalid_kafka_df = invalid_df.selectExpr(
-    "CAST(null AS STRING) AS key",
-    "raw_json AS value"
-)
-
 dlq_query = (
+
     invalid_kafka_df.writeStream
+
     .format("kafka")
 
     .option(
@@ -102,13 +350,20 @@ dlq_query = (
     .start()
 )
 
+print("DLQ Stream Started")
+
 # =========================================================
-# PIPELINE
+# CONTINUE VALID PIPELINE
 # =========================================================
 
 parsed_clean = valid_df.select("data.*")
 
+# =========================================================
+# EXPLODE POWER DETAIL
+# =========================================================
+
 flat = (
+
     parsed_clean
 
     .withColumn(
@@ -121,6 +376,10 @@ flat = (
         to_timestamp(col("p.Time"))
     )
 )
+
+# =========================================================
+# REMOVE INVALID TIMESTAMPS
+# =========================================================
 
 flat = flat.filter(
     col("event_time").isNotNull()
@@ -140,6 +399,7 @@ flat = flat.repartition(
 # =========================================================
 
 agg = (
+
     flat
 
     .withWatermark(
@@ -148,8 +408,11 @@ agg = (
     )
 
     .groupBy(
+
         col("device_id"),
-        to_date("event_time").alias("location_date")
+
+        to_date("event_time")
+        .alias("location_date")
     )
 
     .agg(
@@ -283,22 +546,35 @@ final_df = agg.select(
 
     col("socket_count"),
 
-    col("avg_metric_value"),
+    round(
+        col("avg_metric_value"),
+        2
+    ).alias("avg_metric_value"),
 
-    col("max_metric_value"),
+    round(
+        col("max_metric_value"),
+        2
+    ).alias("max_metric_value"),
 
-    col("min_metric_value"),
+    round(
+        col("min_metric_value"),
+        2
+    ).alias("min_metric_value"),
 
     col("location_date")
     .cast("string")
     .alias("metric_time"),
 
-    lit(None)
-    .cast("double")
+    unix_timestamp(
+        col("location_date")
+    ).cast("double")
     .alias("datetime"),
 
-    lit(None)
-    .cast("double")
+    (
+        unix_timestamp(
+            col("location_date")
+        ) + 60
+    ).cast("double")
     .alias("timeRangeEnd"),
 
     lit(None)
@@ -309,15 +585,15 @@ final_df = agg.select(
     .cast("double")
     .alias("Insertiontime"),
 
-    lit(None)
+    lit(0.5)
     .cast("double")
     .alias("co2_factor"),
 
-    lit(None)
+    lit(1.2)
     .cast("double")
     .alias("energy_cost_factor"),
 
-    lit(None)
+    col("location_date")
     .cast("string")
     .alias("max_metric_time"),
 
@@ -339,16 +615,29 @@ def write_batch(df, epoch_id):
     start_time = time.time()
 
     print(
-        f"🚀 WORKER {WORKER_ID} "
+        f"WORKER {WORKER_ID} "
         f"| BATCH {epoch_id} START"
     )
 
-    if not df.rdd.isEmpty():
+    row_count = df.count()
+
+    print(
+        f"WORKER {WORKER_ID} "
+        # f"| RECORDS {row_count}"
+    )
+
+    if row_count > 0:
 
         (
             df.write
+
             .mode("append")
-            .option("compression", "snappy")
+
+            .option(
+                "compression",
+                "snappy"
+            )
+
             .parquet(
                 f"/app/data/processed/stream/worker_{WORKER_ID}"
             )
@@ -356,10 +645,16 @@ def write_batch(df, epoch_id):
 
     duration = time.time() - start_time
 
+    throughput = (
+        row_count / duration
+        if duration > 0 else 0
+    )
+
     print(
-        f"✅ WORKER {WORKER_ID} "
+        f"WORKER {WORKER_ID} "
         f"| BATCH {epoch_id} "
-        f"| completed in {duration:.2f}s"
+        f"| completed in {duration:.2f}s "
+        f"| throughput={throughput:.2f} rec/sec"
     )
 
 # =========================================================
@@ -367,6 +662,7 @@ def write_batch(df, epoch_id):
 # =========================================================
 
 query = (
+
     final_df.writeStream
 
     .foreachBatch(write_batch)
@@ -386,7 +682,15 @@ query = (
 )
 
 # =========================================================
+# STARTED
+# =========================================================
+
+print("Main Streaming Query Started")
+
+# =========================================================
 # WAIT
 # =========================================================
 
 query.awaitTermination()
+
+

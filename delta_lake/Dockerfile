@@ -11,7 +11,8 @@ USER root
 # - pyarrow: Columnar data processing
 RUN pip install --timeout 120 --retries 5 \
     delta-spark==3.1.0 \
-    pyarrow>=14.0.0
+    pyarrow>=14.0.0 \
+    pytz
 
 # Create app directory structure
 RUN mkdir -p /app/data/raw /app/data/refined
