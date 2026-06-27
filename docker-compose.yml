@@ -706,7 +706,7 @@ services:
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/app.py:/app/app.py:ro
       # ML predictions from inference layer (read-only)
-      - C:/Users/Public/atlas-data/ml_predictions:/data/ml_predictions:ro
+      - ./delta_lake/data:/data/ml_predictions:ro
       # Schema reference
       - ./schema:/app/schema:ro
     networks:
