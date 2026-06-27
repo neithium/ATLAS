@@ -940,6 +940,25 @@ services:
           --rate $$RECORDS_PER_SECOND
       "
 
+  atlas-ml:
+    build:
+      context: ./ML-Model
+      dockerfile: Dockerfile
+    container_name: atlas-ml
+    hostname: ml-model
+    volumes:
+      - ./ML-Model:/app
+      - ./ingestion/device_configs.json:/ingestion/device_configs.json:ro
+    working_dir: /app
+    healthcheck:
+      test: ["CMD", "python3", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - atlas-network
+
   grafana:
     image: grafana/grafana:latest
     container_name: atlas-grafana

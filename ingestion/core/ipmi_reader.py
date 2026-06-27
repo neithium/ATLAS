@@ -25,6 +25,19 @@ MOCK_MODE = os.getenv("MOCK_IPMI", "true").lower() == "true"
 
 log = logging.getLogger(__name__)
 
+# ── Load Registry for AI Tag Profiling ──────────────────────────────────────────
+_REGISTRY_CACHE = {}
+try:
+    import json
+    for p in ["device_configs.json", "/app/device_configs.json", os.path.join(os.path.dirname(__file__), "..", "..", "device_configs.json")]:
+        if os.path.exists(p):
+            with open(p, "rb") as f:
+                _REGISTRY_CACHE = json.load(f)
+            break
+except Exception as e:
+    log.warning(f"Could not load device registry for tags: {e}")
+
+
 
 # ── shared output shape ───────────────────────────────────────────────────────
 
@@ -138,11 +151,29 @@ def _read_mock(device_id: str) -> dict:
     """
     now   = datetime.now(timezone.utc)
     hour  = now.hour + now.minute / 60
-    # Sine curve: peak ~14:00, trough ~02:00
-    base  = 200 + 150 * math.sin(math.pi * (hour - 2) / 12)
-    # Different base load per device so they don't all look identical
-    seed  = sum(ord(c) for c in device_id)
-    base += (seed % 40) - 20
+    
+    # ── AI PROFILING: Determine baseline from device tags ──
+    device_info = _REGISTRY_CACHE.get(device_id, {})
+    tags = device_info.get("tags", "")
+    
+    if "db_server" in tags:
+        base = 380 + random.gauss(0, 10)
+    elif "ui_server" in tags:
+        base = 150 + random.gauss(0, 5)
+    elif "compute_node" in tags:
+        base = 300 + 100 * math.sin(math.pi * (hour - 2) / 12)
+    elif "ml_worker" in tags:
+        # Spikes to 400W when training, idles at 100W
+        base = 400 + random.gauss(0, 15) if (hour % 4 < 2) else 100 + random.gauss(0, 5)
+    elif "cache_server" in tags:
+        # Extremely flat, predictable power usage
+        base = 250 + random.gauss(0, 2)
+    else:
+        # Generic Sine curve: peak ~14:00, trough ~02:00
+        base  = 200 + 150 * math.sin(math.pi * (hour - 2) / 12)
+        # Different base load per device so they don't all look identical
+        seed  = sum(ord(c) for c in device_id)
+        base += (seed % 40) - 20
 
     import hashlib
     hash_val = int(hashlib.md5(device_id.encode('utf-8')).hexdigest(), 16)
