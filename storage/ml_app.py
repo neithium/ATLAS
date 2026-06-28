@@ -5,8 +5,25 @@ import requests
 import json
 import os
 import re
+from pathlib import Path
 
 PROMPT_FILE_PATH = "/app/prompts/rca_system_prompt.txt"
+ASSET_DIR = Path(__file__).resolve().parent / "assets" / "img"
+
+
+def load_avatar_asset(filename):
+    """Load a local avatar image if it is packaged with the app."""
+    avatar_path = ASSET_DIR / filename
+    try:
+        if avatar_path.exists():
+            return avatar_path.read_bytes()
+    except OSError:
+        pass
+    return None
+
+
+ASSISTANT_AVATAR = load_avatar_asset("ai-chatbot.webp")
+USER_AVATAR = load_avatar_asset("user.png")
 
 def normalize_ollama_endpoint(raw_endpoint):
     """Normalize the Ollama endpoint so requests receives a valid URL."""
@@ -77,7 +94,7 @@ def render_ml_dashboard(ch_client):
         return
 
     # -------------------------------------------------------------------------
-    # KPI Metrics (Cleaned up - NO LLM CODE HERE!)
+    # KPI Metrics  
     # -------------------------------------------------------------------------
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -94,10 +111,10 @@ def render_ml_dashboard(ch_client):
     # -------------------------------------------------------------------------
     # Dashboard Tabs
     # -------------------------------------------------------------------------
-    tab_overview, tab_anomalies, tab_ai_analysis = st.tabs([
+    tab_overview, tab_anomalies, tab_ai_analysis, tab_terminal = st.tabs([
         "Latest Inferences", 
         "Detected Anomalies", 
-        "AI Diagnostic Engine"
+        "AI Diagnostic Engine"," ATLAS Copilot"
     ])
 
     with tab_overview:
@@ -142,7 +159,7 @@ def render_ml_dashboard(ch_client):
                 system_rules = load_system_prompt(PROMPT_FILE_PATH)
                 
                 if system_rules:
-                    with st.spinner("🧠 Phi-4-Mini is extracting root causes..."):
+                    with st.spinner(" Phi-4-Mini is extracting root causes..."):
                         
                         # 1. Isolate the anomaly rows
                         payload_df = df_anomalies.drop(columns=['insertion_time'], errors='ignore').copy()
@@ -174,27 +191,27 @@ def render_ml_dashboard(ch_client):
                                     # --- RENDERING THE AI OUTPUT ---
                                     st.success(ai_response.get('incident_summary', 'Analysis Complete'))
                                     
-                                    st.markdown("### 🔍 Diagnostics")
+                                    st.markdown("###   Diagnostics")
                                     st.info(ai_response.get('root_cause_hypothesis', ai_response.get('root_cause_analysis', 'No structural metrics extracted.')))
                                     
                                     col_a, col_b = st.columns(2)
                                     with col_a:
-                                        st.markdown("### ⚠️ Component Risk")
+                                        st.markdown("###   Component Risk")
                                         for subsystem in ai_response.get('affected_subsystems', []):
                                             st.markdown(f"- **{subsystem}**")
                                     with col_b:
-                                        st.markdown("### 🛠️ Mitigation Steps")
+                                        st.markdown("###   Mitigation Steps")
                                         for runbook_step in ai_response.get('recommended_remediation', []):
                                             st.markdown(f"- {runbook_step}")
                                             
-                                        # HERE ARE YOUR BASH COMMANDS! Safe and sound.
+                                      
                                         if 'diagnostic_commands' in ai_response:
-                                            st.markdown("### 💻 Runbook Commands")
+                                            st.markdown("### Suggested Commands")
                                             for cmd in ai_response.get('diagnostic_commands', []):
                                                 st.code(cmd, language="bash")
                                                 
                                 except json.JSONDecodeError:
-                                    st.error("🚨 Phi-4-Mini returned an improperly formatted JSON response.")
+                                    st.error("  Phi-4-Mini returned an improperly formatted JSON response.")
                                     with st.expander("View Raw Output"):
                                         st.write(response.json().get('response', 'No response body'))
                                         
@@ -204,6 +221,82 @@ def render_ml_dashboard(ch_client):
                                     st.write(response.text)
                                 
                         except requests.exceptions.RequestException as exc:
-                            st.error("🚨 Connection Blocked: Unable to hit the Ollama server via host.docker.internal.")
+                            st.error("  Connection Blocked: Unable to hit the Ollama server via host.docker.internal.")
                             st.caption(f"Resolved Ollama endpoint: {OLLAMA_ENDPOINT}")
                             st.caption(f"Request error: {type(exc).__name__}")
+    # -------------------------------------------------------------------------
+    # TAB 4: SRE Copilot Terminal
+    # -------------------------------------------------------------------------
+    with tab_terminal:
+        st.markdown("###### Chat with ATLAS Copilot")
+        st.caption("Engage directly with ATLAS  Copilot. Ask for command explanations, custom scripts, or deeper analysis.")
+            
+        
+        # 1. Initialize chat history in Streamlit's session state
+        if "sre_messages" not in st.session_state:
+            st.session_state.sre_messages = [
+                {
+                    "role": "system", 
+                    "content": "You are ATLAS, an elite AI Site Reliability Engineering copilot. Speak directly to the user. NEVER simulate a conversation between a 'User' and 'Assistant'. NEVER prefix your responses. Be concise, technical, and robotic."
+                },
+                {
+                    "role": "user",
+                    "content": "Initialize interactive copilot session."
+                },
+                {
+                    "role": "assistant",
+                    "content": "ATLAS Copilot initialized. Telemetry streams connected. Awaiting your command."
+                }
+            ]
+            
+        # THE FIX 1: Create a fixed-height container so the terminal scrolls internally!
+        terminal_container = st.container(height=500)
+        
+        # 2. Display existing chat history INSIDE the container
+        with terminal_container:
+            for msg in st.session_state.sre_messages:
+                if msg["role"] != "system":
+                    avatar_icon = ASSISTANT_AVATAR if msg["role"] == "assistant" else USER_AVATAR
+                    with st.chat_message(msg["role"], avatar=avatar_icon):
+                        st.markdown(msg["content"])
+                    
+        # 3. Chat Input Field (Stays pinned to the bottom of the tab)
+        if user_prompt := st.chat_input("Enter command or query..."):
+            
+            # Add user message to state
+            st.session_state.sre_messages.append({"role": "user", "content": user_prompt})
+            
+            # Render the new messages INSIDE the fixed container so it doesn't push the layout
+            with terminal_container:
+                with st.chat_message("user", avatar=USER_AVATAR):
+                    st.markdown(user_prompt)
+                    
+                # 4. Generate the streaming response
+                with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+                    message_placeholder = st.empty()
+                    full_response = ""
+                    
+                    try:
+                        response = requests.post(f"{OLLAMA_ENDPOINT}/api/chat", json={
+                            "model": "phi4-mini",
+                            "messages": st.session_state.sre_messages,
+                            "stream": True 
+                        }, stream=True)
+                        
+                        if response.status_code == 200:
+                            for line in response.iter_lines():
+                                if line:
+                                    json_data = json.loads(line)
+                                    if "message" in json_data and "content" in json_data["message"]:
+                                        chunk = json_data["message"]["content"]
+                                        full_response += chunk
+                                        message_placeholder.markdown(full_response + " █")
+                                        
+                            message_placeholder.markdown(full_response)
+                            st.session_state.sre_messages.append({"role": "assistant", "content": full_response})
+                            
+                        else:
+                            message_placeholder.error(f"Terminated. Exit code: {response.status_code}")
+                            
+                    except requests.exceptions.RequestException as e:
+                        message_placeholder.error("🚨 Connection to local LLM socket severed.")

@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 from deltalake import DeltaTable
 import pytz
-import os
+
 import ml_app 
 
 st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide")
@@ -171,10 +171,10 @@ st.markdown(" Observability and Real-Time Telemetry Visualization Packed in One"
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    if ch_client: st.success("  ClickHouse Online (Time-Series Engine)")
-    else: st.error("  ClickHouse Offline")
+    if ch_client: st.success("  ClickHouse Online ")
+    else: st.error("  ClickHouse Offline" )
 with col2:
-    if pg_conn and not pg_conn.closed: st.success("  PostgreSQL Online (Relational Metadata)")
+    if pg_conn and not pg_conn.closed: st.success("  PostgreSQL Online ")
     else: st.error("  PostgreSQL Offline")
 with col3:
     if delta_client: st.success("  Delta Lake Online ")
@@ -183,7 +183,7 @@ with col3:
 st.markdown("---")
 
 # Added the new "Live Charts" tab
-tab_ch, tab_pg, tab_charts, tab_sla, tab_ml= st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "Delta Lake Statistics","ML Anomaly Detection"])
+tab_ch, tab_pg, tab_charts, tab_sla, tab_ml= st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "Delta Lake Statistics","ATLAS AI "])
 
 # -----------------------------------------------------------------------------
 # ClickHouse Tab
