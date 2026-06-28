@@ -8,9 +8,18 @@ from sklearn.metrics import (
     classification_report
 )
 
-df = pd.read_parquet(
-    "telemetry-data/predictions/inference_batch_20260628_070013.parquet"
+from pathlib import Path
+
+prediction_dir = Path("telemetry-data/predictions")
+
+latest = max(
+    prediction_dir.glob("*.parquet"),
+    key=lambda x: x.stat().st_mtime
 )
+
+df = pd.read_parquet(latest)
+
+print(f"Evaluating {latest.name}")
 
 # Ground truth
 y_true = df["is_anomaly"]

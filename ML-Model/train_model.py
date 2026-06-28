@@ -13,10 +13,6 @@ from sklearn.impute import SimpleImputer
 from sklearn.ensemble import IsolationForest
 
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 TRAIN_DIR = Path("telemetry-data/train")
 MODEL_DIR = Path("models")
 
@@ -24,7 +20,7 @@ MODEL_DIR.mkdir(exist_ok=True)
 
 RANDOM_STATE = 42
 
-CONTAMINATION = 0.03
+CONTAMINATION = "auto" 
 
 
 # ============================================================
@@ -69,9 +65,6 @@ def engineer_features(df):
 
     df = df.copy()
 
-    ###########################################################
-    # Convert timestamps
-    ###########################################################
 
     df["metric_time"] = pd.to_datetime(df["metric_time"])
 
@@ -83,17 +76,13 @@ def engineer_features(df):
             df["last_maintenance_date"]
         )
 
-    ###########################################################
-    # Hour
-    ###########################################################
+
 
     df["hour_of_day"] = df.metric_time.dt.hour
 
     df["day_of_week"] = df.metric_time.dt.dayofweek
 
-    ###########################################################
-    # Uptime
-    ###########################################################
+
 
     df["uptime_hours"] = (
 
@@ -105,9 +94,7 @@ def engineer_features(df):
 
     ).dt.total_seconds() / 3600
 
-    ###########################################################
-    # Days Since Maintenance
-    ###########################################################
+
 
     if "last_maintenance_date" in df.columns:
 
@@ -121,9 +108,6 @@ def engineer_features(df):
 
         ).dt.days
 
-    ###########################################################
-    # Memory Capacity
-    ###########################################################
 
     if "memory_capacity_gb" not in df.columns:
 
@@ -137,9 +121,7 @@ def engineer_features(df):
 
         )
 
-    ###########################################################
-    # Derived Features
-    ###########################################################
+
 
     df["temperature_delta"] = (
 
@@ -201,9 +183,7 @@ def engineer_features(df):
 
     )
 
-    ###########################################################
-    # Drop Metadata
-    ###########################################################
+
 
     drop_columns = [
 
@@ -241,9 +221,7 @@ def engineer_features(df):
 
             df.drop(columns=col, inplace=True)
 
-    ###########################################################
-    # Remove Label
-    ###########################################################
+
 
     if "is_anomaly" in df.columns:
 
@@ -392,9 +370,7 @@ def train_model():
 
     print(f"Feature Matrix Shape : {df.shape}")
 
-    # --------------------------------------------------------
-    # Build preprocessing pipeline
-    # --------------------------------------------------------
+
 
     print("\nBuilding preprocessing pipeline...")
 
@@ -404,43 +380,68 @@ def train_model():
 
     print("Processed Shape :", X.shape)
 
-    # --------------------------------------------------------
-    # Train Isolation Forest
-    # --------------------------------------------------------
+
 
     print("\nTraining Isolation Forest...")
 
+    # model = IsolationForest(
+
+    #     n_estimators=500,
+
+    #     contamination=CONTAMINATION,
+
+    #     random_state=RANDOM_STATE,
+
+    #     n_jobs=-1,
+
+    #     verbose=1
+
+    # )
     model = IsolationForest(
 
-        n_estimators=300,
+        n_estimators=500,
 
         contamination=CONTAMINATION,
+
+        bootstrap=True,
+
+        max_samples=512,
 
         random_state=RANDOM_STATE,
 
         n_jobs=-1,
 
-        verbose=1
 
     )
+        
+
 
     model.fit(X)
 
     print("Training Complete")
 
-    # --------------------------------------------------------
-    # Compute Scores
-    # --------------------------------------------------------
+
 
     print("\nComputing score statistics...")
 
     anomaly_scores = model.decision_function(X)
 
+    # score_config = {
+
+    #     "min_score": float(anomaly_scores.min()),
+
+    #     "max_score": float(anomaly_scores.max())
+
+    # }
+    threshold = np.percentile(anomaly_scores, 20)
+
     score_config = {
 
         "min_score": float(anomaly_scores.min()),
 
-        "max_score": float(anomaly_scores.max())
+        "max_score": float(anomaly_scores.max()),
+
+        "threshold": float(threshold)
 
     }
 
@@ -450,9 +451,6 @@ def train_model():
 
     print("Maximum Score :", score_config["max_score"])
 
-    # --------------------------------------------------------
-    # Save Models
-    # --------------------------------------------------------
 
     print("\nSaving Models...")
 
