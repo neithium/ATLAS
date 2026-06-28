@@ -1,0 +1,16 @@
+# Lakehouse streaming checkpoint / raw staging (RWO — single pod writer)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: atlas-lakehouse-checkpoint
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: delta-lake
+    app.kubernetes.io/name: atlas-lakehouse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 5Gi

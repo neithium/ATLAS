@@ -1,0 +1,13 @@
+# Shared storage class for Delta Lake PVCs that must be mounted by multiple pods
+# (lakehouse StatefulSet + spark processor Deployment).
+# Minikube hostPath provisioner supports ReadWriteMany when backed by a manual PV.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: atlas-shared
+  labels:
+    app.kubernetes.io/component: storage
+provisioner: k8s.io/minikube-hostpath
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+allowVolumeExpansion: true

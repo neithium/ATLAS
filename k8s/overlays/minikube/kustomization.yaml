@@ -1,0 +1,17 @@
+# Minikube-sized resource profile (~6-8 GB node).
+# Apply: kubectl apply -k k8s/overlays/minikube
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: atlas
+
+resources:
+  - ../../
+
+patches:
+  - path: patch-kafka-resources.yaml
+  - path: patch-lakehouse-resources.yaml
+  - path: patch-fastapi-resources.yaml
+  - path: patch-processor-resources.yaml
+  - path: patch-streamlit-resources.yaml
+  - path: patch-image-pull-policy.yaml

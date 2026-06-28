@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlas-streamlit
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: atlas-streamlit
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atlas-streamlit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/name: atlas-streamlit
+    spec:
+      containers:
+        - name: streamlit
+          # analytics image bundles ClickHouse + PostgreSQL + Streamlit (supervisord)
+          image: atlas-analytics:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/app/entrypoint.sh"]
+          env:
+            - name: CLICKHOUSE_HOST
+              value: "127.0.0.1"
+            - name: POSTGRES_HOST
+              value: "127.0.0.1"
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-credentials
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: atlas-credentials
+                  key: POSTGRES_PASSWORD
+          ports:
+            - name: http
+              containerPort: 8501
+              protocol: TCP
+          volumeMounts:
+            - name: delta-refined
+              mountPath: /refined
+            - name: clickhouse-data
+              mountPath: /var/lib/clickhouse
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - name: delta-refined
+          persistentVolumeClaim:
+            claimName: atlas-delta-refined
+        - name: clickhouse-data
+          persistentVolumeClaim:
+            claimName: atlas-clickhouse-data
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: atlas-postgres-data

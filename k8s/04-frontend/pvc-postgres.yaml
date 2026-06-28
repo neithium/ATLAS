@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: atlas-postgres-data
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: atlas-streamlit
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 5Gi
