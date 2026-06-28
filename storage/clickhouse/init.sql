@@ -233,4 +233,4 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_ml_predictions (
 ) ENGINE = ReplacingMergeTree(insertion_time)
 ORDER BY (device_id, metric_time)
 PARTITION BY toYYYYMM(metric_time)
-TTL metric_time + INTERVAL 30 DAY;
+TTL toDateTime(metric_time) + INTERVAL 30 DAY DELETE;

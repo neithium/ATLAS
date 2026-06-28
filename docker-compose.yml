@@ -679,6 +679,8 @@ services:
       - "127.0.0.1:9002:9000" # ClickHouse Native TCP (localhost only)
       - "127.0.0.1:5433:5432"
       - "127.0.0.1:8501:8501" # Streamlit Dashboard # PostgreSQL (localhost only, mapped to 5433 to avoid host conflict)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file: .env.example
     environment:
       # Override hosts for internal (same-container) connections.
@@ -711,6 +713,8 @@ services:
       - ./delta_lake/data:/data/ml_predictions:ro
       # Schema reference
       - ./schema:/app/schema:ro
+      # Mount the prompts directory into the app workspace
+      - ./storage/prompts:/app/prompts:ro
     networks:
       - atlas-network
     healthcheck:
