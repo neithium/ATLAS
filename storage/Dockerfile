@@ -32,7 +32,7 @@ RUN curl -fsSL https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key \
     > /etc/apt/sources.list.d/clickhouse.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-       clickhouse-server clickhouse-client \
+       clickhouse-server=24.3.* clickhouse-client=24.3.* clickhouse-common-static=24.3.* \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------- PostgreSQL 16 ----------

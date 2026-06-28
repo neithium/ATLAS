@@ -675,10 +675,9 @@ services:
     container_name: atlas-analytics
     hostname: analytics
     ports:
-      - "9001:8123" # ClickHouse HTTP interface (queries, dashboards)
-      - "9000:9000" # ClickHouse Native TCP interface
-      - "5432:5432" # PostgreSQL
-      - "8501:8501" # Streamlit Dashboard
+      - "127.0.0.1:8124:8123" # ClickHouse HTTP (localhost only)
+      - "127.0.0.1:9002:9000" # ClickHouse Native TCP (localhost only)
+      - "127.0.0.1:5433:5432" # PostgreSQL (localhost only, mapped to 5433 to avoid host conflict)
     env_file: .env.example
     environment:
       # Override hosts for internal (same-container) connections.
