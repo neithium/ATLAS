@@ -181,7 +181,7 @@ def render_ml_dashboard(ch_client):
                                 "system": system_rules,
                                 "format": "json", 
                                 "stream": False
-                            }, timeout=45)
+                            }, timeout=120)
                             
                             if response.status_code == 200:
                                 try:
@@ -224,6 +224,12 @@ def render_ml_dashboard(ch_client):
                             st.error("  Connection Blocked: Unable to hit the Ollama server via host.docker.internal.")
                             st.caption(f"Resolved Ollama endpoint: {OLLAMA_ENDPOINT}")
                             st.caption(f"Request error: {type(exc).__name__}")
+                        except requests.exceptions.Timeout:
+                            st.error("  AI Analysis Timeout: The LLM took too long to process the telemetry data. Try analyzing fewer rows.")
+                        except requests.exceptions.ConnectionError:
+                            st.error("  Connection Blocked: Unable to reach the Ollama server.")
+                        except requests.exceptions.RequestException as exc:
+                            st.error(f" Request error: {type(exc).__name__}")
     # -------------------------------------------------------------------------
     # TAB 4: SRE Copilot Terminal
     # -------------------------------------------------------------------------
