@@ -1,5 +1,11 @@
 # PowerPulse V2 Ingestion: Test Results (Certified)
 
+## 🏃‍♂️ How to Run Tests
+To execute the unit tests, run the following command from the root directory (`d:\PowerPulse\atlas`):
+```bash
+pytest ingestion\v2\tests\test_v2_ingestion.py -v
+```
+
 | Metric | Status | Result | Timestamp |
 | :--- | :--- | :--- | :--- |
 | **80k Poller Accuracy** | ✅ PASSED | 28/28 Fields Captured | 2026-04-08 14:54 UTC |
@@ -36,4 +42,4 @@
 ```
 
 ---
-**Verified by PowerPulse V2 Scale-Agent 🛰️**
+

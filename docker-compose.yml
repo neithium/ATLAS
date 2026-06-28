@@ -460,13 +460,10 @@ services:
 
   dlq-reviewer:
     build: ./processing/dlq
-
     container_name: dlq-reviewer
-
     restart: always
     networks:
       - atlas-network
-
     depends_on:
       - broker1
 
@@ -614,14 +611,18 @@ services:
     container_name: atlas-analytics
     hostname: analytics
     ports:
-      - "9001:8123" # ClickHouse HTTP interface (queries, dashboards)
-      - "9000:9000" # ClickHouse Native TCP interface
-      - "5432:5432" # PostgreSQL
-      - "8501:8501" # Streamlit Dashboard
+      - "127.0.0.1:8124:8123" # ClickHouse HTTP (localhost only)
+      - "127.0.0.1:9002:9000" # ClickHouse Native TCP (localhost only)
+      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:8501:8501" # Streamlit Dashboard # PostgreSQL (localhost only, mapped to 5433 to avoid host conflict)
     env_file: .env.example
     environment:
       - CLICKHOUSE_HOST=127.0.0.1
       - POSTGRES_HOST=127.0.0.1
+      # ML Loader configuration
+      - ML_PREDICTIONS_PATH=/data/ml_predictions
+      - ML_SCHEDULE_INTERVAL_SECONDS=300
+      - ML_BATCH_SIZE=10000
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - postgres-data:/var/lib/postgresql/data
@@ -632,10 +633,12 @@ services:
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
-      - ./storage/clickhouse/delta_loader.py:/app/clickhouse/delta_loader.py:ro
+      - ./storage/clickhouse/ml_loader.py:/app/ml_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/supervisord.conf:/etc/supervisor/conf.d/atlas.conf:ro
       - ./storage/app.py:/app/app.py:ro
+      # ML predictions from inference layer (read-only)
+      - ./delta_lake/data:/data/ml_predictions:ro
       # Schema reference
       - ./schema:/app/schema:ro
     networks:
@@ -720,6 +723,25 @@ services:
       - atlas-network
     mem_limit: 512m
     command: scheduler
+
+  atlas-ml:
+    build:
+      context: ./ML-Model
+      dockerfile: Dockerfile
+    container_name: atlas-ml
+    hostname: ml-model
+    volumes:
+      - ./ML-Model:/app
+      - ./ingestion/device_configs.json:/ingestion/device_configs.json:ro
+    working_dir: /app
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - atlas-network
 
   grafana:
     image: grafana/grafana:latest

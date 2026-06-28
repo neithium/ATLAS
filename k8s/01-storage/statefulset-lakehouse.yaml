@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: atlas-lakehouse
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: delta-lake
+    app.kubernetes.io/name: atlas-lakehouse
+spec:
+  serviceName: atlas-lakehouse
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atlas-lakehouse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: delta-lake
+        app.kubernetes.io/name: atlas-lakehouse
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: lakehouse
+          image: atlas-lakehouse:latest
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          envFrom:
+            - configMapRef:
+                name: atlas-lakehouse-config
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+              echo '  ATLAS Lakehouse - Delta Lake Deduplication Engine'
+              echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+              [ -z "${PIPELINE_MODE:-}" ] && export PIPELINE_MODE="${GENERATOR_MODE:-livewire}"
+
+              if [ "${RUN_GENERATOR:-n}" = 'y' ] || [ "${RUN_GENERATOR:-n}" = 'Y' ]; then
+                if [ "${GENERATOR_MODE:-livewire}" = 'legacy' ]; then
+                  python3 generate_data.py --mode legacy --output /raw
+                elif [ "${GENERATOR_MODE:-livewire}" = 'livewire' ]; then
+                  echo '[generator] Skipping for livewire mode'
+                else
+                  python3 generate_data.py --mode benchmark --output /raw \
+                    --devices "${DEVICE_COUNT:-100}" \
+                    --batch-size "${BATCH_SIZE:-1000}" \
+                    --num-days "${NUM_DAYS:-7}" \
+                    --start-date "${START_DATE:-2026-03-01}"
+                fi
+              fi
+
+              if [ "${RUN_PIPELINE:-y}" = 'y' ] || [ "${RUN_PIPELINE:-y}" = 'Y' ]; then
+                if [ "${PIPELINE_MODE:-livewire}" = 'livewire' ]; then
+                  python3 run_livewire.py
+                else
+                  python3 run_benchmark.py
+                fi
+              fi
+
+              if [ "${RUN_VACUUM:-n}" = 'y' ] || [ "${RUN_VACUUM:-n}" = 'Y' ]; then
+                python3 -c "from run_benchmark import create_spark_session; from delta_core import vacuum_old_files; spark = create_spark_session('Vacuum'); vacuum_old_files(spark, '/refined', int('${VACUUM_RETENTION_DAYS:-14}') * 24)"
+              fi
+
+              if [ "${KEEP_ALIVE:-y}" = 'y' ] || [ "${KEEP_ALIVE:-y}" = 'Y' ]; then
+                echo 'KEEP_ALIVE enabled — holding pod open for livewire streaming'
+                tail -f /dev/null
+              fi
+          ports:
+            - name: spark-driver
+              containerPort: 7077
+              protocol: TCP
+          volumeMounts:
+            - name: delta-refined
+              mountPath: /refined
+            - name: stream-raw
+              mountPath: /stream_raw
+            - name: lakehouse-checkpoint
+              mountPath: /app/checkpoint
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          readinessProbe:
+            exec:
+              command:
+                - test
+                - -d
+                - /refined
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - -f
+                - python3
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+      volumes:
+        - name: delta-refined
+          persistentVolumeClaim:
+            claimName: atlas-delta-refined
+        - name: stream-raw
+          persistentVolumeClaim:
+            claimName: atlas-delta-refined
+        - name: lakehouse-checkpoint
+          persistentVolumeClaim:
+            claimName: atlas-lakehouse-checkpoint

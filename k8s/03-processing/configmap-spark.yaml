@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-spark-config
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: processing
+    app.kubernetes.io/name: atlas-processor
+data:
+  SPARK_MODE: "driver"
+  SPARK_DRIVER_MEMORY: "2g"
+  SPARK_EXECUTOR_MEMORY: "2g"
+  KAFKA_BOOTSTRAP_SERVERS: "atlas-kafka.atlas.svc.cluster.local:9092"
+  KAFKA_TOPIC: "raw-server-metrics"
+  KAFKA_TOPIC_DLQ: "raw-server-metrics-dlq"
+  KAFKA_CONSUMER_GROUP: "atlas-processor-streaming-group"
+  DELTA_OUTPUT_PATH: "/app/data/processed"
+  CHECKPOINT_DIR: "/app/checkpoint/stream"

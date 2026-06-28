@@ -40,7 +40,9 @@ async def manual_archival_push():
     end = now.replace(second=0, microsecond=0)
     start = end - timedelta(days=7)
     
+    log.info("=" * 70)
     log.info(f"🏗️ [PARQUET-STREAMING] 7-Day Archival: {start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')}")
+    log.info("=" * 70)
 
     with open(REGISTRY_PATH, "rb") as f:
         DEVICES = orjson.loads(f.read())
@@ -58,7 +60,7 @@ async def manual_archival_push():
         total_records = 0
         base_path = f"production/year={end.year}/month={end.month:02d}/day={end.day:02d}/full_7day/"
         
-        log.info(f"🚀 Starting Streamed Archival (Goal: {len(all_device_ids)//SILO_SIZE + 1} Large Silos)...")
+        log.info(f"[MANUAL ARCHIVE] Starting Streamed Archival (Goal: {len(all_device_ids)//SILO_SIZE + 1} Large Silos)...")
         
         for i in range(0, len(all_device_ids), SILO_SIZE):
             silo_devices = all_device_ids[i:i + SILO_SIZE]
@@ -81,7 +83,7 @@ async def manual_archival_push():
                 if not records:
                     continue
 
-                # 🚀 Group by Device and Hydrate using Unified Batch Builder
+                # Group by Device and Hydrate using Unified Batch Builder
                 # This ensures archived Parquet files match the Kafka 'Golden Record' format
                 from schema_builder import build_batch_power_detail
                 
@@ -120,7 +122,7 @@ async def manual_archival_push():
                 table = pa.Table.from_pylist(hydrated)
                 del hydrated
                 
-                # 🏁 EXPLICIT SCHEMA ENFORCEMENT (Prevents int64 vs double mismatches)
+                # EXPLICIT SCHEMA ENFORCEMENT (Prevents int64 vs double mismatches)
                 # We define this once per silo based on the first hydrated table
                 if writer is None:
                     # Define canonical schema for the 48-field golden record
@@ -187,7 +189,7 @@ async def manual_archival_push():
                 silo_records_count += len(table)
                 del table
                 
-                # 🛑 Yield to Event Loop to prevent system hanging
+                # Yield to Event Loop to prevent system hanging
                 await asyncio.sleep(0.05)
                 gc.collect()
 
@@ -196,7 +198,7 @@ async def manual_archival_push():
                 content = pq_buf.getvalue()
                 fname = f"archive_silo_{batch_counter}.parquet"
                 
-                # 🚀 LOCAL FS MIRRORING (Primary Storage)
+                # LOCAL FS MIRRORING (Primary Storage)
                 RAW_LOCAL = "/app/data/raw"
                 ARCHIVE_LOCAL = "/app/data/archive"
                 
@@ -211,7 +213,7 @@ async def manual_archival_push():
                     f.write(content)
                 
                 t_silo_elapsed = time.monotonic() - t_silo_start
-                log.info(f"✅ Silo {batch_counter} Created & Mirrored: {silo_records_count:,} records | Local + MinIO | Time: {t_silo_elapsed:.1f}s")
+                log.info(f"[MANUAL ARCHIVE] Silo {batch_counter} Created & Mirrored: {silo_records_count:,} records | Local + MinIO | Time: {t_silo_elapsed:.1f}s")
                 
                 total_records += silo_records_count
                 batch_counter += 1
@@ -229,13 +231,15 @@ async def manual_archival_push():
         for d in [raw_dir, archive_dir]:
             with open(os.path.join(d, "_SUCCESS"), "w") as sf:
                 sf.write(success_json)
-        log.info(f"🚩 Written _SUCCESS metadata files to output directories")
+        log.info(f"[MANUAL ARCHIVE] Written _SUCCESS metadata files to output directories")
 
         await pool.close()
-        log.info(f"🏁 STREAMED ARCHIVAL COMPLETE in {(time.monotonic()-t_total_start)/60:.2f} minutes")
+        log.info("-" * 70)
+        log.info(f"[MANUAL ARCHIVE] STREAMED ARCHIVAL COMPLETE in {(time.monotonic()-t_total_start)/60:.2f} minutes")
+        log.info("-" * 70)
         
     except Exception as e:
-        log.error(f"💥 Archival Failed: {str(e)}")
+        log.error(f"[MANUAL ARCHIVE] Archival Failed: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(manual_archival_push())

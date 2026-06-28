@@ -1,0 +1,19 @@
+# ClusterIP bootstrap endpoint for producers/consumers (FastAPI, Spark).
+# Resolves to all ready Kafka broker pods via label selector.
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlas-kafka
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: queue
+    app.kubernetes.io/name: atlas-kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: atlas-kafka
+  ports:
+    - name: plaintext
+      port: 9092
+      targetPort: plaintext
+      protocol: TCP

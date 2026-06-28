@@ -522,6 +522,7 @@ This phase marked the absolute finalization of the PowerPulse V3 architecture, s
 ### 2. Realistic Telemetry Modeling for ML
 - **Sinusoidal Curve Generation**: Upgraded `prefill_tsdb.py` to generate realistic 5-minute interval power metrics using sinusoidal waves with randomized anomalous spikes and drops. This was necessary to properly train the downstream `IsolationForest` models.
 - **Hardware Diversity**: Upgraded `generate_registry.py` to inject diverse architectures (Intel Xeon, AMD EPYC, DDR4/DDR5) and geographic locations across India for better anomaly context.
+- **Role-Aware Workload Profiling (`tags`)**: Expanded the central registry database schema (`init_db.py`) to include explicit server roles (using the `tags` field to define UI, Database, AI, Spark, etc.). This categorization is critical for the ML model, allowing it to establish distinct baselines per workload type (e.g., ignoring naturally high network traffic on Backup servers) rather than applying a blanket threshold.
 
 ### 3. Strict Local FS Lakehouse & Silo Tuning
 - **Silo Sizing**: Increased `SILO_SIZE` to 7,000 records in `api_v2.py` and `bench_daily_job.py`. 7,000 devices exactly hit the sweet spot of ~128MB per Parquet file when snappy-compressed.
@@ -550,3 +551,11 @@ All benchmark scripts, raw output logs, and historical throughput data are maint
 | `benchmark_latest.txt` | Latest benchmark run outputs |
 | `benchmark_results.txt` | Historical benchmark results archive |
 | `final_ingestion_benchmarks.txt` | Final production throughput numbers |
+
+### 6. Quality Assurance & Automated Testing (`test_v2_ingestion.py`)
+- **Execution & Validation**: The test suite was successfully executed with 100% success (`6 passed`), validating critical API and processing behavior.
+- **Key Assertions Tested**:
+  - **Golden Schema Validation**: Verified that `build_48_field_golden_record` flawlessly injects missing inventory data and preserves expected data types without corrupting the historical payloads.
+  - **Parquet Silo Engine**: Validated the `flush_to_parquet` logic, specifically confirming that the engine attempts exactly 2 distinct directory creations (`raw` and `archive`) and completes exactly 4 file write operations (Parquet tables + `_SUCCESS` validation markers).
+  - **PyArrow Integrity**: Confirmed that `ParquetWriter` correctly mounts, writes the table chunk, and properly triggers `.close()` to ensure no memory leak occurs during long-running background loops.
+- **Reporting Integration**: Full PyTest execution logs are physically preserved in `ingestion/test_results.txt`, and verified statuses have been recorded directly in `ingestion/v2/tests/test_results.md` for fast developer reference.

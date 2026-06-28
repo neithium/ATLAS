@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlas-fastapi
+  namespace: atlas
+spec:
+  template:
+    spec:
+      containers:
+        - name: ingestion
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "1Gi"
+            limits:
+              cpu: "1500m"
+              memory: "3Gi"

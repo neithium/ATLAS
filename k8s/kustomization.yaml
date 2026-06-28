@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: atlas
+
+resources:
+  - namespace.yaml
+  - 01-storage/storage-class.yaml
+  - 01-storage/pv-delta-refined.yaml
+  - 01-storage/pvc-delta-refined.yaml
+  - 01-storage/pvc-lakehouse-checkpoint.yaml
+  - 01-storage/configmap-lakehouse.yaml
+  - 01-storage/statefulset-lakehouse.yaml
+  - 01-storage/service-lakehouse.yaml
+  - 02-queue/configmap-kafka.yaml
+  - 02-queue/service-kafka-headless.yaml
+  - 02-queue/service-kafka.yaml
+  - 02-queue/statefulset-kafka.yaml
+  - 02-queue/job-kafka-init.yaml
+  - 03-processing/configmap-spark.yaml
+  - 03-processing/pvc-spark-checkpoint.yaml
+  - 03-processing/deployment-spark-processor.yaml
+  - 03-processing/service-spark-ui.yaml
+  - 04-frontend/configmap-ingestion.yaml
+  - 04-frontend/secret-atlas.yaml
+  - 04-frontend/deployment-fastapi.yaml
+  - 04-frontend/service-fastapi.yaml
+  - 04-frontend/pvc-clickhouse.yaml
+  - 04-frontend/pvc-postgres.yaml
+  - 04-frontend/deployment-streamlit.yaml
+  - 04-frontend/service-streamlit.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: atlas-lakehouse

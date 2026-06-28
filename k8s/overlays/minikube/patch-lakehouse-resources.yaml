@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: atlas-lakehouse
+  namespace: atlas
+spec:
+  template:
+    spec:
+      containers:
+        - name: lakehouse
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "768Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"

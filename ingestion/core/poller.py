@@ -79,7 +79,9 @@ async def poll_all():
     LAST_POLL["success_count"] = 0
     LAST_POLL["error_count"] = 0
     
+    log.info("=" * 70)
     log.info(f"[poller] Starting high-scale poll for {total_devices:,} devices...")
+    log.info("=" * 70)
     
     batches = [devices[i:i + POLL_BATCH_SIZE] for i in range(0, total_devices, POLL_BATCH_SIZE)]
     semaphore = asyncio.Semaphore(POLL_WORKERS)
@@ -107,7 +109,9 @@ async def poll_all():
 
     LAST_POLL["end_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     LAST_POLL["status"] = "idle"
+    log.info("=" * 70)
     log.info(f"[poller] Poll Complete: {LAST_POLL['success_count']}/{total_devices} success.")
+    log.info("=" * 70)
 
 
 async def _push_to_tsdb_hot(batch_results):

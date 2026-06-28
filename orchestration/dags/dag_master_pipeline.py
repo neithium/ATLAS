@@ -36,9 +36,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
 
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.sensors.python import PythonSensor
+from airflow.operators.python import PythonOperator, PythonSensor
 from airflow.providers.http.operators.http import SimpleHttpOperator
 
 # Shared Docker exec helper (detached + polling)
@@ -46,7 +44,6 @@ from atlas_utils import docker_exec_or_raise, _docker_exec
 
 log = logging.getLogger(__name__)
 
-# ─── Constants ──────────────────────────────────────────────────────────────
 CLICKHOUSE_HTTP = "http://atlas-analytics:8123"
 REFINED_PATH_IN_ANALYTICS = "/data/refined" # refined-volume mount in atlas-analytics
 
@@ -214,7 +211,7 @@ with DAG(
     schedule_interval="@hourly",   # Was @daily — changed to @hourly per requirements
     catchup=False,
     max_active_runs=1,             # Prevent overlapping runs during long Spark jobs
-    tags=["atlas", "batch", "master"],
+    tags=["atlas", "batch", "master", "kafka", "nandini"],
 ) as dag:
 
     # ── Step 1: Trigger fleet-wide ingestion export ──────────────────────────

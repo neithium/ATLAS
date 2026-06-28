@@ -187,7 +187,20 @@ __marimo__/
 **/data/archive/*
 !**/data/raw/.gitkeep
 !**/data/archive/.gitkeep
+/fix_pg.sh
+/fix_pg.bat
+/check_pg.sh
+/check_pg.bat
+/ml-loader-start.sh
+/ml-loader-start.bat
+/storage/loader-start.sh
+/storage/loader-start.bat
+
 
 # Global Data Ignores
 *.parquet
 *.log
+
+# Mock data generators
+/generate_mock_ml_data.py
+/mock_docker.py

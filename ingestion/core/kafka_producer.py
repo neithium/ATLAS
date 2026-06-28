@@ -40,6 +40,14 @@ KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "raw-server-metrics")
 
 _producer: Optional['AIOKafkaProducer'] = None
 
+def _kafka_serializer(v):
+    if isinstance(v, (bytes, bytearray)):
+        return v
+    payload = json.dumps(v)
+    if isinstance(payload, bytes):
+        return payload
+    return payload.encode('utf-8')
+
 async def init_kafka():
     """Initialize the Kafka producer with retry logic to connect to the broker cluster."""
     global _producer
@@ -63,9 +71,7 @@ async def init_kafka():
                 connections_max_idle_ms=540000,
                 # Allow re-electing a new leader transparently
                 metadata_max_age_ms=30000,
-                value_serializer=lambda v: v if isinstance(v, bytes) else (
-                    json.dumps(v) if isinstance(v, dict) else str(v).encode('utf-8')
-                )
+                value_serializer=_kafka_serializer
             )
             await _producer.start()
             log.info(f"🛰️ [KAFKA] Connected to {KAFKA_BOOTSTRAP_SERVERS}, topic: {KAFKA_TOPIC}")
