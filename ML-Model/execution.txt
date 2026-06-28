@@ -1,0 +1,195 @@
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python data_generator.py
+2026-06-28 11:18:01,785 [INFO] ======================================================================
+2026-06-28 11:18:01,786 [INFO] ATLAS ML Data Generator - Historical Training Data
+2026-06-28 11:18:01,787 [INFO] ======================================================================
+2026-06-28 11:18:01,788 [INFO] Generating inventory for 1000 servers...
+2026-06-28 11:18:01,987 [INFO] Generating 720 hours of telemetry for 1000 servers using Strict Causal Chain...
+2026-06-28 11:18:02,771 [INFO] Flattening matrices and stitching with metadata...
+2026-06-28 11:18:10,761 [INFO] Writing partitioned data to telemetry-data (24 train days, 7 test days)...
+2026-06-28 11:18:11,024 [INFO]   -> Saved telemetry-data/train/day_01.parquet (13,000 rows)
+2026-06-28 11:18:11,283 [INFO]   -> Saved telemetry-data/train/day_02.parquet (24,000 rows)
+2026-06-28 11:18:11,509 [INFO]   -> Saved telemetry-data/train/day_03.parquet (24,000 rows)
+2026-06-28 11:18:11,726 [INFO]   -> Saved telemetry-data/train/day_04.parquet (24,000 rows)
+2026-06-28 11:18:11,941 [INFO]   -> Saved telemetry-data/train/day_05.parquet (24,000 rows)
+2026-06-28 11:18:12,177 [INFO]   -> Saved telemetry-data/train/day_06.parquet (24,000 rows)
+2026-06-28 11:18:12,361 [INFO]   -> Saved telemetry-data/train/day_07.parquet (24,000 rows)
+2026-06-28 11:18:12,562 [INFO]   -> Saved telemetry-data/train/day_08.parquet (24,000 rows)
+2026-06-28 11:18:12,748 [INFO]   -> Saved telemetry-data/train/day_09.parquet (24,000 rows)
+2026-06-28 11:18:12,944 [INFO]   -> Saved telemetry-data/train/day_10.parquet (24,000 rows)
+2026-06-28 11:18:13,244 [INFO]   -> Saved telemetry-data/train/day_11.parquet (24,000 rows)
+2026-06-28 11:18:13,442 [INFO]   -> Saved telemetry-data/train/day_12.parquet (24,000 rows)
+2026-06-28 11:18:13,669 [INFO]   -> Saved telemetry-data/train/day_13.parquet (24,000 rows)
+2026-06-28 11:18:13,856 [INFO]   -> Saved telemetry-data/train/day_14.parquet (24,000 rows)
+2026-06-28 11:18:14,095 [INFO]   -> Saved telemetry-data/train/day_15.parquet (24,000 rows)
+2026-06-28 11:18:14,319 [INFO]   -> Saved telemetry-data/train/day_16.parquet (24,000 rows)
+2026-06-28 11:18:14,517 [INFO]   -> Saved telemetry-data/train/day_17.parquet (24,000 rows)
+2026-06-28 11:18:14,736 [INFO]   -> Saved telemetry-data/train/day_18.parquet (24,000 rows)
+2026-06-28 11:18:14,955 [INFO]   -> Saved telemetry-data/train/day_19.parquet (24,000 rows)
+2026-06-28 11:18:15,167 [INFO]   -> Saved telemetry-data/train/day_20.parquet (24,000 rows)
+2026-06-28 11:18:15,389 [INFO]   -> Saved telemetry-data/train/day_21.parquet (24,000 rows)
+2026-06-28 11:18:15,605 [INFO]   -> Saved telemetry-data/train/day_22.parquet (24,000 rows)
+2026-06-28 11:18:15,812 [INFO]   -> Saved telemetry-data/train/day_23.parquet (24,000 rows)
+2026-06-28 11:18:16,018 [INFO]   -> Saved telemetry-data/train/day_24.parquet (24,000 rows)
+2026-06-28 11:18:16,212 [INFO]   -> Saved telemetry-data/test/day_25.parquet (24,000 rows)
+2026-06-28 11:18:16,421 [INFO]   -> Saved telemetry-data/test/day_26.parquet (24,000 rows)
+2026-06-28 11:18:16,627 [INFO]   -> Saved telemetry-data/test/day_27.parquet (24,000 rows)
+2026-06-28 11:18:16,806 [INFO]   -> Saved telemetry-data/test/day_28.parquet (24,000 rows)
+2026-06-28 11:18:16,990 [INFO]   -> Saved telemetry-data/test/day_29.parquet (24,000 rows)
+2026-06-28 11:18:17,174 [INFO]   -> Saved telemetry-data/test/day_30.parquet (24,000 rows)
+2026-06-28 11:18:17,317 [INFO]   -> Saved telemetry-data/test/day_31.parquet (11,000 rows)
+2026-06-28 11:18:17,318 [INFO] ----------------------------------------------------------------------
+2026-06-28 11:18:17,319 [INFO] ✅ Generation Pipeline Complete!
+2026-06-28 11:18:17,320 [INFO] ----------------------------------------------------------------------
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python train_model.py
+============================================================
+Loading Training Data
+============================================================
+Found 24 parquet files
+Reading day_01.parquet
+Reading day_02.parquet
+Reading day_03.parquet
+Reading day_04.parquet
+Reading day_05.parquet
+Reading day_06.parquet
+Reading day_07.parquet
+Reading day_08.parquet
+Reading day_09.parquet
+Reading day_10.parquet
+Reading day_11.parquet
+Reading day_12.parquet
+Reading day_13.parquet
+Reading day_14.parquet
+Reading day_15.parquet
+Reading day_16.parquet
+Reading day_17.parquet
+Reading day_18.parquet
+Reading day_19.parquet
+Reading day_20.parquet
+Reading day_21.parquet
+Reading day_22.parquet
+Reading day_23.parquet
+Reading day_24.parquet
+
+Total Rows : 565000
+
+
+Engineering Features...
+Feature Matrix Shape : (565000, 28)
+
+Building preprocessing pipeline...
+Processed Shape : (565000, 28)
+
+Training Isolation Forest...
+Training Complete
+
+Computing score statistics...
+
+Minimum Score : -0.1590184465736294
+Maximum Score : 0.0774340890086308
+
+Saving Models...
+
+============================================================
+Training Finished Successfully
+============================================================
+
+Saved Files
+-----------------------------
+✔ isolation_forest.pkl
+✔ preprocessor.pkl
+✔ health_score_config.pkl
+
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python live_data_gen.py
+2026-06-28 11:19:25,111 [INFO] Started Background Healthcheck Server on port 8000
+Exception in thread Thread-1 (run_health_server):
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "/usr/local/lib/python3.11/threading.py", line 982, in run
+2026-06-28 11:19:25,113 [INFO] Reconstructing exact hardware profiles for 1000 servers using seed 42...
+    self._target(*self._args, **self._kwargs)
+  File "/app/live_data_gen.py", line 55, in run_health_server
+2026-06-28 11:19:25,117 [INFO] Generating inventory for 1000 servers...
+    server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socketserver.py", line 456, in __init__
+    self.server_bind()
+  File "/usr/local/lib/python3.11/http/server.py", line 140, in server_bind
+    socketserver.TCPServer.server_bind(self)
+  File "/usr/local/lib/python3.11/socketserver.py", line 472, in server_bind
+    self.socket.bind(self.server_address)
+OSError: [Errno 98] Address already in use
+2026-06-28 11:19:25,373 [INFO] ======================================================================
+2026-06-28 11:19:25,374 [INFO] ATLAS ML Data Generator - Live Inference Snapshot
+2026-06-28 11:19:25,375 [INFO] ======================================================================
+2026-06-28 11:19:25,379 [INFO] Generating live snapshot for 1000 servers at 2026-06-28 11:00:00 UTC
+2026-06-28 11:19:25,592 [INFO] ----------------------------------------------------------------------
+2026-06-28 11:19:25,593 [INFO] Saved live snapshot to telemetry-data/live/inference_batch_20260628_110000.parquet (1000 rows)
+2026-06-28 11:19:25,594 [INFO] ----------------------------------------------------------------------
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python predict.py
+Loading models...
+Models Loaded
+
+Processing inference_batch_20260628_110000.parquet
+Saved -> telemetry-data/predictions/inference_batch_20260628_110000.parquet
+Normal : 858 | Anomaly : 142
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python live_data_gen.py --anomalies --anomaly-rate 0.8
+2026-06-28 11:20:43,242 [INFO] Started Background Healthcheck Server on port 8000
+Exception in thread Thread-1 (run_health_server):
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "/usr/local/lib/python3.11/threading.py", line 982, in run
+2026-06-28 11:20:43,243 [INFO] Reconstructing exact hardware profiles for 1000 servers using seed 42...
+    2026-06-28 11:20:43,245 [INFO] Generating inventory for 1000 servers...
+self._target(*self._args, **self._kwargs)
+  File "/app/live_data_gen.py", line 55, in run_health_server
+    server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socketserver.py", line 456, in __init__
+    self.server_bind()
+  File "/usr/local/lib/python3.11/http/server.py", line 140, in server_bind
+    socketserver.TCPServer.server_bind(self)
+  File "/usr/local/lib/python3.11/socketserver.py", line 472, in server_bind
+    self.socket.bind(self.server_address)
+OSError: [Errno 98] Address already in use
+2026-06-28 11:20:43,612 [INFO] ======================================================================
+2026-06-28 11:20:43,613 [INFO] ATLAS ML Data Generator - Live Inference Snapshot
+2026-06-28 11:20:43,614 [INFO] ======================================================================
+2026-06-28 11:20:43,615 [INFO] Generating live snapshot for 1000 servers at 2026-06-28 11:00:00 UTC
+2026-06-28 11:20:43,630 [WARNING] INJECTING LIVE ANOMALIES FOR ML INFERENCE DETECTION (Rate: 80.0%)!
+2026-06-28 11:20:43,847 [INFO] ----------------------------------------------------------------------
+2026-06-28 11:20:43,848 [INFO] Saved live snapshot to telemetry-data/live/inference_batch_20260628_110000.parquet (1000 rows)
+2026-06-28 11:20:43,849 [INFO] ----------------------------------------------------------------------
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python predict.py                                     
+Loading models...
+Models Loaded
+
+Processing inference_batch_20260628_110000.parquet
+Saved -> telemetry-data/predictions/inference_batch_20260628_110000.parquet
+Normal : 421 | Anomaly : 579
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> docker exec -it atlas-ml python evaluate_model.py
+Evaluating inference_batch_20260628_110000.parquet
+============================================================
+MODEL EVALUATION
+============================================================
+Accuracy : 0.731
+Precision: 0.9516407599309153
+Recall   : 0.6957070707070707
+F1 Score : 0.8037928519328957
+
+Confusion Matrix
+[[180  28]
+ [241 551]]
+
+Classification Report
+              precision    recall  f1-score   support
+
+           0       0.43      0.87      0.57       208
+           1       0.95      0.70      0.80       792
+
+    accuracy                           0.73      1000
+   macro avg       0.69      0.78      0.69      1000
+weighted avg       0.84      0.73      0.76      1000
+
+PS C:\Users\DELL\Desktop\HPE\atlas\ATLAS> 
