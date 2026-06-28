@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_ml_predictions (
     prediction Int8,              -- 1 = Normal, -1 = Anomaly
     anomaly_score Float64,        -- Continuous severity (higher = more normal)
     health_score UInt8,           -- 0–100 interpretable health metric
+    health_status String,         -- Healthy, Warning, Degraded, Critical
 
     -- ClickHouse-side insertion timestamp (auto-populated, not from upstream)
     insertion_time DateTime DEFAULT now()
