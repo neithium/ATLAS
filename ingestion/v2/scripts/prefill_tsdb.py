@@ -90,10 +90,18 @@ class PrefillEngine:
             "metric_type": "power_metrics",
             "status": "t",
             "error_reason": "",
-            "tags": "production,critical",
+            "tags": [self.devices[did].get("tags", "production,critical") for did in self.device_ids],
             "cpu_max": 4200000,
             "cpu_pwr_sav_lim": 250
         })
+        
+        # ── AI PROFILING: Identify server roles from tags ──
+        tags_series = pd.Series(self.worker_df["tags"])
+        self.is_db_server = tags_series.str.contains("db_server").to_numpy()
+        self.is_ui_server = tags_series.str.contains("ui_server").to_numpy()
+        self.is_cache_server = tags_series.str.contains("cache_server").to_numpy()
+        self.is_ml_worker = tags_series.str.contains("ml_worker").to_numpy()
+        
         self.rng = np.random.default_rng()
 
     def update_slot_and_get(self, dt: datetime):
@@ -122,6 +130,24 @@ class PrefillEngine:
             cpu_util[is_warning_now] = self.rng.integers(60, 95, np.sum(is_warning_now))
             cpu_watts[is_warning_now] = self.rng.integers(250, 350, np.sum(is_warning_now))
             amb_temp[is_warning_now] = self.rng.uniform(28.0, 36.0, np.sum(is_warning_now))
+            
+        # ── AI PROFILING: Apply role-based power curves ──
+        if np.any(self.is_db_server):
+            cpu_watts[self.is_db_server] = self.rng.integers(340, 420, np.sum(self.is_db_server))
+        
+        if np.any(self.is_ui_server):
+            cpu_watts[self.is_ui_server] = self.rng.integers(120, 180, np.sum(self.is_ui_server))
+            
+        if np.any(self.is_cache_server):
+            cpu_watts[self.is_cache_server] = self.rng.integers(240, 260, np.sum(self.is_cache_server))
+            
+        if np.any(self.is_ml_worker):
+            # ML Worker logic: High power if hour%4 < 2, else idle
+            hour_val = dt.hour + (dt.minute / 60)
+            if (hour_val % 4) < 2:
+                cpu_watts[self.is_ml_worker] = self.rng.integers(380, 420, np.sum(self.is_ml_worker))
+            else:
+                cpu_watts[self.is_ml_worker] = self.rng.integers(90, 110, np.sum(self.is_ml_worker))
         
         gpu_watts = (50 + (cycle_factor * 50) + self.rng.uniform(-5, 5, self.n)).astype(np.int32)
         avg_watts = np.round((cpu_watts + gpu_watts) / 2.0, 2)
