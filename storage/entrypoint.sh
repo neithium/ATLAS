@@ -146,6 +146,17 @@ fi
 chown -R clickhouse:clickhouse /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server/
 chown -R postgres:postgres /var/lib/postgresql/data
 
+# ---------- ClickHouse startup repair ----------
+# Older ClickHouse volumes can retain internal trace-log metadata that breaks
+# server startup after package or filesystem changes. Remove only the trace-log
+# artifacts so the server can recreate them cleanly without wiping user data.
+if find /var/lib/clickhouse/store -type f -name 'trace_log_*.sql' -print -quit >/dev/null 2>&1; then
+    echo "[entrypoint] Removing stale ClickHouse trace_log artifacts..."
+    find /var/lib/clickhouse/store -type f -name 'trace_log_*.sql' -exec dirname {} \; | sort -u | while IFS= read -r trace_dir; do
+        rm -rf "$trace_dir"
+    done
+fi
+
 # ---------- Fix postgres superuser password on existing installs ----------
 # If PG was already initialized without a postgres password, set it now.
 if [ -s "$PGDATA/PG_VERSION" ]; then
