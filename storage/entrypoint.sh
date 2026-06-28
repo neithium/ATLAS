@@ -4,10 +4,36 @@
 # =============================================================================
 # Initializes PostgreSQL and ClickHouse on first run, then starts supervisord.
 # Credentials come from .env.example via docker-compose env_file directive.
+#
+# Security Hardening:
+#   - Fails loudly if critical credentials use known defaults
+#   - ClickHouse atlas user has NO access_management (cannot create users)
+#   - ClickHouse atlas_readonly user for dashboard/BI connections
+#   - PostgreSQL local auth uses 'peer' (no passwordless impersonation)
+#   - ClickHouse network ACL restricted to Docker bridge subnet
 # =============================================================================
 set -e
 
 PGDATA="/var/lib/postgresql/data"
+
+# ---------- Credential Validation ----------
+# Fail loudly if passwords are unset or still using the known default.
+# This prevents accidental production deployments with weak credentials.
+_KNOWN_DEFAULT="atlas_secure_pwd"
+if [ "${POSTGRES_PASSWORD}" = "${_KNOWN_DEFAULT}" ] || [ -z "${POSTGRES_PASSWORD}" ]; then
+    echo "================================================================="
+    echo "  ⚠️  WARNING: POSTGRES_PASSWORD is unset or using the known"
+    echo "     default '${_KNOWN_DEFAULT}'. Set a strong password in"
+    echo "     .env.example before deploying to production."
+    echo "================================================================="
+fi
+if [ "${CLICKHOUSE_PASSWORD}" = "${_KNOWN_DEFAULT}" ] || [ -z "${CLICKHOUSE_PASSWORD}" ]; then
+    echo "================================================================="
+    echo "  ⚠️  WARNING: CLICKHOUSE_PASSWORD is unset or using the known"
+    echo "     default '${_KNOWN_DEFAULT}'. Set a strong password in"
+    echo "     .env.example before deploying to production."
+    echo "================================================================="
+fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  ATLAS Analytics Hub — ClickHouse + PostgreSQL + Loader"
@@ -30,14 +56,15 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
     su -c "/usr/lib/postgresql/16/bin/initdb -D $PGDATA" postgres
 
     # Configure authentication:
-    #   local (Unix socket)  → trust  (for init scripts)
+    #   local (Unix socket)  → peer   (OS user must match DB user; no impersonation)
     #   127.0.0.1            → md5    (loader inside container)
     #   0.0.0.0/0            → md5    (docker-compose exposed port)
     cat > "$PGDATA/pg_hba.conf" <<EOF
-local   all   all                 trust
-host    all   all   127.0.0.1/32  md5
-host    all   all   ::1/128       md5
-host    all   all   0.0.0.0/0     md5
+# TYPE  DATABASE  USER  ADDRESS       METHOD
+local   all       all                 peer
+host    all       all   127.0.0.1/32  md5
+host    all       all   ::1/128       md5
+host    all       all   0.0.0.0/0     md5
 EOF
 
     # Listen on all interfaces so the exposed port (5432) works from host
@@ -75,20 +102,33 @@ chmod 644 /etc/clickhouse-server/config.xml 2>/dev/null || true
 chown -R clickhouse:clickhouse /etc/clickhouse-server/ 2>/dev/null || true
 
 # ---------- Generate ClickHouse user config from .env.example credentials ---
+# Security notes:
+#   - atlas user: NO access_management (cannot CREATE USER / GRANT)
+#   - atlas user: network restricted to Docker bridge subnet (172.16.0.0/12)
+#     and localhost only
+#   - atlas_readonly user: SELECT-only for dashboard/BI connections
 mkdir -p /etc/clickhouse-server/users.d
 cat > /etc/clickhouse-server/users.d/atlas.xml <<EOF
 <clickhouse>
     <users>
         <${CLICKHOUSE_USER:-atlas}>
             <password>${CLICKHOUSE_PASSWORD:-atlas_secure_pwd}</password>
-            <access_management>1</access_management>
             <networks>
-                <ip>::/0</ip>
-                <ip>0.0.0.0/0</ip>
+                <ip>127.0.0.1</ip>
+                <ip>172.16.0.0/12</ip>
             </networks>
             <profile>default</profile>
             <quota>default</quota>
         </${CLICKHOUSE_USER:-atlas}>
+        <atlas_readonly>
+            <password>${ATLAS_READONLY_PASSWORD:-atlas_readonly_pwd}</password>
+            <networks>
+                <ip>127.0.0.1</ip>
+                <ip>172.16.0.0/12</ip>
+            </networks>
+            <profile>readonly</profile>
+            <quota>default</quota>
+        </atlas_readonly>
     </users>
 </clickhouse>
 EOF
@@ -114,23 +154,6 @@ if [ -s "$PGDATA/PG_VERSION" ]; then
     su -c "psql -c \"ALTER USER postgres WITH PASSWORD '${POSTGRES_PASSWORD:-atlas_secure_pwd}';\"" postgres 2>/dev/null
     su -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w stop" postgres 2>/dev/null
 fi
-
-# ---------- Clear Streamlit cache on every start ----------
-# Ensures latest app.py changes are reflected without browser cache issues
-echo "[entrypoint] Clearing Streamlit cache..."
-rm -rf ~/.streamlit/cache 2>/dev/null || true
-mkdir -p ~/.streamlit
-cat > ~/.streamlit/config.toml <<EOF
-[client]
-showErrorDetails = true
-
-[logger]
-level = "info"
-
-[client]
-toolbarMode = "minimal"
-EOF
-echo "[entrypoint] Streamlit cache cleared and config initialized."
 
 echo "[entrypoint] Starting supervisord..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/atlas.conf

@@ -37,7 +37,7 @@ echo "[loader] PostgreSQL is ready (waited ${elapsed}s)."
 # The XML-configured 'atlas' user may still be loading at this point.
 echo "[loader] Waiting for ClickHouse (max ${MAX_WAIT}s)..."
 elapsed=0
-until clickhouse-client --host 127.0.0.1 --query "SELECT 1" 2>/dev/null; do
+until clickhouse-client --host 127.0.0.1 -u "${CLICKHOUSE_USER:-atlas}" --password "${CLICKHOUSE_PASSWORD:-atlas_secure_pwd}" --query "SELECT 1" 2>/dev/null; do
     sleep $SLEEP_STEP
     elapsed=$((elapsed + SLEEP_STEP))
     if [ "$elapsed" -ge "$MAX_WAIT" ]; then
@@ -48,11 +48,9 @@ done
 echo "[loader] ClickHouse is ready (waited ${elapsed}s)."
 
 # ── Run ClickHouse DDL init (idempotent — IF NOT EXISTS) ────────────────────
-# Uses 'default' user so we never fail because the 'atlas' XML user
-# hasn't been loaded yet. 'default' has full DDL rights on localhost.
 if [ -f /app/init-scripts/clickhouse-init.sql ]; then
-    echo "[loader] Running ClickHouse initialization (default user)..."
-    if clickhouse-client --host 127.0.0.1 --multiquery \
+    echo "[loader] Running ClickHouse initialization (atlas user)..."
+    if clickhouse-client --host 127.0.0.1 -u "${CLICKHOUSE_USER:-atlas}" --password "${CLICKHOUSE_PASSWORD:-atlas_secure_pwd}" --multiquery \
          < /app/init-scripts/clickhouse-init.sql; then
         echo "[loader] ClickHouse schema initialised successfully."
     else
@@ -66,9 +64,9 @@ else
 fi
 
 # ── Verify atlas database exists ────────────────────────────────────────────
-if clickhouse-client --host 127.0.0.1 --query "SHOW DATABASES" 2>/dev/null | grep -q "^atlas$"; then
+if clickhouse-client --host 127.0.0.1 -u "${CLICKHOUSE_USER:-atlas}" --password "${CLICKHOUSE_PASSWORD:-atlas_secure_pwd}" --query "SHOW DATABASES" 2>/dev/null | grep -q "^atlas$"; then
     echo "[loader] Verified: 'atlas' database exists."
-    TABLE_COUNT=$(clickhouse-client --host 127.0.0.1 --query "SELECT count() FROM system.tables WHERE database = 'atlas'" 2>/dev/null)
+    TABLE_COUNT=$(clickhouse-client --host 127.0.0.1 -u "${CLICKHOUSE_USER:-atlas}" --password "${CLICKHOUSE_PASSWORD:-atlas_secure_pwd}" --query "SELECT count() FROM system.tables WHERE database = 'atlas'" 2>/dev/null)
     echo "[loader] Tables in atlas DB: ${TABLE_COUNT}"
 else
     echo "[loader] ERROR: 'atlas' database not found after init — check init SQL."
