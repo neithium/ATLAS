@@ -185,3 +185,52 @@ AS SELECT
     avgState(amb_temp)      AS avg_amb_temp
 FROM atlas.telemetry_refined
 GROUP BY platform_customer_id, application_customer_id, device_id, metric_id, day;
+
+-- -----------------------------------------------------------------------------
+-- ML Predictions Table (Anomaly Detection — Isolation Forest Output)
+-- -----------------------------------------------------------------------------
+-- Stores inference results from the ML pipeline: anomaly predictions, severity
+-- scores, and computed health scores per device per metric_time.
+--
+-- Source : Parquet files from inference pipeline (ml_loader.py reads these)
+-- Consumer: Streamlit ML Dashboard tab, LLM recommendation engine
+--
+-- ReplacingMergeTree deduplicates on (device_id, metric_time) keeping the row
+-- with the latest insertion_time — safe for retries and reprocessing.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS atlas.telemetry_ml_predictions (
+    -- Device identity & metadata
+    device_id String,
+    server_name String,
+    tags String,
+    location_name String,
+
+    -- Timestamp of the telemetry reading
+    metric_time DateTime64(3),
+
+    -- Telemetry features (input to Isolation Forest)
+    avg_metric_value Float64,
+    cpu_utilization Float64,
+    memory_utilization Float64,
+    disk_utilization Float64,
+    network_throughput Float64,
+    cpu_temperature Float64,
+    amb_temp Float64,
+    fan_speed_rpm Float64,
+    gpu_utilization Float64,
+    uptime_hours UInt32,
+    processor_vendor String,
+    server_generation String,
+    memory_capacity_gb Float64,
+
+    -- Inference outputs
+    prediction Int8,              -- 1 = Normal, -1 = Anomaly
+    anomaly_score Float64,        -- Continuous severity (higher = more normal)
+    health_score UInt8,           -- 0–100 interpretable health metric
+
+    -- ClickHouse-side insertion timestamp (auto-populated, not from upstream)
+    insertion_time DateTime DEFAULT now()
+) ENGINE = ReplacingMergeTree(insertion_time)
+ORDER BY (device_id, metric_time)
+PARTITION BY toYYYYMM(metric_time)
+TTL metric_time + INTERVAL 30 DAY;
