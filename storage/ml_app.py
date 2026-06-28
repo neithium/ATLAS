@@ -6,10 +6,66 @@ import json
 import os
 import re
 from pathlib import Path
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import uuid
+
 
 PROMPT_FILE_PATH = "/app/prompts/rca_system_prompt.txt"
 ASSET_DIR = Path(__file__).resolve().parent / "assets" / "img"
+ 
+# --- PostgreSQL Connection Setup ---
+PG_HOST = os.getenv("POSTGRES_HOST", "127.0.0.1")
+PG_PORT = os.getenv("POSTGRES_PORT", "5432")
+PG_USER = os.getenv("POSTGRES_USER", "atlas")
+PG_PASS = os.getenv("POSTGRES_PASSWORD", "atlas_secure_pwd")
+PG_DB = os.getenv("POSTGRES_DB", "atlas_metadata")
 
+def get_pg_connection():
+    """Establish a connection to the local PostgreSQL metadata store."""
+    return psycopg2.connect(
+        host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASS, dbname=PG_DB
+    )
+
+def create_chat_session(session_id, title):
+    """Initialize a new chat thread in the database."""
+    with get_pg_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO chat_sessions (session_id, title) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (session_id, title)
+            )
+def delete_chat_session(session_id):
+    """Delete a chat thread and all its associated messages."""
+    with get_pg_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM chat_sessions WHERE session_id = %s", (session_id,))
+            
+def save_chat_message(session_id, role, content):
+    """Save a single message to the current thread."""
+    with get_pg_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, %s, %s)",
+                (session_id, role, content)
+            )
+
+def load_chat_sessions():
+    """Retrieve all past chat threads for the sidebar."""
+    with get_pg_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT session_id, title FROM chat_sessions ORDER BY created_at DESC")
+            return cur.fetchall()
+
+def load_chat_messages(session_id):
+    """Retrieve all messages for a specific thread."""
+    with get_pg_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
+                (session_id,)
+            )
+            return cur.fetchall()
 
 def load_avatar_asset(filename):
     """Load a local avatar image if it is packaged with the app."""
@@ -75,7 +131,35 @@ def fetch_recent_anomalies(ch_client, limit=50):
     except Exception as e:
         st.error(f"Database error while fetching anomalies: {e}")
         return pd.DataFrame()
+    
+def fetch_total_predictions_count(ch_client):
+    """Get the total number of inferences in the entire table."""
+    query = "SELECT count() AS total FROM atlas.telemetry_ml_predictions"
+    try:
+        df = ch_client.query_df(query)
+        return int(df.iloc[0]['total'])
+    except Exception:
+        return 0
 
+def fetch_total_anomalies_count(ch_client):
+    """Get the total number of anomalies in the entire table."""
+    query = "SELECT count() AS total FROM atlas.telemetry_ml_predictions WHERE prediction = -1"
+    try:
+        df = ch_client.query_df(query)
+        return int(df.iloc[0]['total'])
+    except Exception:
+        return 0
+
+def fetch_global_health_score(ch_client):
+    """Calculate the true average health score across the entire fleet."""
+    query = "SELECT avg(health_score) AS avg_health FROM atlas.telemetry_ml_predictions"
+    try:
+        df = ch_client.query_df(query)
+        # Handle cases where the table is empty and returns NaN
+        val = df.iloc[0]['avg_health']
+        return float(val) if pd.notna(val) else 0.0
+    except Exception:
+        return 0.0
 def render_ml_dashboard(ch_client):
     """Main rendering function to be called from app.py."""
     st.subheader("Machine Learning Anomaly Detection")
@@ -94,17 +178,19 @@ def render_ml_dashboard(ch_client):
         return
 
     # -------------------------------------------------------------------------
-    # KPI Metrics  
+    # KPI Metrics (Global Fleet View)
     # -------------------------------------------------------------------------
+    total_predictions = fetch_total_predictions_count(ch_client)
+    total_anomalies = fetch_total_anomalies_count(ch_client)
+    global_avg_health = fetch_global_health_score(ch_client)
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Recent Predictions Scanned", value=len(df_recent))
+        st.metric(label="Total Predictions Scanned", value=f"{total_predictions:,}")
     with col2:
-        anomaly_count = len(df_anomalies)
-        st.metric(label="Recent Anomalies Detected", value=anomaly_count)
+        st.metric(label="Total Anomalies Detected", value=f"{total_anomalies:,}")
     with col3:
-        avg_health = df_recent['health_score'].mean() if 'health_score' in df_recent.columns else 0
-        st.metric(label="Average Fleet Health Score", value=f"{avg_health:.1f} / 100")
+        st.metric(label="Global Fleet Health Score", value=f"{global_avg_health:.1f} / 100")
 
     st.markdown("---")
 
@@ -231,78 +317,132 @@ def render_ml_dashboard(ch_client):
                         except requests.exceptions.RequestException as exc:
                             st.error(f" Request error: {type(exc).__name__}")
     # -------------------------------------------------------------------------
-    # TAB 4: SRE Copilot Terminal
+    # TAB 4: SRE Copilot Terminal (With Local Scoped History)
     # -------------------------------------------------------------------------
     with tab_terminal:
         st.markdown("###### Chat with ATLAS Copilot")
-        st.caption("Engage directly with ATLAS  Copilot. Ask for command explanations, custom scripts, or deeper analysis.")
-            
+        st.caption("Engage directly with ATLAS Copilot. Ask for command explanations, custom scripts, or deeper analysis.")
         
-        # 1. Initialize chat history in Streamlit's session state
-        if "sre_messages" not in st.session_state:
+        # 1. Initialize core session state
+        if "session_id" not in st.session_state:
+            st.session_state.session_id = str(uuid.uuid4())
+            st.session_state.is_new_session = True
             st.session_state.sre_messages = [
                 {
                     "role": "system", 
                     "content": "You are ATLAS, an elite AI Site Reliability Engineering copilot. Speak directly to the user. NEVER simulate a conversation between a 'User' and 'Assistant'. NEVER prefix your responses. Be concise, technical, and robotic."
-                },
-                {
-                    "role": "user",
-                    "content": "Initialize interactive copilot session."
-                },
-                {
-                    "role": "assistant",
-                    "content": "ATLAS Copilot initialized. Telemetry streams connected. Awaiting your command."
                 }
             ]
+
+        # --- THE FIX: Create a local grid layout (1/4 for history, 3/4 for chat) ---
+        history_col, chat_col = st.columns([1, 3], gap="large")
+
+        # 2. Local "Sidebar" (Chat History) scoped only to this tab
+        with history_col:
+            if st.button(" New Chat", use_container_width=True, type="primary"):
+                st.session_state.session_id = str(uuid.uuid4())
+                st.session_state.is_new_session = True
+                st.session_state.sre_messages = [
+                    {"role": "system", "content": "You are ATLAS, an elite AI Site Reliability Engineering copilot."}
+                ]
+                st.rerun()
+                
+            st.markdown("---")
+            st.markdown("**Recent Threads**")
             
-        # THE FIX 1: Create a fixed-height container so the terminal scrolls internally!
-        terminal_container = st.container(height=500)
-        
-        # 2. Display existing chat history INSIDE the container
-        with terminal_container:
-            for msg in st.session_state.sre_messages:
-                if msg["role"] != "system":
-                    avatar_icon = ASSISTANT_AVATAR if msg["role"] == "assistant" else USER_AVATAR
-                    with st.chat_message(msg["role"], avatar=avatar_icon):
-                        st.markdown(msg["content"])
+             
+           # Wrap the history in a fixed-height container so it scrolls independently
+            with st.container(height=500, border=False):
+                past_sessions = load_chat_sessions()
+                
+                for session in past_sessions:
+                    # Create a mini-grid for each row: 5 parts for the name, 1 part for the trash can
+                    btn_col, del_col = st.columns([5, 1])
                     
-        # 3. Chat Input Field (Stays pinned to the bottom of the tab)
-        if user_prompt := st.chat_input("Enter command or query..."):
+                    with btn_col:
+                        if st.button(f" {session['title']}", key=f"load_{session['session_id']}", use_container_width=True):
+                            st.session_state.session_id = str(session['session_id'])
+                            st.session_state.is_new_session = False
+                            
+                            # Load historical messages into state
+                            db_messages = load_chat_messages(session['session_id'])
+                            st.session_state.sre_messages = [{"role": "system", "content": "You are ATLAS..."}]
+                            for msg in db_messages:
+                                st.session_state.sre_messages.append({"role": msg['role'], "content": msg['content']})
+                            st.rerun()
+                            
+                    with del_col:
+                        # Trash can button
+                        if st.button("🗙", key=f"del_{session['session_id']}", help="Delete this chat"):
+                            delete_chat_session(str(session['session_id']))
+                            
+                            # If the user just deleted the chat they are currently looking at, reset the screen
+                            if st.session_state.session_id == str(session['session_id']):
+                                st.session_state.session_id = str(uuid.uuid4())
+                                st.session_state.is_new_session = True
+                                st.session_state.sre_messages = [
+                                    {"role": "system", "content": "You are ATLAS, an elite AI Site Reliability Engineering copilot."}
+                                ]
+                            st.rerun()
             
-            # Add user message to state
-            st.session_state.sre_messages.append({"role": "user", "content": user_prompt})
+        # 3. Main Chat UI
+        with chat_col:
+            # Fixed height for the message area
+            terminal_container = st.container(height=500)
             
-            # Render the new messages INSIDE the fixed container so it doesn't push the layout
             with terminal_container:
-                with st.chat_message("user", avatar=USER_AVATAR):
-                    st.markdown(user_prompt)
-                    
-                # 4. Generate the streaming response
-                with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
-                    message_placeholder = st.empty()
-                    full_response = ""
-                    
-                    try:
-                        response = requests.post(f"{OLLAMA_ENDPOINT}/api/chat", json={
-                            "model": "phi4-mini",
-                            "messages": st.session_state.sre_messages,
-                            "stream": True 
-                        }, stream=True)
+                for msg in st.session_state.sre_messages:
+                    if msg["role"] != "system":
+                        avatar_icon = ASSISTANT_AVATAR if msg["role"] == "assistant" else USER_AVATAR
+                        with st.chat_message(msg["role"], avatar=avatar_icon):
+                            st.markdown(msg["content"])
                         
-                        if response.status_code == 200:
-                            for line in response.iter_lines():
-                                if line:
-                                    json_data = json.loads(line)
-                                    if "message" in json_data and "content" in json_data["message"]:
-                                        chunk = json_data["message"]["content"]
-                                        full_response += chunk
-                                        message_placeholder.markdown(full_response + " █")
-                                        
-                            message_placeholder.markdown(full_response)
-                            st.session_state.sre_messages.append({"role": "assistant", "content": full_response})
+            # 4. Handle New Input (Because it's inside chat_col, it pins to the bottom of the column!)
+            if user_prompt := st.chat_input("Enter command or query..."):
+                
+                # If this is the very first message of a new thread, save the session to the DB
+                if st.session_state.get("is_new_session", False):
+                    # Create a short title from the first prompt (max 30 chars)
+                    thread_title = user_prompt[:30] + "..." if len(user_prompt) > 30 else user_prompt
+                    create_chat_session(st.session_state.session_id, thread_title)
+                    st.session_state.is_new_session = False
+                
+                # Save user message
+                st.session_state.sre_messages.append({"role": "user", "content": user_prompt})
+                save_chat_message(st.session_state.session_id, "user", user_prompt)
+                
+                with terminal_container:
+                    with st.chat_message("user", avatar=USER_AVATAR):
+                        st.markdown(user_prompt)
+                        
+                    with st.chat_message("assistant", avatar=ASSISTANT_AVATAR):
+                        message_placeholder = st.empty()
+                        full_response = ""
+                        
+                        try:
+                            response = requests.post(f"{OLLAMA_ENDPOINT}/api/chat", json={
+                                "model": "phi4-mini",
+                                "messages": st.session_state.sre_messages,
+                                "stream": True 
+                            }, stream=True)
                             
-                        else:
-                            message_placeholder.error(f"Terminated. Exit code: {response.status_code}")
-                            
-                    except requests.exceptions.RequestException as e:
-                        message_placeholder.error("🚨 Connection to local LLM socket severed.")
+                            if response.status_code == 200:
+                                for line in response.iter_lines():
+                                    if line:
+                                        json_data = json.loads(line)
+                                        if "message" in json_data and "content" in json_data["message"]:
+                                            chunk = json_data["message"]["content"]
+                                            full_response += chunk
+                                            message_placeholder.markdown(full_response + " █")
+                                            
+                                message_placeholder.markdown(full_response)
+                                
+                                # Save AI message to state and DB
+                                st.session_state.sre_messages.append({"role": "assistant", "content": full_response})
+                                save_chat_message(st.session_state.session_id, "assistant", full_response)
+                                
+                            else:
+                                message_placeholder.error(f"Terminated. Exit code: {response.status_code}")
+                                
+                        except requests.exceptions.RequestException:
+                            message_placeholder.error("  Connection to local LLM socket severed.")

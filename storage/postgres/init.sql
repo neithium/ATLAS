@@ -102,3 +102,24 @@ DO $$
 BEGIN
     RAISE NOTICE 'ATLAS PostgreSQL initialization completed successfully!';
 END $$;
+
+-- =============================================================================
+-- ATLAS Copilot Chat History Schema
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_id UUID PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id SERIAL PRIMARY KEY,
+    session_id UUID REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+    role VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for fast message retrieval by session
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
