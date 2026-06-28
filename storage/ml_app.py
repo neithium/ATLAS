@@ -335,7 +335,7 @@ def render_ml_dashboard(ch_client):
             ]
 
         # --- THE FIX: Create a local grid layout (1/4 for history, 3/4 for chat) ---
-        history_col, chat_col = st.columns([1, 3], gap="large")
+        history_col, chat_col = st.columns([1, 3], gap="small")
 
         # 2. Local "Sidebar" (Chat History) scoped only to this tab
         with history_col:
@@ -388,7 +388,7 @@ def render_ml_dashboard(ch_client):
         # 3. Main Chat UI
         with chat_col:
             # Fixed height for the message area
-            terminal_container = st.container(height=500)
+            terminal_container = st.container(height=650)
             
             with terminal_container:
                 for msg in st.session_state.sre_messages:
