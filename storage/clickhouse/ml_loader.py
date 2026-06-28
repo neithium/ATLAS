@@ -125,6 +125,9 @@ def read_ml_parquet(path: str) -> pd.DataFrame:
     for pf in parquet_files:
         try:
             df = pq.read_table(pf).to_pandas()
+            if "prediction" not in df.columns:
+                log.warning("Skipping file %s: Missing 'prediction' column (likely not an ML output file)", pf)
+                continue
             dfs.append(df)
             log.info("  Read %d rows from %s", len(df), Path(pf).name)
         except Exception as e:

@@ -710,7 +710,7 @@ services:
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/app.py:/app/app.py:ro
       # ML predictions from inference layer (read-only)
-      - ./delta_lake/data:/data/ml_predictions:ro
+      - ./ml_predictions_output:/data/ml_predictions:ro
       # Schema reference
       - ./schema:/app/schema:ro
       # Mount the prompts directory into the app workspace
@@ -928,7 +928,7 @@ services:
       # Read-only: live telemetry Parquet produced by live_data_gen.py
       - ./ML-Model/telemetry-data/live:/data/live:ro
       # Read-write: enriched predictions consumed by ml_loader.py → ClickHouse
-      - ./delta_lake/data:/data/ml_predictions
+      - ./ml_predictions_output:/data/ml_predictions
       # Read-only: trained model artifacts from train_model.py (Sanjula)
       # isolation_forest.pkl, preprocessor.pkl, health_score_config.pkl
       - ./ML-Model/models:/app/models:ro
