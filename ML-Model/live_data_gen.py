@@ -280,7 +280,7 @@ def main():
         filename = os.path.join(args.outdir, f"inference_batch_{now.strftime('%Y%m%d_%H%M%S')}.parquet")
         df.to_parquet(filename, engine='pyarrow', compression='snappy', index=False)
         logger.info("-" * 70)
-        logger.info(f"✅ Saved live snapshot to {filename} ({len(df)} rows)")
+        logger.info(f"Saved live snapshot to {filename} ({len(df)} rows)")
         logger.info("-" * 70)
         
         if not args.loop:
