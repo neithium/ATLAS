@@ -447,8 +447,17 @@ def run_once(model, preprocessor, health_cfg: dict) -> bool:
     output_df["anomaly_score"] = anomaly_scores
     output_df["health_score"] = health_scores.round(2)
 
+    # Map health_score to categorical health_status
+    conditions = [
+        health_scores >= config.HEALTH_THRESHOLD_HEALTHY,
+        health_scores >= config.HEALTH_THRESHOLD_WARNING,
+        health_scores >= config.HEALTH_THRESHOLD_DEGRADED,
+    ]
+    choices = ["Healthy", "Warning", "Degraded"]
+    output_df["health_status"] = np.select(conditions, choices, default="Critical")
+
     log.info(
-        "Output columns added: prediction, anomaly_score, health_score. "
+        "Output columns added: prediction, anomaly_score, health_score, health_status. "
         "Total columns: %d",
         len(output_df.columns),
     )
