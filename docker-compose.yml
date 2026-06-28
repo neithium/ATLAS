@@ -912,6 +912,35 @@ services:
     networks:
       - atlas-network
 
+  ml-inference:
+    build:
+      context: ./ml_inference
+      dockerfile: Dockerfile
+    container_name: ml-inference
+    hostname: ml-inference
+    depends_on:
+      - atlas-ml
+    volumes:
+      # Read-only: live telemetry Parquet produced by live_data_gen.py
+      - ./ML-Model/telemetry-data/live:/data/live:ro
+      # Read-write: enriched predictions consumed by ml_loader.py → ClickHouse
+      - ./delta_lake/data:/data/ml_predictions
+      # Read-only: trained model artifacts from train_model.py (Sanjula)
+      # isolation_forest.pkl, preprocessor.pkl, health_score_config.pkl
+      - ./ML-Model/models:/app/models:ro
+    environment:
+      - ML_INPUT_DIR=/data/live
+      - ML_OUTPUT_DIR=/data/ml_predictions
+      - ML_MODEL_PATH=/app/models/isolation_forest.pkl
+      - ML_PREPROCESSOR_PATH=/app/models/preprocessor.pkl
+      - ML_HEALTH_CONFIG_PATH=/app/models/health_score_config.pkl
+      - ML_WATCH_MODE=true
+      - ML_POLL_INTERVAL=10
+    networks:
+      - atlas-network
+    restart: unless-stopped
+
+
   grafana:
     image: grafana/grafana:latest
     container_name: atlas-grafana

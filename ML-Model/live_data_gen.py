@@ -253,7 +253,7 @@ def main():
     parser.add_argument("--loop", action="store_true", help="Run continuously in a loop")
     parser.add_argument("--interval", type=int, default=3600, help="Seconds between generations (default 1 hour)")
     parser.add_argument("--anomalies", action="store_true", help="Randomly inject anomalies for inference testing")
-    parser.add_argument("--anomaly-rate", type=float, default=0.03, help="Percentage of servers to infect (e.g. 0.15 for 15%)")
+    parser.add_argument("--anomaly-rate", type=float, default=0.03, help="Percentage of servers to infect (e.g. 0.15 for 15 percent)")
     args = parser.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
