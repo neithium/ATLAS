@@ -16,7 +16,14 @@ from datetime import datetime, timedelta, timezone
 # specifically injected into the test split.
 # ==============================================================================
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("ml_engine.log", mode="a")
+    ]
+)
 logger = logging.getLogger("TelemetryGenerator")
 
 DEFAULT_SERVERS = 1000
@@ -95,9 +102,6 @@ ROLE_COVARIATES = {
 
 
 def generate_server_inventory(num_servers: int, seed: int) -> pd.DataFrame:
-    logger.info("=" * 70)
-    logger.info("ATLAS ML Data Generator - Historical Training Data")
-    logger.info("=" * 70)
     logger.info(f"Generating inventory for {num_servers} servers...")
     rng = np.random.default_rng(seed)
     py_rng = random.Random(seed)
@@ -426,6 +430,10 @@ def main():
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed")
     args = parser.parse_args()
 
+    logger.info("=" * 70)
+    logger.info("ATLAS ML Data Generator - Historical Training Data")
+    logger.info("=" * 70)
+    
     inventory_df = generate_server_inventory(args.servers, args.seed)
     telemetry_df = generate_hourly_metrics(inventory_df, args.days, args.seed)
     write_parquet(telemetry_df, args.out)

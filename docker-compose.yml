@@ -903,7 +903,7 @@ services:
       - ./ingestion/device_configs.json:/ingestion/device_configs.json:ro
     working_dir: /app
     healthcheck:
-      test: ["CMD", "python3", "--version"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
