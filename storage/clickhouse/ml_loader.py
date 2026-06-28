@@ -90,6 +90,7 @@ CH_ML_COLUMNS = [
     "prediction",
     "anomaly_score",
     "health_score",
+    "health_status",
     # insertion_time is DEFAULT now(), not supplied
 ]
 
