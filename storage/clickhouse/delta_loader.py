@@ -708,8 +708,21 @@ def main():
 
     # --- Insert into ClickHouse ------------------------------------------
     try:
+        # Get count before insert
+        pre_insert_count = ch_client.command("SELECT count() FROM atlas.telemetry_refined")
+        
         rows_inserted = insert_into_clickhouse(ch_client, df)
         log.info("Inserted %d rows into atlas.telemetry_refined", rows_inserted)
+        
+        # Verify count after insert
+        post_insert_count = ch_client.command("SELECT count() FROM atlas.telemetry_refined")
+        actual_inserted = post_insert_count - pre_insert_count
+        
+        if actual_inserted != rows_inserted:
+            log.warning("ClickHouse row count mismatch! Expected %d new rows, but table grew by %d rows.", rows_inserted, actual_inserted)
+        else:
+            log.info("Verified: ClickHouse table grew by exactly %d rows.", rows_inserted)
+            
     except Exception as exc:
         log.error("ClickHouse insert failed: %s", exc)
         log.error("Column dtypes:")
