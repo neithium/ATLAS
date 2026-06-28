@@ -95,6 +95,9 @@ ROLE_COVARIATES = {
 
 
 def generate_server_inventory(num_servers: int, seed: int) -> pd.DataFrame:
+    logger.info("=" * 70)
+    logger.info("ATLAS ML Data Generator - Historical Training Data")
+    logger.info("=" * 70)
     logger.info(f"Generating inventory for {num_servers} servers...")
     rng = np.random.default_rng(seed)
     py_rng = random.Random(seed)
@@ -427,7 +430,9 @@ def main():
     telemetry_df = generate_hourly_metrics(inventory_df, args.days, args.seed)
     write_parquet(telemetry_df, args.out)
     
+    logger.info("-" * 70)
     logger.info("✅ Generation Pipeline Complete!")
+    logger.info("-" * 70)
 
 
 if __name__ == "__main__":

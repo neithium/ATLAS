@@ -33,6 +33,9 @@ def generate_current_hour(inventory_df: pd.DataFrame, is_anomaly_test: bool = Fa
     now = datetime.now(timezone.utc)
     current_hour = now.hour
     
+    logger.info("=" * 70)
+    logger.info("ATLAS ML Data Generator - Live Inference Snapshot")
+    logger.info("=" * 70)
     logger.info(f"Generating live snapshot for {num_servers} servers at {now.strftime('%Y-%m-%d %H:00:00 UTC')}")
     
     rng = np.random.default_rng()
@@ -238,7 +241,9 @@ def main():
         
         filename = os.path.join(args.outdir, f"inference_batch_{now.strftime('%Y%m%d_%H%M%S')}.parquet")
         df.to_parquet(filename, engine='pyarrow', compression='snappy', index=False)
+        logger.info("-" * 70)
         logger.info(f"✅ Saved live snapshot to {filename} ({len(df)} rows)")
+        logger.info("-" * 70)
         
         if not args.loop:
             break
