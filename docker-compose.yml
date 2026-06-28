@@ -107,7 +107,9 @@ services:
       - REDIS_HOST=127.0.0.1
       - MINIO_HOST=127.0.0.1
       - MINIO_BUCKET=telemetry-raw
-      - KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-broker1:9092}
+      # All 3 brokers listed — producer stays up even if broker1 crashes.
+      # Kafka needs only ONE reachable bootstrap to discover the full cluster.
+      - KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-broker1:9092,broker2:9092,broker3:9092}
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
@@ -673,10 +675,9 @@ services:
     container_name: atlas-analytics
     hostname: analytics
     ports:
-      - "9001:8123" # ClickHouse HTTP interface (queries, dashboards)
-      - "9000:9000" # ClickHouse Native TCP interface
-      - "5432:5432" # PostgreSQL
-      - "8501:8501" # Streamlit Dashboard
+      - "127.0.0.1:8124:8123" # ClickHouse HTTP (localhost only)
+      - "127.0.0.1:9002:9000" # ClickHouse Native TCP (localhost only)
+      - "127.0.0.1:5433:5432" # PostgreSQL (localhost only, mapped to 5433 to avoid host conflict)
     env_file: .env.example
     environment:
       # Override hosts for internal (same-container) connections.
@@ -891,17 +892,36 @@ services:
           --rate $$RECORDS_PER_SECOND
       "
 
-  # grafana:
-  #   image: grafana/grafana:latest
-  #   container_name: atlas-grafana
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  #   networks:
-  #     - atlas-network
-  #   volumes:
-  #     - grafana-data:/var/lib/grafana
+  atlas-ml:
+    build:
+      context: ./ML-Model
+      dockerfile: Dockerfile
+    container_name: atlas-ml
+    hostname: ml-model
+    volumes:
+      - ./ML-Model:/app
+      - ./ingestion/device_configs.json:/ingestion/device_configs.json:ro
+    working_dir: /app
+    healthcheck:
+      test: ["CMD", "python3", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - atlas-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: atlas-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - atlas-network
+    volumes:
+      - grafana-data:/var/lib/grafana
 
 networks:
   atlas-network:

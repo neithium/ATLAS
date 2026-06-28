@@ -46,10 +46,14 @@ def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="devi
                     {"memory_size": 128, "operating_freq": 4800, "memory_device_type": "DDR5"},
                     {"memory_size": 256, "operating_freq": 4800, "memory_device_type": "DDR5"}
                 ]
+                
+                # Server Roles for AI/ML Model Training Constraints
+                ROLES = ["db_server", "ui_server", "compute_node", "cache_server", "ml_worker"]
 
                 # Select Hardware
                 hw_model, hw_vendor, hw_gen, hw_cpu = random.choice(MODELS)
                 hw_ram = random.choice(RAM_OPTIONS)
+                server_role = random.choice(ROLES)
                 
                 # Select Geographic Location (Rotation)
                 loc = LOCATIONS[global_counter % len(LOCATIONS)]
@@ -62,7 +66,7 @@ def generate_registry(pcids=5, acids=2, devices_per_acid=1000, output_path="devi
                     "model": hw_model,
                     "processor_vendor": hw_vendor,
                     "server_generation": hw_gen,
-                    "tags": "production,critical",
+                    "tags": f"production,{server_role}",
                     "status": True,
                     "report_type": "telemetry_live",
                     "metric_type": "power_metrics",

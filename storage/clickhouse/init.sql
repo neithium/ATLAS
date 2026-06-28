@@ -82,8 +82,19 @@ CREATE TABLE IF NOT EXISTS atlas.telemetry_refined
 ) ENGINE = ReplacingMergeTree(insertion_time)
 PARTITION BY toYYYYMMDD(metric_time)
 ORDER BY (platform_customer_id, application_customer_id, device_id, metric_id, metric_time)
-TTL metric_time + INTERVAL 7 DAY DELETE
+TTL toDateTime(metric_time) + INTERVAL 90 DAY DELETE
 SETTINGS index_granularity = 8192;
+
+-- -----------------------------------------------------------------------------
+-- Deduplicated View (Safe Querying)
+-- -----------------------------------------------------------------------------
+-- ReplacingMergeTree deduplicates rows in the background during merges, but
+-- recent inserts might temporarily contain duplicates before a merge completes.
+-- This view uses the FINAL keyword to guarantee exactly-once semantics at
+-- query time, at the cost of some query performance. Use this view for exact
+-- row-level analysis, and the raw table for fast aggregations.
+CREATE VIEW IF NOT EXISTS atlas.telemetry_refined_deduped AS
+SELECT * FROM atlas.telemetry_refined FINAL;
 
 -- NOTE: Buffer table removed. The Buffer engine is in-memory only — if the
 -- ClickHouse container crashes between insert and flush, buffered data is lost
