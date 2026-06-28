@@ -8,10 +8,11 @@ import os
 from datetime import datetime, timedelta
 from deltalake import DeltaTable
 import pytz
+from streamlit_option_menu import option_menu
 
 import ml_app 
 
-st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide")
+st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide", initial_sidebar_state="expanded")
 
 # Timezone setup - IST (Indian Standard Time)
 IST = pytz.timezone('Asia/Kolkata')
@@ -163,32 +164,74 @@ def get_ch_chart_data(table, x_col, y_col, color_col, limit=1000):
     return pd.DataFrame()
 
 # =============================================================================
-# UI Layout
+# UI Layout: Global Sidebar
 # =============================================================================
 
-st.title(" ATLAS Observability Dashboard")
-st.markdown(" Observability and Real-Time Telemetry Visualization Packed in One")
+with st.sidebar:
+    st.markdown("#  ATLAS DASHBOARD")
+    st.markdown("##### Observability, Telemetry and AI, All Packed in One !!")
+    st.markdown("---")
+    st.markdown("###  Navigation")
+    
+    # The new, beautiful routing menu
+    selected_page = option_menu(
+        menu_title=None,
+        options=[
+            "ClickHouse Explorer", 
+            "PostgreSQL Explorer", 
+            "Live Charts Builder", 
+            "Delta Lake Statistics", 
+            "ATLAS AI"
+        ],
+        icons=[
+            "database-fill",     
+            "server",            
+            "graph-up-arrow",    
+            "water",             
+            "robot"              
+        ], 
+        menu_icon="cast", 
+        default_index=0,
+        styles={
+            "container": {
+                "padding": "0!important", 
+                "background-color": "transparent"
+            },
+            "icon": {
+                "color": "#9CA3AF", # Subtle slate-gray icons
+                "font-size": "18px"
+            }, 
+            "nav-link": {
+                "font-family": "system-ui, -apple-system, sans-serif", # Forces modern OS fonts
+                "font-size": "15px", 
+                "text-align": "left", 
+                "margin": "4px 0px",
+                "padding": "12px 15px",     # Better touch-target breathing room
+                "border-radius": "8px",     # Sleek rounded edges
+                "color": "#D1D5DB",         # Soft muted text (anti-HTML blue)
+                "--hover-color": "rgba(255, 255, 255, 0.05)"
+            },
+            "nav-link-selected": {
+                "background-color": "rgba(255, 255, 255, 0.1)", 
+                "font-weight": "600",
+                "color": "#FFFFFF",         # Bright white only when active
+                "border": "1px solid rgba(255, 255, 255, 0.05)" # Ultra-subtle depth border
+            },
+        }
+    )
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    if ch_client: st.success("  ClickHouse Online ")
-    else: st.error("  ClickHouse Offline" )
-with col2:
-    if pg_conn and not pg_conn.closed: st.success("  PostgreSQL Online ")
-    else: st.error("  PostgreSQL Offline")
-with col3:
-    if delta_client: st.success("  Delta Lake Online ")
-    else: st.error("  Delta Lake Offline")
+# =============================================================================
+# UI Layout: Main Content Area
+# =============================================================================
 
+# Header for the main area
+st.title(f"{selected_page}")
 st.markdown("---")
 
-# Added the new "Live Charts" tab
-tab_ch, tab_pg, tab_charts, tab_sla, tab_ml= st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "Delta Lake Statistics","ATLAS AI "])
-
 # -----------------------------------------------------------------------------
-# ClickHouse Tab
+# ClickHouse Explorer
 # -----------------------------------------------------------------------------
-with tab_ch:
+if selected_page == "ClickHouse Explorer":
     ch_tables = get_ch_tables()
     if not ch_tables:
         st.info("No tables found in ClickHouse.")
@@ -197,15 +240,15 @@ with tab_ch:
         col_schema, col_preview = st.columns([1, 2])
         with col_schema:
             st.markdown(f"**Schema for `{selected_ch_table}`**")
-            st.dataframe(get_ch_table_schema(selected_ch_table), use_container_width=True, height=400)
+            st.dataframe(get_ch_table_schema(selected_ch_table), use_container_width=True, height=600)
         with col_preview:
             st.markdown(f"**Live Data Preview (Top 50 Rows)**")
-            st.dataframe(get_ch_data(selected_ch_table), use_container_width=True, height=400)
+            st.dataframe(get_ch_data(selected_ch_table), use_container_width=True, height=600)
 
 # -----------------------------------------------------------------------------
-# PostgreSQL Tab
+# PostgreSQL Explorer
 # -----------------------------------------------------------------------------
-with tab_pg:
+elif selected_page == "PostgreSQL Explorer":
     pg_tables = get_pg_tables()
     if not pg_tables:
         st.info("No tables found in PostgreSQL.")
@@ -215,16 +258,17 @@ with tab_pg:
         with col_schema_pg:
             st.markdown(f"**Schema for `{selected_pg_table}`**")
             pg_schema_df = query_pg(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{selected_pg_table}'")
-            st.dataframe(pg_schema_df, use_container_width=True, height=400)
+            st.dataframe(pg_schema_df, use_container_width=True, height=600)
         with col_preview_pg:
             st.markdown(f"**Live Data Preview (Top 50 Rows)**")
-            st.dataframe(query_pg(f"SELECT * FROM {selected_pg_table} LIMIT 50"), use_container_width=True, height=400)
+            st.dataframe(query_pg(f"SELECT * FROM {selected_pg_table} LIMIT 50"), use_container_width=True, height=600)
 
 # -----------------------------------------------------------------------------
-# Live Charts Builder Tab (NEW)
+# Live Charts Builder
 # -----------------------------------------------------------------------------
-with tab_charts:
+elif selected_page == "Live Charts Builder":
     st.subheader("Dynamic Time-Series Visualizer")
+    ch_tables = get_ch_tables()
     
     if not ch_tables:
         st.warning("No ClickHouse tables available for charting.")
@@ -235,11 +279,8 @@ with tab_charts:
         
         if not schema_df.empty:
             # 2. Introspect columns to figure out what can be plotted
-            # Find Date/DateTime columns for X-Axis
             time_cols = schema_df[schema_df['type'].str.contains('Date|DateTime', case=False)]['name'].tolist()
-            # Find Numeric columns for Y-Axis
             num_cols = schema_df[schema_df['type'].str.contains('Int|Float', case=False)]['name'].tolist()
-            # Find String columns for Grouping/Categorizing
             cat_cols = ["None"] + schema_df[schema_df['type'].str.contains('String', case=False)]['name'].tolist()
 
             if not time_cols or not num_cols:
@@ -251,19 +292,16 @@ with tab_charts:
                 with ctrl_col2: y_axis = st.selectbox("Y-Axis (Metric):", num_cols)
                 with ctrl_col3: color_by = st.selectbox("Group By (Color):", cat_cols)
                 with ctrl_col4: row_limit = st.slider("Lookback Window (Rows):", 100, 10000, 1000, step=100)
-                
-                # Manual Refresh Button for "Real-Time" fetching
-                if st.button("  Refresh Data Now"):
-                    get_ch_chart_data.clear() # Clears the cache to force a fresh DB pull
+            
+                if st.button(" Refresh Data Now"):
+                    get_ch_chart_data.clear()
 
                 # 4. Fetch and Plot
                 with st.spinner("Fetching data from ClickHouse..."):
                     chart_df = get_ch_chart_data(chart_table, x_axis, y_axis, color_by, row_limit)
                     
                     if not chart_df.empty:
-                        # Sort chronologically for Plotly line charts
                         chart_df = chart_df.sort_values(by=x_axis)
-                        
                         fig = px.line(
                             chart_df, 
                             x=x_axis, 
@@ -272,34 +310,33 @@ with tab_charts:
                             template="plotly_dark",
                             title=f"{y_axis} over time (Last {row_limit} records)"
                         )
+                        fig.update_layout(height=600) # Made the chart taller!
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.warning("No data returned for the selected parameters.")
 
 # -----------------------------------------------------------------------------
-# Micro-SLA Dashboard Tab (NEW)
+# Delta Lake Statistics
 # -----------------------------------------------------------------------------
-with tab_sla:
-    st.subheader(" Delta Lake Streaming Metrics Dashboard")
+elif selected_page == "Delta Lake Statistics":
+    st.subheader("Delta Lake Streaming Metrics Dashboard")
     st.markdown("Autonomous metrics from the Delta lake layer proving sub-second latency independent of upstream APIs.")
     
-    # Check if metrics table exists and has data
     if not delta_client:
         status = check_delta_status()
         
         if not status["refined_exists"]:
-            st.error("  `/refined` volume not mounted to container")
+            st.error(" `/refined` volume not mounted to container")
             st.info("**Action**: Ensure volume mount in docker-compose.yml: `- delta-refined:/refined`")
         elif not status["system_metrics_exists"]:
-            st.warning("  Metrics table initializing...")
+            st.warning(" Metrics table initializing...")
             st.info("**Status**: Streaming pipeline is creating the metrics table. This appears on first batch processing (~10-30 seconds after startup).")
             
-            # Show pipeline status
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("  Pipeline", "Starting", delta="Monitor logs")
+                st.metric(" Pipeline", "Starting", delta="Monitor logs")
             with col2:
-                st.metric("  Table Status", "Pending", delta="Waiting for first batch")
+                st.metric(" Table Status", "Pending", delta="Waiting for first batch")
             
             st.divider()
             st.markdown("**Troubleshooting**:")
@@ -307,21 +344,18 @@ with tab_sla:
             st.markdown("-  Check pipeline logs: `docker compose logs atlas-lakehouse --tail 20`")
             st.markdown("-  Volume should be writable (not `:ro` in docker-compose.yml)")
         else:
-            st.error(f"  DeltaTable connection error: {status['error']}")
+            st.error(f" DeltaTable connection error: {status['error']}")
             st.info("Try refreshing the page or check container logs")
     else:
         with st.spinner(" Loading metrics from Delta Lake..."):
             metrics_df = query_delta_metrics(limit=500)
         
         if metrics_df.empty:
-            st.info("  No metrics available yet. Metrics will appear here once the streaming pipeline processes batches.")
+            st.info(" No metrics available yet. Metrics will appear here once the streaming pipeline processes batches.")
         else:
             try:
-                # Pre-compute all metrics ONCE to avoid repeated calculations
-                with st.spinner("  Computing SLA statistics..."):
+                with st.spinner(" Computing SLA statistics..."):
                     total_time_ms = metrics_df['total_time'] * 1000
-                    
-                    # Cache computed metrics
                     p50_latency = total_time_ms.quantile(0.50)
                     p95_latency = total_time_ms.quantile(0.95)
                     p99_latency = total_time_ms.quantile(0.99)
@@ -330,170 +364,85 @@ with tab_sla:
                     total_time_sum = metrics_df['total_time'].sum()
                     throughput = total_rows / total_time_sum if total_time_sum > 0 else 0
                 
-                # =========== SLA Metrics Cards ===========
                 st.markdown("###  Key Performance Indicators (Last 500 Batches)")
-                
                 col_p50, col_p95, col_p99, col_tput = st.columns(4)
-                
-                with col_p50:
-                    st.metric(
-                        label="P50 Latency",
-                        value=f"{p50_latency:.1f}ms"
-                    )
-                
-                with col_p95:
-                    st.metric(
-                        label="P95 Latency",
-                        value=f"{p95_latency:.1f}ms"
-                    )
-                
-                with col_p99:
-                    st.metric(
-                        label="P99 Latency",
-                        value=f"{p99_latency:.1f}ms"
-                    )
-                
-                with col_tput:
-                    st.metric(
-                        label="Throughput",
-                        value=f"{throughput:,.0f}rows/sec"
-                    )
+                with col_p50: st.metric(label="P50 Latency", value=f"{p50_latency:.1f}ms")
+                with col_p95: st.metric(label="P95 Latency", value=f"{p95_latency:.1f}ms")
+                with col_p99: st.metric(label="P99 Latency", value=f"{p99_latency:.1f}ms")
+                with col_tput: st.metric(label="Throughput", value=f"{throughput:,.0f}rows/sec")
                 
                 st.markdown("---")
-                
-                # =========== Time-Series Charts ===========
                 st.markdown("###  Latency Trends (Recent Batches)")
                 
                 col_trend, col_merge = st.columns(2)
-                
                 if 'timestamp' not in metrics_df.columns:
                     st.warning("⚠ Timestamp column not found in metrics data.")
                 else:
                     with col_trend:
-                        with st.spinner(" Building latency chart..."):
-                            trend_df = metrics_df.sort_values('timestamp')
-                            fig_trend = px.line(
-                                trend_df,
-                                x='timestamp',
-                                y='total_time',
-                                title="Total Batch Latency Over Time",
-                                labels={'total_time': 'Latency (seconds)', 'timestamp': 'Time'},
-                                template="plotly_dark",
-                                render_mode="webgl"
-                            )
-                            fig_trend.add_hline(y=0.5, line_dash="dash", line_color="yellow", annotation_text="SLA Target (500ms)")
-                            fig_trend.add_hline(y=1.5, line_dash="dash", line_color="red", annotation_text="Alert Threshold (1.5s)")
-                            st.plotly_chart(fig_trend, use_container_width=True)
+                        trend_df = metrics_df.sort_values('timestamp')
+                        fig_trend = px.line(
+                            trend_df, x='timestamp', y='total_time',
+                            title="Total Batch Latency Over Time",
+                            labels={'total_time': 'Latency (seconds)', 'timestamp': 'Time'},
+                            template="plotly_dark", render_mode="webgl"
+                        )
+                        fig_trend.add_hline(y=0.5, line_dash="dash", line_color="yellow", annotation_text="SLA Target (500ms)")
+                        fig_trend.add_hline(y=1.5, line_dash="dash", line_color="red", annotation_text="Alert Threshold (1.5s)")
+                        st.plotly_chart(fig_trend, use_container_width=True)
                     
                     with col_merge:
-                        with st.spinner("  Building merge time chart..."):
-                            merge_df = metrics_df.sort_values('timestamp')
-                            fig_merge = px.line(
-                                merge_df,
-                                x='timestamp',
-                                y='merge_time',
-                                title="MERGE Operation Time Trend",
-                                labels={'merge_time': 'MERGE Duration (seconds)', 'timestamp': 'Time'},
-                                template="plotly_dark",
-                                render_mode="webgl"
-                            )
-                            fig_merge.add_hline(y=0.1, line_dash="dash", line_color="green", annotation_text="Typical (<100ms)")
-                            st.plotly_chart(fig_merge, use_container_width=True)
+                        merge_df = metrics_df.sort_values('timestamp')
+                        fig_merge = px.line(
+                            merge_df, x='timestamp', y='merge_time',
+                            title="MERGE Operation Time Trend",
+                            labels={'merge_time': 'MERGE Duration (seconds)', 'timestamp': 'Time'},
+                            template="plotly_dark", render_mode="webgl"
+                        )
+                        fig_merge.add_hline(y=0.1, line_dash="dash", line_color="green", annotation_text="Typical (<100ms)")
+                        st.plotly_chart(fig_merge, use_container_width=True)
                 
                 st.markdown("---")
                 
-                # =========== Batch Statistics ===========
-                st.markdown("###   Batch Processing Statistics")
-                
-                col_stat1, col_stat2, col_stat3 = st.columns(3)
-                
-                with col_stat1:
-                    total_batches = len(metrics_df)
-                    st.metric("Total Batches Processed", f"{total_batches:,}")
-                
-                with col_stat2:
-                    total_rows = metrics_df['row_count'].sum()
-                    st.metric("Total Rows Deduplicated", f"{total_rows:,}")
-                
-                with col_stat3:
-                    avg_rows_per_batch = metrics_df['row_count'].mean()
-                    st.metric("Avg Rows per Batch", f"{avg_rows_per_batch:,.0f}")
-                
-                st.markdown("---")
-                
-                # =========== Performance Breakdown ===========
-                st.markdown("###   Performance Analysis")
-                
+                # Performance Breakdown
+                st.markdown("###  Performance Analysis")
                 tab_breakdown, tab_outliers, tab_raw = st.tabs(["Latency Breakdown", "Outliers & Anomalies", "Raw Metrics"])
                 
                 with tab_breakdown:
-                    # Calculate merge percentage
                     metrics_df['merge_pct'] = (metrics_df['merge_time'] / metrics_df['total_time'] * 100).round(2)
                     metrics_df['prep_pct'] = ((metrics_df['total_time'] - metrics_df['merge_time']) / metrics_df['total_time'] * 100).round(2)
                     
                     breakdown_stats = pd.DataFrame({
                         'Component': ['MERGE Operation', 'Prep & Partitioning'],
-                        'Avg Time (ms)': [
-                            metrics_df['merge_time'].mean() * 1000,
-                            (metrics_df['total_time'] - metrics_df['merge_time']).mean() * 1000
-                        ],
-                        'P95 Time (ms)': [
-                            metrics_df['merge_time'].quantile(0.95) * 1000,
-                            (metrics_df['total_time'] - metrics_df['merge_time']).quantile(0.95) * 1000
-                        ],
-                        'Pct of Total': [
-                            metrics_df['merge_pct'].mean(),
-                            metrics_df['prep_pct'].mean()
-                        ]
+                        'Avg Time (ms)': [metrics_df['merge_time'].mean() * 1000, (metrics_df['total_time'] - metrics_df['merge_time']).mean() * 1000],
+                        'P95 Time (ms)': [metrics_df['merge_time'].quantile(0.95) * 1000, (metrics_df['total_time'] - metrics_df['merge_time']).quantile(0.95) * 1000],
+                        'Pct of Total': [metrics_df['merge_pct'].mean(), metrics_df['prep_pct'].mean()]
                     })
-                    
                     st.dataframe(breakdown_stats, use_container_width=True)
-                    
-                    # Pie chart of time breakdown
-                    breakdown_pie = go.Figure(data=[go.Pie(
-                        labels=['MERGE Operation', 'Prep & Partitioning'],
-                        values=[
-                            metrics_df['merge_time'].sum(),
-                            (metrics_df['total_time'] - metrics_df['merge_time']).sum()
-                        ],
-                        marker=dict(colors=['#FF6692', '#00CC96'])
-                    )])
-                    breakdown_pie.update_layout(title="Time Spent by Component (Total Across All Batches)", template="plotly_dark")
-                    st.plotly_chart(breakdown_pie, use_container_width=True)
                 
                 with tab_outliers:
-                    # Find slow batches (p99)
                     p99_threshold = metrics_df['total_time'].quantile(0.99)
                     slow_batches = metrics_df[metrics_df['total_time'] > p99_threshold].sort_values('total_time', ascending=False)
-                    
                     st.subheader("Slow Batches (P99+)")
                     if not slow_batches.empty:
-                        display_cols = ['batch_id', 'timestamp', 'total_time', 'merge_time', 'row_count']
-                        display_cols = [c for c in display_cols if c in slow_batches.columns]
+                        display_cols = [c for c in ['batch_id', 'timestamp', 'total_time', 'merge_time', 'row_count'] if c in slow_batches.columns]
                         slow_batches_display = slow_batches[display_cols].copy()
-                        if 'total_time' in slow_batches_display.columns:
-                            slow_batches_display['total_time'] = slow_batches_display['total_time'].apply(lambda x: f"{x*1000:.2f}ms")
-                        if 'merge_time' in slow_batches_display.columns:
-                            slow_batches_display['merge_time'] = slow_batches_display['merge_time'].apply(lambda x: f"{x*1000:.2f}ms")
+                        if 'total_time' in slow_batches_display.columns: slow_batches_display['total_time'] = slow_batches_display['total_time'].apply(lambda x: f"{x*1000:.2f}ms")
+                        if 'merge_time' in slow_batches_display.columns: slow_batches_display['merge_time'] = slow_batches_display['merge_time'].apply(lambda x: f"{x*1000:.2f}ms")
                         st.dataframe(slow_batches_display, use_container_width=True)
                     else:
-                        st.success("  No outliers detected! All batches performing within SLA.")
+                        st.success(" No outliers detected! All batches performing within SLA.")
                 
                 with tab_raw:
                     st.subheader("Raw Metrics Data")
-                    st.info("Showing latest 50 batches. Export to CSV for deeper analysis.")
                     display_df = metrics_df.sort_values('timestamp', ascending=False).head(50).copy()
-                    if 'total_time' in display_df.columns:
-                        display_df['total_time_ms'] = (display_df['total_time'] * 1000).round(2)
-                    if 'merge_time' in display_df.columns:
-                        display_df['merge_time_ms'] = (display_df['merge_time'] * 1000).round(2)
                     st.dataframe(display_df, use_container_width=True)
-                
+                    
             except Exception as e:
-                st.error(f"  Error rendering dashboard: {type(e).__name__}")
+                st.error(f" Error rendering dashboard: {type(e).__name__}")
                 st.info("Try refreshing the page or check container logs for details.")
+
 # -----------------------------------------------------------------------------
-# ML Dashboard Tab (NEW)
+# ATLAS AI
 # -----------------------------------------------------------------------------
-with tab_ml:
+elif selected_page == "ATLAS AI":
     ml_app.render_ml_dashboard(ch_client)
