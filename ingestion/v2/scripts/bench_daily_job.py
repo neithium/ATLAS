@@ -18,15 +18,19 @@ async def run_bench():
     load_registry()
     await get_db_pool()
     
+    log.info("=" * 70)
     log.info("⏱️  Starting Production DAILY_ARCHIVAL_JOB...")
+    log.info("=" * 70)
     start_time = time.monotonic()
     
     try:
         await daily_archival_job()
         
         duration = time.monotonic() - start_time
+        log.info("-" * 70)
         log.info(f"[DAILY JOB] JOB COMPLETE!")
         log.info(f"[DAILY JOB] EXACT TIME TAKEN: {duration:.2f} seconds ({(duration/60):.2f} minutes)")
+        log.info("-" * 70)
         
         # ── Verify _SUCCESS marker in both RAW and ARCHIVE ──────────────
         import glob

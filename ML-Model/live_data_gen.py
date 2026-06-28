@@ -3,6 +3,8 @@ import uuid
 import time
 import logging
 import argparse
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
@@ -25,15 +27,43 @@ from data_generator import (
 # Ensures the exact 31-column schema output matching data_generator.py.
 # ==============================================================================
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("ml_engine.log", mode="a")
+    ]
+)
 logger = logging.getLogger("LiveGen")
 
-def generate_current_hour(inventory_df: pd.DataFrame, is_anomaly_test: bool = False, anomaly_rate: float = 0.03) -> pd.DataFrame:
+# ==============================================================================
+# BACKGROUND HEALTHCHECK SERVER
+# ==============================================================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+        
+    def log_message(self, format, *args):
+        # Emulate FastAPI / Uvicorn style logging
+        logger.info(f"    {self.client_address[0]}:{self.client_address[1]} - \"{self.requestline}\" {args[1]} OK")
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+    server.serve_forever()
+# ==============================================================================
+
+def generate_current_hour(inventory_df: pd.DataFrame, now: datetime, is_anomaly_test: bool = False, anomaly_rate: float = 0.03) -> pd.DataFrame:
     num_servers = len(inventory_df)
-    now = datetime.now(timezone.utc)
     current_hour = now.hour
     
-    logger.info(f"Generating live snapshot for {num_servers} servers at {now.strftime('%Y-%m-%d %H:00:00 UTC')}")
+    logger.info("=" * 70)
+    logger.info("ATLAS ML Data Generator - Live Inference Snapshot")
+    logger.info("=" * 70)
+    logger.info(f"Generating live snapshot for {num_servers} servers at {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     
     rng = np.random.default_rng()
     
@@ -118,7 +148,7 @@ def generate_current_hour(inventory_df: pd.DataFrame, is_anomaly_test: bool = Fa
     is_anomaly = np.zeros(num_servers, dtype=int)
     
     if is_anomaly_test:
-        logger.warning(f"⚠️ INJECTING LIVE ANOMALIES FOR ML INFERENCE DETECTION (Rate: {anomaly_rate*100}%)!")
+        logger.warning(f"INJECTING LIVE ANOMALIES FOR ML INFERENCE DETECTION (Rate: {anomaly_rate*100}%)!")
         n_anom_servers = int(num_servers * rng.uniform(anomaly_rate * 0.8, anomaly_rate * 1.2))
         anom_servers = rng.choice(num_servers, n_anom_servers, replace=False)
         
@@ -197,7 +227,7 @@ def generate_current_hour(inventory_df: pd.DataFrame, is_anomaly_test: bool = Fa
         "socket_count": inventory_df["socket_count"].values,
         "last_maintenance_date": inventory_df["last_maintenance_date"].values,
         "last_boot_time": inventory_df["last_boot_time"].values,
-        "metric_time": [now.strftime("%Y-%m-%dT%H:00:00Z")] * num_servers,
+        "metric_time": [now.strftime("%Y-%m-%dT%H:%M:%SZ")] * num_servers,
         "avg_metric_value": avg_power.round(2),
         "max_metric_value": max_power.round(2),
         "min_metric_value": min_power.round(2),
@@ -228,17 +258,30 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     
+    # Start the background health server so Docker can ping it!
+    threading.Thread(target=run_health_server, daemon=True).start()
+    logger.info("Started Background Healthcheck Server on port 8000")
+    
     # Use data_generator.py's internal function to magically reconstruct the EXACT same servers!
     logger.info(f"Reconstructing exact hardware profiles for {args.servers} servers using seed {args.seed}...")
     inventory_df = generate_server_inventory(args.servers, args.seed)
 
     while True:
-        now = datetime.now()
-        df = generate_current_hour(inventory_df, is_anomaly_test=args.anomalies, anomaly_rate=args.anomaly_rate)
+        # Dynamically round the timestamp down to the nearest multiple of the interval
+        # E.g., if interval is 3600 (1 hour), it rounds to exactly 06:00:00. 
+        # If interval is 300 (5 mins), it rounds to exactly 06:05:00.
+        now_raw = datetime.now(timezone.utc)
+        timestamp_s = int(now_raw.timestamp())
+        rounded_timestamp_s = timestamp_s - (timestamp_s % args.interval)
+        now = datetime.fromtimestamp(rounded_timestamp_s, tz=timezone.utc)
+        
+        df = generate_current_hour(inventory_df, now, is_anomaly_test=args.anomalies, anomaly_rate=args.anomaly_rate)
         
         filename = os.path.join(args.outdir, f"inference_batch_{now.strftime('%Y%m%d_%H%M%S')}.parquet")
         df.to_parquet(filename, engine='pyarrow', compression='snappy', index=False)
-        logger.info(f"✅ Saved live snapshot to {filename} ({len(df)} rows)")
+        logger.info("-" * 70)
+        logger.info(f"Saved live snapshot to {filename} ({len(df)} rows)")
+        logger.info("-" * 70)
         
         if not args.loop:
             break

@@ -192,7 +192,9 @@ async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
     """Wrapper to enforce global system limits and automatic cleanup of hierarchical locks."""
     async with GLOBAL_THROTTLE_SEM:
         try:
+            log.info("=" * 100)
             log.info(f"[THROTTLE] Starting export for {h_key} (available slots: {GLOBAL_THROTTLE_SEM._value})")
+            log.info("=" * 100)
             await task_func(*args, **kwargs)
         except Exception as e:
             log.error(f"[GUARD] Task failed for {h_key}: {e}")
@@ -200,7 +202,9 @@ async def _handle_throttled_export(task_func, h_key, *args, **kwargs):
             async with HIERARCHY_LOCK:
                 if h_key in ACTIVE_HIERARCHIES:
                     ACTIVE_HIERARCHIES.remove(h_key)
+            log.info("=" * 100)
             log.info(f"[GUARD] Export complete for {h_key}. Hierarchy lock released.")
+            log.info("=" * 100)
 
 # =============================================================================
 # HOURLY CACHE JOB (Optimized for API Exports)

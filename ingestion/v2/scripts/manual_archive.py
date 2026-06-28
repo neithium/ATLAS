@@ -40,7 +40,9 @@ async def manual_archival_push():
     end = now.replace(second=0, microsecond=0)
     start = end - timedelta(days=7)
     
+    log.info("=" * 70)
     log.info(f"🏗️ [PARQUET-STREAMING] 7-Day Archival: {start.strftime('%Y-%m-%d %H:%M')} → {end.strftime('%Y-%m-%d %H:%M')}")
+    log.info("=" * 70)
 
     with open(REGISTRY_PATH, "rb") as f:
         DEVICES = orjson.loads(f.read())
@@ -232,7 +234,9 @@ async def manual_archival_push():
         log.info(f"[MANUAL ARCHIVE] Written _SUCCESS metadata files to output directories")
 
         await pool.close()
+        log.info("-" * 70)
         log.info(f"[MANUAL ARCHIVE] STREAMED ARCHIVAL COMPLETE in {(time.monotonic()-t_total_start)/60:.2f} minutes")
+        log.info("-" * 70)
         
     except Exception as e:
         log.error(f"[MANUAL ARCHIVE] Archival Failed: {str(e)}")
