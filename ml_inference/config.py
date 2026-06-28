@@ -24,56 +24,81 @@ import os
 INPUT_DIRECTORY: str = os.getenv("ML_INPUT_DIR", "/data/live")
 
 # Directory where enriched Parquet files will be written.
-# PR #74 (ClickHouse loader) polls this path — do NOT change without
+# atlas-analytics (ClickHouse loader) polls this path — do NOT change without
 # coordinating with the analytics teammate.
 # Override via env: ML_OUTPUT_DIR
 OUTPUT_DIRECTORY: str = os.getenv("ML_OUTPUT_DIR", "/data/ml_predictions")
 
-# Path to the trained Isolation Forest model serialised with pickle.
-# The model must be provided by the ML training teammate.
+# Path to the trained Isolation Forest model serialised with joblib.
+# Trained by ML training teammate (Sanjula) via train_model.py.
 # Override via env: ML_MODEL_PATH
 MODEL_PATH: str = os.getenv("ML_MODEL_PATH", "/app/models/isolation_forest.pkl")
+
+# Path to the sklearn ColumnTransformer preprocessor serialised with joblib.
+# Must match the preprocessor used during training — same feature columns, same order.
+# Override via env: ML_PREPROCESSOR_PATH
+PREPROCESSOR_PATH: str = os.getenv("ML_PREPROCESSOR_PATH", "/app/models/preprocessor.pkl")
+
+# Path to the health score config dict serialised with joblib.
+# Contains: {"min_score": float, "max_score": float, "threshold": float}
+# Override via env: ML_HEALTH_CONFIG_PATH
+HEALTH_CONFIG_PATH: str = os.getenv("ML_HEALTH_CONFIG_PATH", "/app/models/health_score_config.pkl")
 
 # =============================================================================
 # Feature Engineering
 # =============================================================================
+#
+# IMPORTANT: This list must exactly match the features produced by engineer_features()
+# in train_model.py (Sanjula's training pipeline).  The sklearn preprocessor handles
+# the actual column-to-index mapping, so order here is just for documentation.
+#
+# Categorical columns — processed by OrdinalEncoder inside the preprocessor:
+#   tags, processor_vendor, server_generation, location_name
+#
+# Numeric columns — processed by StandardScaler inside the preprocessor:
+#   All remaining columns after metadata drop and feature derivation.
+#
+# We do NOT pass a flat numpy array to the model directly; we pass a DataFrame
+# to preprocessor.transform() which replicates the training-time column handling.
 
-# IMPORTANT: The order of columns here must exactly match the order used
-# during training.  If the training teammate changes the feature set, update
-# this list accordingly.
-#
-# Current default matches the architecture diagram (6 features):
-#   MetricValue, avg_metric_value, max_metric_value, min_metric_value,
-#   hour_of_day (derived), day_of_week (derived)
-#
-# The pipeline will raise a clear ValueError if any column is missing from
-# the incoming Parquet so the mismatch is immediately obvious.
-FEATURE_COLUMNS: list[str] = [
-    "MetricValue",
-    "avg_metric_value",
-    "max_metric_value",
-    "min_metric_value",
-    "hour_of_day",    # Derived from metric_time in feature_engineering()
-    "day_of_week",    # Derived from metric_time in feature_engineering()
+# Columns to DROP before calling preprocessor.transform() — these are metadata /
+# identity columns that were also dropped during training.  The preprocessor was
+# fit on the DataFrame AFTER these were removed, so they must not be present.
+METADATA_COLUMNS: list[str] = [
+    "report_id",
+    "device_id",
+    "server_name",
+    "application_customer_id",
+    "platform_customer_id",
+    "location_city",
+    "location_state",
+    "location_country",
+    "cpu_inventory",
+    "memory_inventory",
+    "metric_time",
+    "last_boot_time",
+    "last_maintenance_date",
+    "is_anomaly",  # label — only present in test splits
 ]
 
 # =============================================================================
 # Anomaly Score Normalisation Bounds (for AHC)
 # =============================================================================
-
-# Isolation Forest decision_function scores are negative for anomalies.
-# These bounds are used to normalise the raw score to [0, 100].
-# Calibrate these values after observing the score distribution on real data.
-# Override via env: ML_SCORE_MIN / ML_SCORE_MAX
-SCORE_MIN: float = float(os.getenv("ML_SCORE_MIN", "-0.5"))
-SCORE_MAX: float = float(os.getenv("ML_SCORE_MAX", "0.5"))
+#
+# By default these are loaded from health_score_config.pkl at runtime
+# (trained min/max scores from Sanjula's train_model.py).
+# These env-var overrides allow manual override if needed.
+#
+# Leave as empty string to always load from the .pkl file (recommended).
+SCORE_MIN_OVERRIDE: str = os.getenv("ML_SCORE_MIN", "")
+SCORE_MAX_OVERRIDE: str = os.getenv("ML_SCORE_MAX", "")
 
 # =============================================================================
 # Health Score Weights
 # =============================================================================
-
+#
 # AHC  — Anomaly Health Component     (isolation-forest based)
-# DHC  — Deviation Health Component   (how far current value is from avg)
+# DHC  — Deviation Health Component   (how far avg_metric_value is from batch avg)
 # TCC  — Temporal Consistency Component (matches expected pattern for this hour)
 #
 # Weights must sum to 1.0.

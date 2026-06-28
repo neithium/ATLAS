@@ -35,7 +35,9 @@ RUN mkdir -p /data/live /data/ml_predictions /app/models
 ENV ML_INPUT_DIR=/data/live \
     ML_OUTPUT_DIR=/data/ml_predictions \
     ML_MODEL_PATH=/app/models/isolation_forest.pkl \
-    ML_WATCH_MODE=false \
+    ML_PREPROCESSOR_PATH=/app/models/preprocessor.pkl \
+    ML_HEALTH_CONFIG_PATH=/app/models/health_score_config.pkl \
+    ML_WATCH_MODE=true \
     ML_POLL_INTERVAL=60 \
     PYTHONUNBUFFERED=1
 
