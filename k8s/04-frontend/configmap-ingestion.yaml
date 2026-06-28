@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-ingestion-config
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: atlas-fastapi
+data:
+  # In the all-in-one image these run as localhost sidecars inside the pod.
+  TSDB_HOST: "127.0.0.1"
+  TSDB_PORT: "5432"
+  TSDB_NAME: "postgres"
+  TSDB_USER: "postgres"
+  TSDB_PASS: "postgres"
+  REDIS_HOST: "127.0.0.1"
+  REDIS_PORT: "6379"
+  MINIO_HOST: "127.0.0.1"
+  MINIO_PORT: "9000"
+  MINIO_BUCKET: "telemetry-raw"
+  KAFKA_BOOTSTRAP: "atlas-kafka.atlas.svc.cluster.local:9092"
+  KAFKA_TOPIC: "raw-server-metrics"
+  MOCK_IPMI: "true"
+  ENABLE_POLLER: "true"
+  SCALE_SIZE: "80000"

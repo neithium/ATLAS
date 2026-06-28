@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: atlas-kafka
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: queue
+    app.kubernetes.io/name: atlas-kafka
+spec:
+  serviceName: atlas-kafka-headless
+  replicas: 1
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atlas-kafka
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+        labels:
+          app.kubernetes.io/name: atlas-kafka
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 10Gi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: queue
+        app.kubernetes.io/name: atlas-kafka
+    spec:
+      terminationGracePeriodSeconds: 90
+      containers:
+        - name: kafka
+          image: soldevelo/kafka:4.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: plaintext
+              containerPort: 9092
+              protocol: TCP
+            - name: controller
+              containerPort: 9093
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: atlas-kafka-config
+          env:
+            # Pod ordinal injected by downward API → stable KRaft node id
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_CFG_NODE_ID
+              value: "1"
+            - name: KAFKA_CFG_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+            # Advertise headless DNS so in-cluster clients and controllers find this broker
+            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://$(POD_NAME).atlas-kafka-headless.atlas.svc.cluster.local:9092"
+            - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+              value: "1@atlas-kafka-0.atlas-kafka-headless.atlas.svc.cluster.local:9093"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /bitnami/kafka
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1500m"
+              memory: "2Gi"
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - kafka-topics.sh --bootstrap-server localhost:9092 --list
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - kafka-topics.sh --bootstrap-server localhost:9092 --list
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+      # Bitnami/soldevelo image runs as non-root; no special securityContext needed for Minikube

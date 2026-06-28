@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlas-lakehouse
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: delta-lake
+    app.kubernetes.io/name: atlas-lakehouse
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: atlas-lakehouse
+  ports:
+    - name: spark-driver
+      port: 7077
+      targetPort: spark-driver
+      protocol: TCP

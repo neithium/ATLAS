@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-kafka-config
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: queue
+    app.kubernetes.io/name: atlas-kafka
+data:
+  # KRaft cluster identity — must match across all brokers
+  KAFKA_KRAFT_CLUSTER_ID: "atlas-telemetry-cluster-3node"
+
+  # Single-broker Minikube profile (scale StatefulSet replicas + voters for HA)
+  KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+  KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+  KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+  KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+
+  # Topic defaults (mirrors docker-compose broker1)
+  KAFKA_CFG_NUM_PARTITIONS: "12"
+  KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "1"
+  KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+  KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+  KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+  KAFKA_CFG_MIN_INSYNC_REPLICAS: "1"
+  KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  # Retention & throughput
+  KAFKA_CFG_LOG_RETENTION_HOURS: "168"
+  KAFKA_CFG_LOG_SEGMENT_BYTES: "1073741824"
+  KAFKA_CFG_MESSAGE_MAX_BYTES: "524288000"
+  KAFKA_CFG_SOCKET_REQUEST_MAX_BYTES: "524288000"
+  KAFKA_CFG_QUEUED_MAX_REQUESTS: "10000"
+
+  # JVM
+  KAFKA_HEAP_OPTS: "-Xmx768m -Xms768m"
+  KAFKA_JVM_PERFORMANCE_OPTS: "-XX:+UseG1GC -XX:MaxGCPauseMillis=20"
+
+  # KRaft stability
+  KAFKA_CFG_CONTROLLER_QUORUM_REQUEST_TIMEOUT_MS: "10000"
+  KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS: "10000"
+  KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS: "10000"
+
+  # Client-facing bootstrap (used in other ConfigMaps)
+  KAFKA_BOOTSTRAP_SERVERS: "atlas-kafka.atlas.svc.cluster.local:9092"
+  KAFKA_TOPIC_RAW: "raw-server-metrics"
+  KAFKA_TOPIC_DLQ: "raw-server-metrics-dlq"

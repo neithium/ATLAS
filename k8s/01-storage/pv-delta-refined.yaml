@@ -1,0 +1,19 @@
+# HostPath PV enables ReadWriteMany sharing on a single-node Minikube cluster.
+# Create the directory before applying: minikube ssh -- sudo mkdir -p /data/atlas/delta-refined
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: atlas-delta-refined-pv
+  labels:
+    app.kubernetes.io/component: delta-lake
+    app.kubernetes.io/name: atlas-lakehouse
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: atlas-shared
+  hostPath:
+    path: /data/atlas/delta-refined
+    type: DirectoryOrCreate

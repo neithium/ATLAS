@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlas-fastapi
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: atlas-fastapi
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: atlas-fastapi
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: api
+      port: 8001
+      targetPort: api
+      protocol: TCP

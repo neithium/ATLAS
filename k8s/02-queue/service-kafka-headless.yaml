@@ -1,0 +1,24 @@
+# Headless Service — required for KRaft controller quorum and broker peer discovery.
+# Pod DNS: atlas-kafka-0.atlas-kafka-headless.atlas.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlas-kafka-headless
+  namespace: atlas
+  labels:
+    app.kubernetes.io/component: queue
+    app.kubernetes.io/name: atlas-kafka
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: atlas-kafka
+  ports:
+    - name: plaintext
+      port: 9092
+      targetPort: plaintext
+      protocol: TCP
+    - name: controller
+      port: 9093
+      targetPort: controller
+      protocol: TCP
