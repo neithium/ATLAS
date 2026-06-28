@@ -56,6 +56,7 @@ COPY entrypoint.sh /app/entrypoint.sh
 COPY loader-start.sh /app/loader-start.sh
 COPY ml-loader-start.sh /app/ml-loader-start.sh
 COPY app.py /app/app.py
+COPY ml_app.py /app/ml_app.py
 RUN chmod +x /app/entrypoint.sh /app/loader-start.sh /app/ml-loader-start.sh
 
 # ---------- Directories ----------

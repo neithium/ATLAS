@@ -8,6 +8,8 @@ import os
 from datetime import datetime, timedelta
 from deltalake import DeltaTable
 import pytz
+import os
+import ml_app 
 
 st.set_page_config(page_title="ATLAS Observability Dashboard", layout="wide")
 
@@ -181,7 +183,7 @@ with col3:
 st.markdown("---")
 
 # Added the new "Live Charts" tab
-tab_ch, tab_pg, tab_charts, tab_sla = st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "Delta Lake Statistics"])
+tab_ch, tab_pg, tab_charts, tab_sla, tab_ml= st.tabs(["ClickHouse Explorer", "PostgreSQL Explorer", " Live Charts Builder", "Delta Lake Statistics","ML Anomaly Detection"])
 
 # -----------------------------------------------------------------------------
 # ClickHouse Tab
@@ -490,3 +492,8 @@ with tab_sla:
             except Exception as e:
                 st.error(f"  Error rendering dashboard: {type(e).__name__}")
                 st.info("Try refreshing the page or check container logs for details.")
+# -----------------------------------------------------------------------------
+# ML Dashboard Tab (NEW)
+# -----------------------------------------------------------------------------
+with tab_ml:
+    ml_app.render_ml_dashboard(ch_client)
