@@ -78,21 +78,105 @@ health_score
 
 ## Quickstart
 
-**1. Boot the ML Container:**
-Run this from the root `atlas/` directory to start the isolated ML environment:
+### 1. Boot the ML Container
+
+Run the following command from the root `atlas/` directory:
+
 ```bash
 docker compose up -d atlas-ml --build
 ```
 
-**2. Generate Historical Training Data:**
-Generates 30 days of data partitioned into 24 days of training and 7 days of test data (with anomalies).
-Can be configured to required number of days by modifying `days` variable in `data_generator.py`.(default = 30 days)
+This starts the isolated ML container and automatically initializes the live inference pipeline.
+
+---
+
+### 2. Generate Historical Training Data (One-Time Setup)
+
+Generate the historical telemetry dataset used for model training.
+
 ```bash
 docker exec -it atlas-ml python data_generator.py
 ```
 
-**3. Generate Live Inference Snapshot:**
-Generates a single hourly snapshot to simulate the real-time inference stream. Add `--anomalies` to randomly infect given percentage of the fleet.(--anomaly-rate 0.03 = 3% of the fleet) (3600 = 1 hour interval)
-```bash
-docker exec -d atlas-ml python live_data_gen.py --loop --anomalies --anomaly-rate 0.03 --interval 3600  
+This creates approximately 30 days of synthetic telemetry data (configurable through the `--days` argument), automatically partitioned into:
+
 ```
+telemetry-data/
+├── train/
+└── test/
+```
+
+* Training data contains only normal telemetry.
+* Test data contains progressively injected anomalies for model evaluation.
+
+---
+
+### 3. Train the Isolation Forest Model (one-time)
+
+Train the anomaly detection model using the generated historical dataset.
+
+```bash
+docker exec -it atlas-ml python train_model.py
+```
+
+The training pipeline automatically:
+
+* Loads all training Parquet files from training set 
+* Performs feature engineering
+* Builds the preprocessing pipeline
+* Trains the Isolation Forest model
+* Computes anomaly score thresholds
+* Saves the trained artifacts
+
+Generated model files:
+
+```
+models/
+├── isolation_forest.pkl
+├── preprocessor.pkl
+└── health_score_config.pkl
+```
+
+---
+
+### 4. Automatic Live Inference Pipeline
+
+Once the container is running, the remainder of the pipeline is fully automated.
+
+The container continuously performs the following steps:
+
+```
+Generate Live Telemetry
+        ↓
+Store Snapshot (telemetry-data/live)
+        ↓
+Run Isolation Forest Prediction
+        ↓
+Generate Health Scores
+        ↓
+Store Predictions (telemetry-data/predictions)
+
+```
+
+The automation runs continuously at the configured interval (`LIVE_GEN_INTERVAL`, default: **300 seconds**).
+
+No additional commands are required after starting the container.
+
+---
+
+### 5. Evaluate Model Performance (Optional)
+
+To evaluate the trained model using the labelled test data:
+
+```bash
+docker exec -it atlas-ml python evaluate_model.py
+```
+
+This generates:
+
+* Accuracy
+* Precision
+* Recall
+* F1 Score
+* Confusion Matrix
+* Classification Report
