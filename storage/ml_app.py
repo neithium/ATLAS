@@ -13,7 +13,34 @@ import uuid
 
 PROMPT_FILE_PATH = "/app/prompts/rca_system_prompt.txt"
 ASSET_DIR = Path(__file__).resolve().parent / "assets" / "img"
- 
+
+#-- Clickhouse queries to find our Root cause 
+
+def fetch_unique_devices(ch_client):
+    """Get a list of all unique devices that have ML predictions."""
+    query = "SELECT DISTINCT device_id FROM atlas.telemetry_ml_predictions ORDER BY device_id"
+    try:
+        df = ch_client.query_df(query)
+        return df['device_id'].tolist()
+    except Exception as e:
+        st.error(f"Error fetching devices: {e}")
+        return []
+
+def fetch_device_history(ch_client, device_id, limit=50):
+    """Fetch the chronological telemetry history for a specific device."""
+    query = f"""
+        SELECT *
+        FROM atlas.telemetry_ml_predictions
+        WHERE device_id = '{device_id}'
+        ORDER BY metric_time DESC
+        LIMIT {limit}
+    """
+    try:
+        return ch_client.query_df(query)
+    except Exception as e:
+        st.error(f"Error fetching device history: {e}")
+        return pd.DataFrame()
+     
 # --- PostgreSQL Connection Setup ---
 PG_HOST = os.getenv("POSTGRES_HOST", "127.0.0.1")
 PG_PORT = os.getenv("POSTGRES_PORT", "5432")
@@ -204,27 +231,49 @@ def render_ml_dashboard(ch_client):
     ])
 
     with tab_overview:
-        st.markdown("**Recent Fleet Health Timeline**")
+        st.markdown("**Fleet Health Analysis**")
         
-        if 'metric_time' in df_recent.columns and 'health_score' in df_recent.columns and 'prediction' in df_recent.columns:
+        if 'health_score' in df_recent.columns and 'prediction' in df_recent.columns:
             plot_df = df_recent.copy()
             plot_df['Status'] = plot_df['prediction'].map({1: 'Normal', -1: 'Anomaly'})
             
+            # 1. Let the user choose the X-axis!
+            available_axes = {
+                "Server Name (Fleet View)": "server_name",
+                "ML Anomaly Score": "anomaly_score",
+                "CPU Utilization": "cpu_utilization",
+                "Memory Utilization": "memory_utilization",
+                "Network Throughput": "network_throughput"
+            }
+            
+            selected_view = st.selectbox(
+                "Analyze Health Score against:", 
+                options=list(available_axes.keys()),
+                index=0
+            )
+            
+            x_col = available_axes[selected_view]
+            
+            # 2. Render the dynamic chart
             fig = px.scatter(
                 plot_df, 
-                x="metric_time", 
+                x=x_col, 
                 y="health_score", 
                 color="Status",
                 color_discrete_map={"Normal": "#00CC96", "Anomaly": "#EF553B"},
-                hover_data=["device_id", "server_name", "anomaly_score"],
-                title="Health Score Distribution (Last 50 Records)",
-                template="plotly_dark"
+                hover_data=["device_id", "server_name", "metric_time"],
+                title=f"Health Score vs. {selected_view.split('(')[0].strip()}",
+                template="plotly_dark",
+                size_max=12 # Keeps dots uniform
             )
-            fig.update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))
+            
+            # Add a bit of jitter if they choose a categorical column like server_name to prevent overlap
+            if plot_df[x_col].dtype == 'object':
+                fig.update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))
+            else:
+                fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
+                
             st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("**Raw Data (Last 50 Records)**")
-        st.dataframe(df_recent, use_container_width=True)
 
     with tab_anomalies:
         st.markdown("**Isolated Anomaly Records**")
@@ -234,88 +283,130 @@ def render_ml_dashboard(ch_client):
             st.dataframe(df_anomalies, use_container_width=True)
 
     with tab_ai_analysis:
-        st.markdown("**Automated Root Cause Analysis**")
-        st.write("Trigger the LLM engine to analyze the recent anomalous telemetry patterns, correlate cross-metric degradation, and generate mitigation strategies.")
+        st.markdown("**Targeted Device Forensics & RCA**")
+        st.write("Select a specific device to view its health timeline and run a chronological AI Root Cause Analysis.")
         
-        # --- ALL AI LOGIC HAPPENS HERE, SAFELY BEHIND THE BUTTON ---
-        if st.button("Run AI Root Cause Analysis", type="primary"):
-            if df_anomalies.empty:
-                st.warning("Analysis aborted: No anomalies available in the current context window.")
-            else:
-                system_rules = load_system_prompt(PROMPT_FILE_PATH)
+        # 1. Device Selection Dropdown
+        available_devices = fetch_unique_devices(ch_client)
+        
+        if not available_devices:
+            st.warning("No devices found in the database. Awaiting ML pipeline data.")
+        else:
+            selected_device = st.selectbox(" Select Target Device:", available_devices)
+            
+            # 2. Fetch the Data for the Selected Device
+            with st.spinner(f"Pulling timeline for {selected_device}..."):
+                device_df = fetch_device_history(ch_client, selected_device, limit=50)
                 
-                if system_rules:
-                    with st.spinner(" Phi-4-Mini is extracting root causes..."):
-                        
-                        # 1. Isolate the anomaly rows
-                        payload_df = df_anomalies.drop(columns=['insertion_time'], errors='ignore').copy()
+            if device_df.empty:
+                st.info("No telemetry history available for this device.")
+            else:
+                # 3. Render the Device Health Timeline
+                # Sort ascending so time moves left-to-right on the chart
+                plot_df = device_df.sort_values(by="metric_time").copy()
+                
+                # Create a dynamic color map based on anomaly status
+                plot_df['Status'] = plot_df['prediction'].map({1: 'Normal', -1: 'Anomaly'})
+                
+                fig = px.line(
+                    plot_df, 
+                    x="metric_time", 
+                    y="health_score", 
+                    title=f"Health Score Trend: {selected_device} (Last {len(plot_df)} Ticks)",
+                    template="plotly_dark",
+                    markers=True
+                )
+                
+                # Add a critical threshold line for visual context
+                fig.add_hline(y=50, line_dash="dash", line_color="red", annotation_text="Critical Threshold (50)")
+                
+                # Color the markers red if they are anomalies
+                fig.update_traces(
+                    marker=dict(
+                        size=8, 
+                        color=['#EF553B' if p == -1 else '#00CC96' for p in plot_df['prediction']]
+                    ),
+                    line=dict(color='#888888', width=2)
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-                        # 2. Force convert the Timestamp objects to strings
-                        if 'metric_time' in payload_df.columns:
-                            payload_df['metric_time'] = payload_df['metric_time'].astype(str)
-
-                        # 3. Convert to JSON payload
-                        payload = payload_df.to_dict(orient="records")
-                        
-                        # 4. Initialize response dict 
-                        ai_response = {} 
-                        
-                        try:
-                            response = requests.post(f"{OLLAMA_ENDPOINT}/api/generate", json={
-                                "model": "phi4-mini", 
-                                "prompt": f"Analyze this telemetry dataset for anomalies:\n{json.dumps(payload)}",
-                                "system": system_rules,
-                                "format": "json", 
-                                "stream": False
-                            }, timeout=120)
+                st.markdown("---")
+                
+                # 4. The RCA Trigger
+                st.markdown(f"###   Run AI Diagnostics for `{selected_device}`")
+                
+                if st.button(f"Generate Root Cause Analysis", type="primary", use_container_width=True):
+                    system_rules = load_system_prompt(PROMPT_FILE_PATH)
+                    
+                    if system_rules:
+                        with st.spinner("Phi-4-Mini is analyzing the chronological telemetry..."):
                             
-                            if response.status_code == 200:
-                                try:
-                                    raw_text = response.json().get('response', '{}')
-                                    ai_response = json.loads(raw_text)
-                                    
-                                    # --- RENDERING THE AI OUTPUT ---
-                                    st.success(ai_response.get('incident_summary', 'Analysis Complete'))
-                                    
-                                    st.markdown("###   Diagnostics")
-                                    st.info(ai_response.get('root_cause_hypothesis', ai_response.get('root_cause_analysis', 'No structural metrics extracted.')))
-                                    
-                                    col_a, col_b = st.columns(2)
-                                    with col_a:
-                                        st.markdown("###   Component Risk")
-                                        for subsystem in ai_response.get('affected_subsystems', []):
-                                            st.markdown(f"- **{subsystem}**")
-                                    with col_b:
-                                        st.markdown("###   Mitigation Steps")
-                                        for runbook_step in ai_response.get('recommended_remediation', []):
-                                            st.markdown(f"- {runbook_step}")
-                                            
-                                      
+                            # 1. Optimize the Payload
+                            # We keep the chronological order (oldest to newest) so the LLM sees the timeline properly
+                            payload_df = plot_df.drop(columns=[
+                                'insertion_time', 'location_name', 'processor_vendor', 
+                                'server_generation', 'tags', 'Status', 'server_name'
+                            ], errors='ignore').copy()
+
+                            if 'metric_time' in payload_df.columns:
+                                payload_df['metric_time'] = payload_df['metric_time'].astype(str)
+
+                            payload = payload_df.to_dict(orient="records")
+                            ai_response = {} 
+                            
+                            try:
+                                # Notice the updated PROMPT explicitly telling it to look at a timeline
+                                prompt_text = f"Analyze this chronological telemetry history for device '{selected_device}'. Identify any degradation trends, isolated spikes, or root causes of failure leading to anomalies:\n{json.dumps(payload)}"
+                                
+                                response = requests.post(f"{OLLAMA_ENDPOINT}/api/generate", json={
+                                    "model": "phi4-mini", 
+                                    "prompt": prompt_text,
+                                    "system": system_rules,
+                                    "format": "json", 
+                                    "stream": False
+                                }, timeout=120)
+                                
+                                if response.status_code == 200:
+                                    try:
+                                        raw_text = response.json().get('response', '{}')
+                                        ai_response = json.loads(raw_text)
+                                        
+                                        # --- RENDERING THE AI OUTPUT ---
+                                        st.success(ai_response.get('incident_summary', 'Analysis Complete'))
+                                        
+                                        st.markdown("###  Diagnostics")
+                                        st.info(ai_response.get('root_cause_hypothesis', ai_response.get('root_cause_analysis', 'No structural metrics extracted.')))
+                                        
+                                        col_a, col_b = st.columns(2)
+                                        with col_a:
+                                            st.markdown("### Component Risk")
+                                            for subsystem in ai_response.get('affected_subsystems', []):
+                                                st.markdown(f"- **{subsystem}**")
+                                        with col_b:
+                                            st.markdown("### Mitigation Steps")
+                                            for runbook_step in ai_response.get('recommended_remediation', []):
+                                                st.markdown(f"- {runbook_step}")
+                                                
                                         if 'diagnostic_commands' in ai_response:
                                             st.markdown("### Suggested Commands")
                                             for cmd in ai_response.get('diagnostic_commands', []):
                                                 st.code(cmd, language="bash")
                                                 
-                                except json.JSONDecodeError:
-                                    st.error("  Phi-4-Mini returned an improperly formatted JSON response.")
-                                    with st.expander("View Raw Output"):
-                                        st.write(response.json().get('response', 'No response body'))
+                                    except json.JSONDecodeError:
+                                        st.error("Phi-4-Mini returned an improperly formatted JSON response.")
+                                        with st.expander("View Raw Output"):
+                                            st.write(response.json().get('response', 'No response body'))
+                                else:
+                                    st.error(f"Inference failure response code: {response.status_code}")
+                                    with st.expander("View Error Details"):
+                                        st.write(response.text)
                                         
-                            else:
-                                st.error(f"Inference failure response code: {response.status_code}")
-                                with st.expander("View Error Details"):
-                                    st.write(response.text)
-                                
-                        except requests.exceptions.RequestException as exc:
-                            st.error("  Connection Blocked: Unable to hit the Ollama server via host.docker.internal.")
-                            st.caption(f"Resolved Ollama endpoint: {OLLAMA_ENDPOINT}")
-                            st.caption(f"Request error: {type(exc).__name__}")
-                        except requests.exceptions.Timeout:
-                            st.error("  AI Analysis Timeout: The LLM took too long to process the telemetry data. Try analyzing fewer rows.")
-                        except requests.exceptions.ConnectionError:
-                            st.error("  Connection Blocked: Unable to reach the Ollama server.")
-                        except requests.exceptions.RequestException as exc:
-                            st.error(f" Request error: {type(exc).__name__}")
+                            except requests.exceptions.Timeout:
+                                st.error("  AI Analysis Timeout: The LLM took too long to process the telemetry data.")
+                            except requests.exceptions.ConnectionError:
+                                st.error("  Connection Blocked: Unable to reach the Ollama server.")
+                            except requests.exceptions.RequestException as exc:
+                                st.error(f"  Request error: {type(exc).__name__}")
     # -------------------------------------------------------------------------
     # TAB 4: SRE Copilot Terminal (With Local Scoped History)
     # -------------------------------------------------------------------------
