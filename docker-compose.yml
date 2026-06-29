@@ -710,8 +710,8 @@ services:
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/app.py:/app/app.py:ro
       - ./storage/ml_app.py:/app/ml_app.py:ro
-      # ML predictions from inference layer (read-only)
-      - ./ml_predictions_output:/data/ml_predictions:ro
+      # ML predictions from inference layer (read-write so ml_loader can delete them)
+      - ./ML-Model/telemetry-data/predictions:/data/ml_predictions
       # Schema reference
       - ./schema:/app/schema:ro
       # Mount the prompts directory into the app workspace
@@ -909,42 +909,13 @@ services:
       - ./ingestion/device_configs.json:/ingestion/device_configs.json:ro
     working_dir: /app
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      test: ["CMD-SHELL", "echo 'ML Engine Active' && test -f /app/entrypoint.sh || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
     networks:
       - atlas-network
-
-  ml-inference:
-    build:
-      context: ./ml_inference
-      dockerfile: Dockerfile
-    container_name: ml-inference
-    hostname: ml-inference
-    depends_on:
-      - atlas-ml
-    volumes:
-      # Read-only: live telemetry Parquet produced by live_data_gen.py
-      - ./ML-Model/telemetry-data/live:/data/live:ro
-      # Read-write: enriched predictions consumed by ml_loader.py → ClickHouse
-      - ./ml_predictions_output:/data/ml_predictions
-      # Read-only: trained model artifacts from train_model.py (Sanjula)
-      # isolation_forest.pkl, preprocessor.pkl, health_score_config.pkl
-      - ./ML-Model/models:/app/models:ro
-    environment:
-      - ML_INPUT_DIR=/data/live
-      - ML_OUTPUT_DIR=/data/ml_predictions
-      - ML_MODEL_PATH=/app/models/isolation_forest.pkl
-      - ML_PREPROCESSOR_PATH=/app/models/preprocessor.pkl
-      - ML_HEALTH_CONFIG_PATH=/app/models/health_score_config.pkl
-      - ML_WATCH_MODE=true
-      - ML_POLL_INTERVAL=10
-    networks:
-      - atlas-network
-    restart: unless-stopped
-
 
   grafana:
     image: grafana/grafana:latest

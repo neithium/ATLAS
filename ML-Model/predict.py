@@ -256,6 +256,9 @@ def predict_file(file_path):
     output["anomaly_score"] = anomaly_score
 
     output["health_score"] = health.round(2)
+    output["health_status"] = output["health_score"].apply(
+        lambda x: "Healthy" if x >= 90 else "Warning" if x >= 50 else "Degraded"
+    )
 
     # --------------------------------------------------------
     # Uptime
@@ -341,7 +344,9 @@ def predict_file(file_path):
 
         "anomaly_score",
 
-        "health_score"
+        "health_score",
+        
+        "health_status"
 
     ]
     if "is_anomaly" in output.columns:
