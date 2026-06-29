@@ -922,6 +922,11 @@ services:
       start_period: 5s
     networks:
       - atlas-network
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 1G
 
   grafana:
     image: grafana/grafana:latest
