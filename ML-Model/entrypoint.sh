@@ -18,7 +18,7 @@ echo "--------------------------------------------------------------"
 while true
 do
     # Generate one live snapshot
-    python live_data_gen.py --anomalies --anomaly-rate 0.3
+    python live_data_gen.py --anomalies --anomaly-rate 0.3 --interval $INTERVAL
 
     # Run prediction on the latest snapshot
     python predict.py
