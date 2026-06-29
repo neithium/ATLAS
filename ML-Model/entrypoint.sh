@@ -24,5 +24,6 @@ do
     python predict.py
 
     # Wait before the next cycle
+    echo "[INFO] Pipeline cycle complete. Sleeping for ${INTERVAL} seconds before next snapshot..."
     sleep $INTERVAL
 done
