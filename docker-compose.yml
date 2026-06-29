@@ -709,8 +709,9 @@ services:
       - ./storage/clickhouse/ml_loader.py:/app/ml_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
       - ./storage/app.py:/app/app.py:ro
-      # ML predictions from inference layer (read-only)
-      - ./ml_predictions_output:/data/ml_predictions:ro
+      - ./storage/ml_app.py:/app/ml_app.py:ro
+      # ML predictions from inference layer (read-write so ml_loader can delete them)
+      - ./ml_predictions_output:/data/ml_predictions
       # Schema reference
       - ./schema:/app/schema:ro
       # Mount the prompts directory into the app workspace

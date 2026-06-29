@@ -416,6 +416,16 @@ def main():
     log.info("-" * 60)
 
     # --- Cleanup -------------------------------------------------------------
+    try:
+        deleted_count = 0
+        for pf in Path(ML_PREDICTIONS_PATH).rglob("*.parquet"):
+            if not pf.name.startswith("."):
+                os.remove(pf)
+                deleted_count += 1
+        log.info("Deleted %d processed parquet files.", deleted_count)
+    except Exception as e:
+        log.warning("Failed to delete processed parquet files: %s", e)
+        
     ch_client.close()
     log.info("Done.")
 
