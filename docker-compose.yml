@@ -731,6 +731,12 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'         # Hard cap at 3 CPU cores
+          memory: 4G          # Hard cap at 4GB RAM
+         
   # ===========================================================================
   # DEVELOPMENT & MONITORING TOOLS (Optional)
   # ===========================================================================
@@ -916,7 +922,12 @@ services:
       start_period: 5s
     networks:
       - atlas-network
-
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'         # Hard cap at 3 CPU cores
+          memory: 1G          # Hard cap at 4GB RAM
+         
   ml-inference:
     build:
       context: ./ml_inference
@@ -944,7 +955,12 @@ services:
     networks:
       - atlas-network
     restart: unless-stopped
-
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'         # Hard cap at 3 CPU cores
+          memory: 1G          # Hard cap at 4GB RAM
+         
 
   grafana:
     image: grafana/grafana:latest
