@@ -204,27 +204,49 @@ def render_ml_dashboard(ch_client):
     ])
 
     with tab_overview:
-        st.markdown("**Recent Fleet Health Timeline**")
+        st.markdown("**Fleet Health Analysis**")
         
-        if 'metric_time' in df_recent.columns and 'health_score' in df_recent.columns and 'prediction' in df_recent.columns:
+        if 'health_score' in df_recent.columns and 'prediction' in df_recent.columns:
             plot_df = df_recent.copy()
             plot_df['Status'] = plot_df['prediction'].map({1: 'Normal', -1: 'Anomaly'})
             
+            # 1. Let the user choose the X-axis!
+            available_axes = {
+                "Server Name (Fleet View)": "server_name",
+                "ML Anomaly Score": "anomaly_score",
+                "CPU Utilization": "cpu_utilization",
+                "Memory Utilization": "memory_utilization",
+                "Network Throughput": "network_throughput"
+            }
+            
+            selected_view = st.selectbox(
+                "Analyze Health Score against:", 
+                options=list(available_axes.keys()),
+                index=0
+            )
+            
+            x_col = available_axes[selected_view]
+            
+            # 2. Render the dynamic chart
             fig = px.scatter(
                 plot_df, 
-                x="metric_time", 
+                x=x_col, 
                 y="health_score", 
                 color="Status",
                 color_discrete_map={"Normal": "#00CC96", "Anomaly": "#EF553B"},
-                hover_data=["device_id", "server_name", "anomaly_score"],
-                title="Health Score Distribution (Last 50 Records)",
-                template="plotly_dark"
+                hover_data=["device_id", "server_name", "metric_time"],
+                title=f"Health Score vs. {selected_view.split('(')[0].strip()}",
+                template="plotly_dark",
+                size_max=12 # Keeps dots uniform
             )
-            fig.update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))
+            
+            # Add a bit of jitter if they choose a categorical column like server_name to prevent overlap
+            if plot_df[x_col].dtype == 'object':
+                fig.update_traces(marker=dict(size=10, line=dict(width=1, color='DarkSlateGrey')))
+            else:
+                fig.update_traces(marker=dict(size=8, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
+                
             st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("**Raw Data (Last 50 Records)**")
-        st.dataframe(df_recent, use_container_width=True)
 
     with tab_anomalies:
         st.markdown("**Isolated Anomaly Records**")
