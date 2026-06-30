@@ -394,6 +394,7 @@ Paste:
 **Expected Result**
 
 - Routed to `raw-server-metrics-dlq`.
+- Spark UI can be accessed for visual analytics 
 - DLQ Reviewer identifies it as non-recoverable.
 - Record is published to `raw-server-metrics-failure`.
 - It is not replayed into the streaming pipeline.
