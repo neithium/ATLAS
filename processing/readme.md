@@ -2,13 +2,13 @@
 
 Apache Spark-based batch and streaming processing engine for the ATLAS platform.
 
-### Author: Sanjula S
+**Author:** Sanjula S
 
 ---
 
 # Overview
 
-The ATLAS Spark Processing Engine is responsible for consuming high-volume telemetry data from Apache Kafka, validating incoming records, classifying invalid messages, automatically recovering recoverable failures, processing streaming telemetry, executing historical batch jobs, and generating analytics-ready Parquet datasets for downstream platforms.
+The ATLAS Spark Processing Engine is responsible for consuming high-volume telemetry data from Apache Kafka, validating incoming records, classifying invalid messages, automatically recovering recoverable failures, processing streaming telemetry, executing historical batch jobs, and generating analytics-ready Parquet datasets for downstream analytics.
 
 The processing engine provides:
 
@@ -22,15 +22,13 @@ The processing engine provides:
 - Historical batch processing
 - Analytics-ready Parquet generation
 - Fault-tolerant checkpointing
-- Parallel worker execution
+- Parallel Spark worker execution
 
 ---
 
 # Architecture
 
-```
-
-```
+```text
                     Kafka Producer
                           │
                           ▼
@@ -39,7 +37,6 @@ The processing engine provides:
                           ▼
              Spark Structured Streaming
       ┌────────────────────────────────────┐
-      │                                    │
       │ JSON Parsing                       │
       │ Schema Validation                  │
       │ Error Classification               │
@@ -48,29 +45,34 @@ The processing engine provides:
       └────────────────────────────────────┘
              │                      │
              │                      │
-      Valid Records          Invalid Records
+             ▼                      ▼
+      Valid Records         Invalid Records
              │                      │
              ▼                      ▼
- Stream Parquet Output      raw-server-metrics-dlq
- (/worker_1, worker_2)               │
+     Stream Parquet Output  raw-server-metrics-dlq
+   (/worker_1, /worker_2)            │
                                      ▼
                               DLQ Reviewer
                           ┌──────────┴──────────┐
                           │                     │
+                          ▼                     ▼
                    Recoverable          Non-Recoverable
                           │                     │
                           ▼                     ▼
              raw-server-metrics-retry   raw-server-metrics-failure
                           │
                           ▼
-           Spark consumes repaired records
+             Spark Structured Streaming
+                          │
+                          ▼
+                 Stream Parquet Output
 ```
 
 ---
 
 # Processing Pipeline
 
-The Spark processing engine consists of four major components:
+The Spark Processing Engine consists of four major components:
 
 1. Kafka Streaming Consumer
 2. DLQ Processing Engine
@@ -85,10 +87,10 @@ Each component performs a dedicated task while sharing the same telemetry schema
 
 | Topic | Purpose |
 |--------|----------|
-| raw-server-metrics | Incoming telemetry |
-| raw-server-metrics-dlq | Invalid records awaiting review |
-| raw-server-metrics-retry | Successfully repaired records |
-| raw-server-metrics-failure | Permanently failed records |
+| `raw-server-metrics` | Incoming telemetry |
+| `raw-server-metrics-dlq` | Invalid records awaiting review |
+| `raw-server-metrics-retry` | Successfully repaired records |
+| `raw-server-metrics-failure` | Permanently failed records |
 
 ---
 
@@ -111,43 +113,50 @@ Each incoming record passes through the following stages:
 
 Valid records continue through the analytics pipeline.
 
-Invalid records are redirected to the Dead Letter Queue for further review.
+Invalid records are automatically redirected to the Dead Letter Queue for further review.
 
 ---
 
 # Streaming Workflow
 
-```
-
-```
-Kafka
-    │
-    ▼
-ReadStream
-    │
-    ▼
-JSON Parsing
-    │
-    ▼
-Error Classification
-      │
- ┌────┴────┐
- │         │
- ▼         ▼
-VALID   INVALID
- │         │
- ▼         ▼
-Aggregation  DLQ
- │         │
- ▼         ▼
-Parquet  Reviewer
-            │
-      ┌─────┴─────┐
-      ▼           ▼
- Retry Topic   Failure Topic
-      │
-      ▼
- ReadStream
+```text
+                    Kafka
+                      │
+                      ▼
+                 ReadStream
+                      │
+                      ▼
+                 JSON Parsing
+                      │
+                      ▼
+             Error Classification
+                ┌───────────────┐
+                │               │
+                ▼               ▼
+             VALID          INVALID
+                │               │
+                ▼               ▼
+        Streaming        DLQ Topic
+        Aggregation          │
+                │            ▼
+                ▼      DLQ Reviewer
+          Parquet Output      │
+                              │
+                      ┌───────┴────────┐
+                      ▼                ▼
+                 Retry Topic     Failure Topic
+                      │
+                      ▼
+                 ReadStream
+                      │
+                      ▼
+                 JSON Parsing
+                      │
+                      ▼
+             Streaming Aggregation
+                      │
+                      ▼
+                Parquet Output
 ```
 
 ---
@@ -160,7 +169,7 @@ Validation includes:
 
 - Required field validation
 - Datatype validation
-- Nested PowerDetail validation
+- Nested `PowerDetail` validation
 - Inventory validation
 - Timestamp validation
 
@@ -170,11 +179,11 @@ Messages failing validation never enter the analytics pipeline.
 
 # Error Classification
 
-Each incoming message is classified into one of five categories.
+Each incoming message is classified into one of the following categories.
 
 ## VALID
 
-The record satisfies every schema and business validation rule.
+The record satisfies all schema and business validation rules.
 
 The record immediately enters the Spark aggregation pipeline.
 
@@ -190,21 +199,21 @@ Examples include:
 - Incorrect JSON layout
 - Invalid datatypes
 
-These records are sent to the DLQ.
+These records are routed to the DLQ.
 
 ---
 
 ## INVALID_SOCKET_COUNT
 
-The socket_count field cannot be parsed as an integer.
+The `socket_count` field cannot be parsed as an integer.
 
 Example
 
 ```json
 {
-    "inventory_data": {
-        "socket_count": "4"
-    }
+  "inventory_data": {
+    "socket_count": "4"
+  }
 }
 ```
 
@@ -218,11 +227,11 @@ Example
 
 ```json
 {
-    "device_id": null
+  "device_id": null
 }
 ```
 
-Since the device identifier is mandatory, this record cannot be recovered automatically.
+Since the device identifier is mandatory, this record cannot be repaired automatically.
 
 ---
 
@@ -232,9 +241,9 @@ Example
 
 ```json
 {
-    "data": {
-        "PowerDetail": null
-    }
+  "data": {
+    "PowerDetail": null
+  }
 }
 ```
 
@@ -246,18 +255,16 @@ The record is permanently rejected.
 
 # Dead Letter Queue (DLQ)
 
-All invalid records are automatically published to
+All invalid records are automatically published to:
 
-```
+```text
 raw-server-metrics-dlq
 ```
-
-The DLQ stores additional metadata together with the original record.
 
 Each DLQ message contains:
 
 - Original JSON payload
-- Error Type
+- Error type
 - Source Kafka topic
 - Partition
 - Offset
@@ -265,25 +272,25 @@ Each DLQ message contains:
 - Failure timestamp
 - Worker ID
 
-This metadata enables replay, debugging, auditing, and recovery.
+This metadata enables debugging, auditing, replay, and recovery.
 
 ---
 
 # DLQ Reviewer
 
-The DLQ Reviewer starts automatically when the processor container launches.
+The DLQ Reviewer starts automatically when the Spark Processor container launches.
 
-It continuously consumes messages from
+It continuously consumes messages from:
 
-```
+```text
 raw-server-metrics-dlq
 ```
 
-For every failed message it performs:
+For every failed record it performs:
 
 - Error inspection
 - Recovery rule selection
-- Automatic repair (if possible)
+- Automatic repair (when possible)
 - Republishing repaired records
 - Routing permanent failures
 
@@ -295,20 +302,20 @@ The reviewer automatically repairs supported recoverable errors.
 
 Current recovery rules include:
 
-- socket_count datatype conversion
+- `socket_count` datatype conversion
 - Timestamp normalization
 
 Recovered records receive additional recovery metadata before being republished.
 
-Example metadata
+Example:
 
 ```json
 {
-    "recovery_metadata": {
-        "reviewed_by": "DLQ_REVIEWER_V1",
-        "recovery_type": "INVALID_SOCKET_COUNT",
-        "recovered_at": "2026-07-01T08:15:43"
-    }
+  "recovery_metadata": {
+    "reviewed_by": "DLQ_REVIEWER_V1",
+    "recovery_type": "INVALID_SOCKET_COUNT",
+    "recovered_at": "2026-07-01T08:15:43"
+  }
 }
 ```
 
@@ -316,18 +323,18 @@ Example metadata
 
 # Recoverable Records
 
-Recoverable errors include
+Recoverable errors include:
 
-- INVALID_SCHEMA
-- INVALID_SOCKET_COUNT
+- `INVALID_SCHEMA`
+- `INVALID_SOCKET_COUNT`
 
-Recovered records are automatically published to
+Recovered records are automatically published to:
 
-```
+```text
 raw-server-metrics-retry
 ```
 
-Spark continuously consumes this topic together with the main telemetry topic.
+Spark continuously consumes this topic together with the primary telemetry topic.
 
 No manual replay is required.
 
@@ -335,14 +342,14 @@ No manual replay is required.
 
 # Non-Recoverable Records
 
-Records that cannot be repaired automatically include
+Records that cannot be repaired automatically include:
 
-- MISSING_DEVICE_ID
-- MISSING_POWERDETAIL
+- `MISSING_DEVICE_ID`
+- `MISSING_POWERDETAIL`
 
-These records are published to
+These records are published to:
 
-```
+```text
 raw-server-metrics-failure
 ```
 
@@ -350,21 +357,21 @@ They are never replayed into the streaming pipeline.
 
 ---
 
-# Streaming Analytics
+# Streaming Processing Pipeline
 
 After validation, Spark processes only valid telemetry.
 
 Processing stages include:
 
-- Exploding nested PowerDetail arrays
-- Event time conversion
+- Exploding nested `PowerDetail` arrays
+- Event-time conversion
 - Watermark assignment
 - Device-level aggregation
 - Metric computation
 - Analytics transformation
-- Parquet generation
+- Writing Snappy-compressed Parquet datasets
 
-Each worker processes records independently while sharing Kafka partitions.
+Each Spark worker processes records independently while sharing Kafka partitions.
 
 ---
 
@@ -378,7 +385,7 @@ Benefits include:
 - Stateful aggregation cleanup
 - Reduced memory consumption
 
-Older events beyond the watermark threshold are discarded automatically.
+Events arriving later than the configured watermark threshold are discarded automatically.
 
 ---
 
@@ -386,58 +393,58 @@ Older events beyond the watermark threshold are discarded automatically.
 
 The processing engine launches two Spark workers automatically.
 
-Worker 1
+### Worker 1
 
 - Independent Kafka consumer
 - Dedicated checkpoint directory
 - Dedicated output directory
 
-Worker 2
+### Worker 2
 
 - Independent Kafka consumer
 - Dedicated checkpoint directory
 - Dedicated output directory
 
-Both workers consume telemetry simultaneously, enabling higher throughput and fault tolerance.
+Both workers consume telemetry simultaneously, enabling higher throughput and improved fault tolerance.
 
 ---
 
 # Streaming Output
 
 The streaming pipeline produces analytics-ready Parquet datasets for downstream consumers.
-The generated Parquet files are written using Snappy compression for efficient storage and analytics.
-Worker-specific output directories are used to support parallel processing.
 
-Example directory structure
+Features include:
 
-```
+- Append-mode writes
+- Snappy compression
+- Worker-specific output directories
 
+Example output directory:
+
+```text
 /app/data/processed/stream/
-
 ├── worker_1/
-
 └── worker_2/
-
 ```
 
 ---
 
 # Batch Processing
 
-The ATLAS processing engine also supports historical batch processing.
+The ATLAS Processing Engine also supports historical batch processing.
 
 Unlike the streaming pipeline, batch mode processes archived telemetry already stored in Parquet format.
 
 The batch pipeline performs:
 
 - Reading archived telemetry
-- Schema enforcement 
-- Exploding nested PowerDetail arrays
+- Schema enforcement
+- Exploding nested `PowerDetail` arrays
 - Device-level aggregations
 - Analytics transformation
 - Writing analytics-ready Parquet output
 
-This mode is primarily used for
+Batch processing is useful for:
 
 - Historical analytics
 - Backfilling datasets
@@ -448,27 +455,28 @@ This mode is primarily used for
 
 # Batch Processing Workflow
 
-```
-
+```text
 Archived Parquet
-↓
-Spark Batch Job
-↓
-Explode PowerDetail
-↓
-Aggregation
-↓
-Processed Parquet
-
+        │
+        ▼
+  Spark Batch Job
+        │
+        ▼
+ Explode PowerDetail
+        │
+        ▼
+   Device Aggregation
+        │
+        ▼
+ Processed Parquet
 ```
-
 ---
 
 # Execution Guide
 
 ## 1. Start Required Services
 
-Start the complete ATLAS platform using Docker Compose.
+Start the required ATLAS services using Docker Compose.
 
 ```bash
 docker compose up -d
@@ -480,7 +488,6 @@ Ensure the following services are running:
 - Spark Processor
 - Ingestion Service
 
-
 ---
 
 ## 2. Spark Processor Startup
@@ -490,9 +497,9 @@ The Spark Processor starts automatically.
 During startup it performs the following operations:
 
 - Creates required directories
-- Creates checkpoint folders
+- Creates checkpoint directories
 - Creates worker log files
-- Creates DLQ log file
+- Creates the DLQ log
 - Waits for Kafka availability
 - Starts the DLQ Reviewer
 - Starts Spark Worker 1
@@ -510,9 +517,9 @@ Invoke the ingestion API.
 POST http://localhost:8001/pcid/PLATCUSTxxxx/acid/APPCUSTxxxx/telemetry/latest/export
 ```
 
-Telemetry is published directly into
+Telemetry is automatically published to:
 
-```
+```text
 raw-server-metrics
 ```
 
@@ -520,7 +527,7 @@ raw-server-metrics
 
 ## 4. Monitor Processing
 
-Enter the Spark container
+Enter the Spark Processor container.
 
 ```bash
 docker exec -it atlas-processor bash
@@ -538,7 +545,7 @@ Monitor Worker 2
 tail -f /app/logs/worker2.log
 ```
 
-Monitor DLQ Reviewer
+Monitor the DLQ Reviewer
 
 ```bash
 tail -f /app/logs/dlq.log
@@ -548,15 +555,15 @@ tail -f /app/logs/dlq.log
 
 # Testing the DLQ Pipeline
 
-Manual testing can be performed using the Kafka console producer.
+For validation testing, publish messages manually to Kafka.
 
-Enter the Kafka container
+Enter the Kafka container.
 
 ```bash
 docker exec -it broker1 bash
 ```
 
-Start the producer
+Start the Kafka producer.
 
 ```bash
 /opt/bitnami/kafka/bin/kafka-console-producer.sh \
@@ -566,169 +573,200 @@ Start the producer
 
 ---
 
-## Test Case 1 — Valid Record
+## Test Case 1 – Valid Record
 
 ```json
 {
-  "device_id":"DEV-VALID",
-  "report_id":"REP-000",
-  "created_at":"2026-05-26T10:20:00",
-  "inventory_data":{
-      "socket_count":4
+  "device_id": "DEV-VALID",
+  "report_id": "REP-000",
+  "created_at": "2026-05-26T10:20:00",
+  "inventory_data": {
+    "socket_count": 4
   },
-  "data":{
-      "PowerDetail":[
-          {
-              "Average":95.0,
-              "Minimum":80.0,
-              "Peak":120.0,
-              "Time":"2026-05-26T10:20:00"
-          }
-      ]
+  "data": {
+    "PowerDetail": [
+      {
+        "Average": 95.0,
+        "Minimum": 80.0,
+        "Peak": 120.0,
+        "Time": "2026-05-26T10:20:00"
+      }
+    ]
   }
 }
 ```
 
-Expected Result
+### Expected Result
 
-- Successfully processed
-- Aggregated by Spark
-- Written as Parquet
+- Successfully processed by Spark
+- Aggregated successfully
+- Written to Parquet output
 - No DLQ message generated
 
 ---
 
-## Test Case 2 — Recoverable Record
+## Test Case 2 – Recoverable Record
 
 ```json
 {
-  "device_id":"DEV-001",
-  "report_id":"REP-001",
-  "created_at":"2026-05-26T10:20:00",
-  "inventory_data":{
-      "socket_count":"4"
+  "device_id": "DEV-001",
+  "report_id": "REP-001",
+  "created_at": "2026-05-26T10:20:00",
+  "inventory_data": {
+    "socket_count": "4"
   },
-  "data":{
-      "PowerDetail":[
-          {
-              "Average":91.2,
-              "Minimum":80.1,
-              "Peak":120.0,
-              "Time":"2026-05-26T10:20:00"
-          }
-      ]
+  "data": {
+    "PowerDetail": [
+      {
+        "Average": 91.2,
+        "Minimum": 80.1,
+        "Peak": 120.0,
+        "Time": "2026-05-26T10:20:00"
+      }
+    ]
   }
 }
 ```
 
-Expected Result
+### Expected Result
 
 - Routed to `raw-server-metrics-dlq`
 - DLQ Reviewer repairs the record
-- socket_count converted to Integer
+- `socket_count` converted to Integer
 - Recovery metadata added
-- Record published to `raw-server-metrics-retry`
+- Published to `raw-server-metrics-retry`
 - Spark automatically consumes the repaired record
 - Successfully written to Parquet
 
 ---
 
-## Test Case 3 — Non-Recoverable Record
+## Test Case 3 – Non-Recoverable Record
 
 ```json
 {
-  "device_id":null,
-  "report_id":"REP-003",
-  "created_at":"2026-05-26T10:20:00",
-  "inventory_data":{
-      "socket_count":4
+  "device_id": null,
+  "report_id": "REP-003",
+  "created_at": "2026-05-26T10:20:00",
+  "inventory_data": {
+    "socket_count": 4
   },
-  "data":{
-      "PowerDetail":[
-          {
-              "Average":90.0,
-              "Minimum":75.0,
-              "Peak":110.0,
-              "Time":"2026-05-26T10:20:00"
-          }
-      ]
+  "data": {
+    "PowerDetail": [
+      {
+        "Average": 90.0,
+        "Minimum": 75.0,
+        "Peak": 110.0,
+        "Time": "2026-05-26T10:20:00"
+      }
+    ]
   }
 }
 ```
 
-Expected Result
+### Expected Result
 
 - Routed to `raw-server-metrics-dlq`
-- DLQ Reviewer classifies as non-recoverable
+- Classified as non-recoverable
 - Published to `raw-server-metrics-failure`
-- Never replayed into Spark
+- Never replayed into the streaming pipeline
 
+---
 
+# Troubleshooting
 
-Note: if spark fails, check kafka partitions using 
+If Spark reports
+
+```text
+UnknownTopicOrPartitionException
+```
+
+verify that the required Kafka topics exist.
+
+List available topics:
+
+```bash
 docker exec -it broker1 bash
-> kafka-topics.sh --bootstrap-server localhost:9092 --list
 
-if it does not list retry and failure topic, create these topics, 
-failure topic: 
+kafka-topics.sh \
+--bootstrap-server localhost:9092 \
+--list
+```
 
+If either of the following topics is missing:
+
+- `raw-server-metrics-retry`
+- `raw-server-metrics-failure`
+
+create them before restarting the Spark Processor.
+
+Create the retry topic:
+
+```bash
+kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --topic raw-server-metrics-retry \
+  --partitions 12 \
+  --replication-factor 1
+```
+
+Create the failure topic:
+
+```bash
 kafka-topics.sh \
   --bootstrap-server localhost:9092 \
   --create \
   --topic raw-server-metrics-failure \
   --partitions 12 \
   --replication-factor 1
+```
 
+Restart the processor:
 
+```bash
+docker compose restart atlas-processor
+```
 
-retry topic: 
-
-kafka-topics.sh \                                                                                                                   
-  --bootstrap-server localhost:9092 \
-  --create \
-  --topic raw-server-metrics-retry \
-  --partitions 12 \
-  --replication-factor 1
-
-
-
-then restart spark-processor-container
 ---
 
 # Batch Processing
 
-To process archived telemetry
+To process archived telemetry:
 
 ```bash
 spark-submit /app/jobs/batch_job.py
 ```
 
-The batch job
+The batch job:
 
 - Reads archived Parquet files
-- Computes aggregated metrics
-- Produces analytics-ready Parquet datasets
+- Applies the telemetry schema
+- Explodes nested `PowerDetail` arrays
+- Computes device-level aggregations
+- Generates analytics-ready datasets
+- Writes compressed Parquet output
 
 ---
 
 # Automatic Startup
 
-When the processor container starts it automatically:
+When the Spark Processor container starts, it automatically:
 
 - Creates required directories
 - Creates checkpoint directories
 - Creates worker log files
 - Creates the DLQ log
-- Waits for Kafka to become available
+- Waits for Kafka availability
 - Starts the DLQ Reviewer
 - Starts Spark Worker 1
 - Starts Spark Worker 2
-- Streams all logs to the container console
+- Streams worker logs to the container console
 
+---
 
 # Output Directories
 
-```
+```text
 /app/data/
 │
 ├── raw/
@@ -741,6 +779,10 @@ When the processor container starts it automatically:
 │   └── batch/
 │
 ├── checkpoints/
+│   ├── stream_1/
+│   ├── stream_2/
+│   ├── dlq_1/
+│   └── dlq_2/
 │
 └── logs/
     ├── worker1.log
@@ -758,7 +800,7 @@ When the processor container starts it automatically:
 - Python
 - PySpark
 - Docker
-- Parquet
+- Apache Parquet
 - Snappy Compression
 
 ---
@@ -767,7 +809,7 @@ When the processor container starts it automatically:
 
 - Real-time Kafka Streaming
 - Automatic Schema Validation
-- Dead Letter Queue
+- Dead Letter Queue (DLQ)
 - Automatic Error Recovery
 - Retry Pipeline
 - Permanent Failure Pipeline
@@ -783,14 +825,14 @@ When the processor container starts it automatically:
 
 # Output
 
-The Spark Processing Engine generates
+The Spark Processing Engine generates:
 
 - Real-time processed Parquet datasets
 - Historical batch Parquet datasets
-- DLQ messages
-- Retry topic messages
-- Permanent failure topic messages
+- Dead Letter Queue (DLQ) records
+- Retry topic records after automatic recovery
+- Permanent failure topic records
 - Worker-specific log files
-- Checkpoint metadata
+- Spark checkpoint metadata
 
-The architecture provides a scalable, fault-tolerant, and resilient telemetry processing platform capable of handling both high-volume streaming workloads and historical batch analytics for the ATLAS ecosystem.
+The architecture provides a scalable, fault-tolerant, and resilient telemetry processing platform capable of handling both high-volume streaming workloads and historical batch analytics for the ATLAS platform.
