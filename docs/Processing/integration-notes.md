@@ -1,39 +1,30 @@
-# ATLAS Spark Processor - Integration Guide
+# ATLAS Spark Processor - Integration Notes
 **Author:** Sanjula S
 
-## Overview
+# End-to-End Integration
 
-The ATLAS Spark Processing Engine acts as the central processing layer of the platform, connecting the ingestion service with the downstream Lakehouse. It consumes raw telemetry from Apache Kafka, performs validation and aggregation, and generates analytics-ready Parquet datasets for further refinement.
-
----
-
-# Integration Flow
-
-```
-┌──────────────────┐
-│ Ingestion Service│
-└─────────┬────────┘
-          │
-          ▼
-     Apache Kafka
-          │
-          ▼
-┌──────────────────┐
-│ Spark Processor  │
-└─────────┬────────┘
-          │
-          ▼
- Shared Parquet Volume
-          │
-          ▼
-┌──────────────────┐
-│ Delta Lakehouse  │
-└─────────┬────────┘
-          │
-          ▼
-┌──────────────────┐
-│ Analytics Layer  │
-└──────────────────┘
+```text
+                 Ingestion Service
+                        │
+                        ▼
+                 Apache Kafka
+                        │
+                        ▼
+              Spark Processing Engine
+         ┌──────────────┼──────────────┐
+         │              │              │
+         ▼              ▼              ▼
+ Streaming        Batch Processing    DLQ
+         │              │              │
+         └──────────────┼──────────────┘
+                        ▼
+             Shared Parquet Volume
+                        │
+                        ▼
+                Delta Lakehouse
+                        │
+                        ▼
+                 Analytics Layer
 ```
 
 ---
@@ -42,44 +33,38 @@ The ATLAS Spark Processing Engine acts as the central processing layer of the pl
 
 ### Ingestion → Spark
 
-- Kafka acts as the communication layer between services.
-- Spark continuously consumes telemetry from Kafka topics using Structured Streaming.
-- A common telemetry schema is maintained across both services.
+The ingestion service publishes production-like telemetry to Kafka using a common schema. Spark continuously consumes these messages using Structured Streaming, ensuring both services remain loosely coupled.
+
+### Spark → DLQ
+
+Invalid records are redirected to a dedicated Dead Letter Queue instead of interrupting processing. Recoverable records are repaired and replayed through a retry topic, while permanent failures are isolated for later inspection.
 
 ### Spark → Lakehouse
 
-- Processed stream and batch outputs are written as Parquet files to a shared Docker volume.
-- The Lakehouse continuously ingests these files for Delta MERGE and refinement.
+Streaming and batch outputs are written as Snappy-compressed Parquet files to a shared Docker volume. The Lakehouse continuously ingests these files for refinement and Delta MERGE operations.
 
 ---
 
 # Integration Challenges
 
-### Schema Consistency
+### Schema Synchronization
 
-During development, changes to the ingestion payload required corresponding updates to the Spark schema and validation logic to ensure compatibility across the pipeline.
-
----
+As the ingestion and processing services evolved together, maintaining a consistent telemetry schema required continuous validation across both services.
 
 ### Service Startup Dependencies
 
-Spark occasionally initialized before Kafka was ready, resulting in connection failures during container startup.
-A startup synchronization mechanism was introduced to wait for Kafka availability before launching Spark workers.
+Spark depends on Kafka availability during startup. A startup synchronization mechanism was introduced to ensure Kafka became available before Spark workers and the DLQ service were initialized.
+
+### Shared Storage Compatibility
+
+A standardized Parquet schema and Snappy compression were adopted to ensure compatibility between the Spark processor and the downstream Lakehouse.
+
+### Cross-Service Validation
+
+End-to-end integration testing was performed throughout development to verify communication between ingestion, Kafka, Spark, Lakehouse, and analytics services under both streaming and batch workloads.
 
 ---
 
-### Shared Data Format
+# Conclusion
 
-To maintain compatibility with the Lakehouse, the processor standardized its output as Snappy-compressed Parquet with a consistent schema for both streaming and batch pipelines.
-
----
-
-### Cross-Service Coordination
-
-Since the ingestion, processing, and Lakehouse modules were developed independently, frequent interface validation and testing were required to ensure seamless communication between services.
-
----
-
-# Summary
-
-The Spark Processing Engine serves as the integration layer between data ingestion and long-term storage. By standardizing schemas, coordinating service startup, and using shared storage for downstream processing, the processor enables reliable communication between all components of the ATLAS platform while remaining loosely coupled and independently deployable.
+The Spark Processing Engine successfully integrates with the complete ATLAS ecosystem by combining event-driven communication through Kafka with shared-volume data exchange for downstream processing. This modular integration approach improves scalability, maintainability, and fault tolerance while enabling reliable telemetry processing across the platform.

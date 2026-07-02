@@ -4,7 +4,7 @@
 
 ATLAS (Advanced Telemetry Logging & Analytics System) is a highly scalable, distributed data pipeline and AIOps platform. Engineered to ingest, process, deduplicate, and analyze high-frequency server power telemetry data in near real-time, the system leverages a **Lambda Architecture** paired with an advanced **Machine Learning Intelligence Layer**.
 
-Designed to handle over **80,000+ devices** continuously, ATLAS transforms chaotic, deeply nested telemetry into mathematically scored, analytics-ready datasets. Finally, an integrated **Small Language Model (SLM)** automates Tier-3 Site Reliability Engineering (SRE) tasks by generating deterministic Root Cause Analysis (RCA) reports directly on the dashboard.
+ATLAS transforms chaotic, deeply nested telemetry into mathematically scored, analytics-ready datasets. Finally, an integrated **Small Language Model (SLM)** automates Tier-3 Site Reliability Engineering (SRE) tasks by generating deterministic Root Cause Analysis (RCA) reports directly on the dashboard.
 
 ---
 
@@ -65,12 +65,15 @@ A highly durable data transportation layer ensuring no telemetry is dropped duri
 ### 3. Data Processing & Validation Engine (Apache Spark)
 
 **Owner:** Sanjula S
-The heavy computational muscle of the platform, utilizing Spark Structured Streaming.
 
-* **Flattening & Transformation:** Executes PySpark `explode()` functions to un-nest complex arrays (e.g., `PowerDetail`) and enforces strict typing.
-* **Windowed Aggregations:** Applies a 1-hour tumbling window (with watermarking) to roll up 5-minute interval metrics, discarding excessively late events.
-* **Automated DLQ Recovery:** A continuously running DLQ Reviewer script analyzes failed records, applies recovery rules (e.g., converting string `socket_count` to integer), and pushes them to `raw-server-metrics-retry` for re-ingestion. Non-recoverable payloads (e.g., missing `device_id`) are permanently sidelined.
-* **Checkpointing:** Utilizes HDFS-backed state checkpoints. If a Spark node crashes, processing resumes perfectly without duplicating data.
+- The heavy computational muscle of the platform, utilizing **Spark Structured Streaming**. 
+- Processes both real-time **streaming** and **historical batch** telemetry data using Apache Spark.
+- Consumes telemetry from Apache Kafka through Spark Structured Streaming.
+- Performs **schema validation**, **transformation**, **flattening** (explode), and 1-hour **window-based aggregations**.
+- Uses **watermarking** to handle late-arriving events and **checkpointing** for fault-tolerant recovery.
+- Routes invalid records to a **Dead Letter Queue** (DLQ) with automated retry and failure classification.
+- Generates Snappy-compressed **Parquet** datasets in a shared volume for seamless Delta Lake integration.
+- Supports scalable, low-latency processing through micro-batch execution.
 
 ### 4. Refined Storage & Deduplication Layer (Delta Lake)
 
@@ -89,7 +92,11 @@ Two analytical databases consume the refined data, feeding into the Isolation Fo
 
 * **PostgreSQL:** Stores persistent relational metadata and maintains the backend state for the Copilot chat history.
 * **ClickHouse (Varna):** Serves as the ultra-fast columnar backend. Utilizes native Kafka Engines for live streaming alerts and persistent schedulers to pull deduplicated Parquet batches.
-* **Isolation Forest Pipeline (Sanjula):** Performs feature engineering on incoming telemetry and assigns mathematical `anomaly_scores` and `health_scores` (-1 to 1, scaled to 0-100) to identify complex causal anomalies (e.g., Thermal Cascades).
+* **Isolation Forest Pipeline (Sanjula):** Trains an Isolation Forest model on historical telemetry for anomaly detection.
+Performs feature engineering and preprocessing to generate consistent model inputs.
+Computes anomaly scores and normalized health scores (0–100) for every device.
+Serializes trained artifacts (preprocessor.pkl, isolation_forest.pkl, health_score_config.pkl) for production inference.
+Supplies health predictions to the analytics layer, enabling real-time monitoring and AI-assisted Root Cause Analysis (RCA).
 
 ### 6. ATLAS Dashboard & SRE Copilot
 

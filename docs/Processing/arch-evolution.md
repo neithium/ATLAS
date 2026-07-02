@@ -1,79 +1,48 @@
-# ATLAS Spark Processing Engine – Design Evolution
-# Author: Sanjula S
+# ATLAS Spark Processing Engine – Architecture Evolution
+**Author:** Sanjula S
+
 ## Overview
 
-The ATLAS Spark Processing Engine was developed incrementally rather than as a single implementation. Throughout the project, the architecture evolved multiple times to improve scalability, fault tolerance, maintainability, and integration with the rest of the ATLAS platform.
+The ATLAS Spark Processing Engine was developed iteratively over multiple phases. Rather than implementing the complete architecture at once, new capabilities were introduced as the ATLAS platform expanded, allowing the processor to evolve from a simple batch application into a scalable, fault-tolerant streaming engine.
 
-Each iteration addressed limitations identified during testing, mentor reviews, and integration with other project components.
+Each iteration addressed limitations identified during integration, testing, and performance evaluation.
 
 ---
 
 # Evolution Timeline
 
-```
-Version 1
-──────────────
+```text
 Static Batch Processing
-
         │
         ▼
-
-Version 2
-──────────────
 Structured Streaming
-
         │
         ▼
-
-Version 3
-──────────────
 Kafka Integration
-
         │
         ▼
-
-Version 4
-──────────────
 Checkpointing & Watermarking
-
         │
         ▼
-
-Version 5
-──────────────
-Dead Letter Queue (DLQ)
-
+Dead Letter Queue
         │
         ▼
-
-Version 6
-──────────────
-Automatic Recovery Pipeline
-
+Automatic Recovery
         │
         ▼
-
-Version 7
-──────────────
-Parallel Multi-Worker Processing
-
+Parallel Spark Workers
         │
         ▼
-
-Current Architecture
+Lakehouse Integration
 ```
 
 ---
 
-# Version 1 – Initial Batch Processing
+# Phase 1 – Static Batch Processing
 
-## Objective
+The initial implementation focused on processing archived telemetry stored as static JSON datasets.
 
-The first implementation focused on processing historical telemetry data stored as static files, inside the same container (before initial integration).
-
-### Architecture
-
-```
+```text
 Raw JSON
     │
     ▼
@@ -83,276 +52,204 @@ Spark Batch Job
 Aggregation
     │
     ▼
-Parquet Output
+Parquet
 ```
 
 ### Characteristics
 
-- Reads complete datasets
-- Stateless execution
+- Batch-only execution
 - Single Spark application
-- Historical analytics only
+- Historical analytics
+- Local file processing
 
-### Limitations
+### Limitation
 
-- No real-time processing
-- High processing latency
-- Unable to process continuously arriving telemetry
-
----
-
-# Version 2 – Structured Streaming
-
-To support continuous telemetry ingestion, Spark Structured Streaming was introduced.
-
-### Changes
-
-- Streaming DataFrames replaced static DataFrames
-- Micro-batch execution model adopted
-- Continuous processing enabled
-
-### Benefits
-
-- Near real-time analytics
-- Continuous execution
-- Lower latency
+The architecture was unable to process continuously arriving telemetry.
 
 ---
 
-# Version 3 – Kafka Integration
+# Phase 2 – Structured Streaming
 
-Initially, Spark consumed telemetry directly from JSON files. As the project evolved, Apache Kafka became the central ingestion layer.
+To support continuous telemetry ingestion, Spark Structured Streaming replaced the static batch workflow for real-time processing.
 
-### Previous Flow
-
+```text
+Kafka
+   │
+   ▼
+Spark Structured Streaming
+   │
+   ▼
+Parquet
 ```
-Generator
+
+### Improvements
+
+- Continuous processing
+- Lower processing latency
+- Micro-batch execution model
+- Real-time analytics
+
+---
+
+# Phase 3 – Kafka-Based Integration
+
+As the ingestion service matured, telemetry generation shifted from exported files to Apache Kafka.
+
+The Spark processor was redesigned to consume telemetry directly from Kafka, allowing ingestion and processing services to operate independently.
+
+```text
+Ingestion
     │
     ▼
-JSON Files
+Kafka
     │
     ▼
 Spark
 ```
 
-### Updated Flow
+### Architectural Changes
 
-```
-Generator
-    │
-    ▼
+- Decoupled producer-consumer communication
+- Standardized telemetry schema
+- Support for continuous event streaming
+
+---
+
+# Phase 4 – Reliable Streaming
+
+Long-running streaming jobs required mechanisms to recover from failures while handling delayed telemetry.
+
+Checkpointing and event-time watermarking were incorporated into the processing pipeline.
+
+### Improvements
+
+- Stateful recovery
+- Kafka offset persistence
+- Late-event handling
+- Controlled streaming state
+
+---
+
+# Phase 5 – Dead Letter Queue
+
+Schema validation introduced a new challenge -> invalid telemetry should not interrupt processing.
+
+Instead of rejecting entire batches, invalid records were redirected to a dedicated Dead Letter Queue.
+
+```text
 Kafka
-    │
-    ▼
-Spark Streaming
+   │
+Validation
+   │
+ ┌──────────┐
+ ▼          ▼
+Valid     Invalid
+ │          │
+ ▼          ▼
+Spark      DLQ
 ```
 
-### Why Kafka?
+### Improvements
 
-- Decouples producers and consumers
-- Supports scalable event streaming
-- Enables replay through Kafka offsets
-- Improves reliability during downstream failures
+- Continuous stream execution
+- Invalid record isolation
+- Simplified debugging
 
 ---
 
-# Version 4 – Checkpointing and Watermarking
+# Phase 6 – Self-Healing Recovery Pipeline
 
-Streaming applications maintain state across multiple micro-batches. To improve fault tolerance and manage late-arriving data, checkpointing and watermarking were introduced.
+Many DLQ records contained recoverable formatting errors rather than corrupted telemetry.
 
-## Checkpointing
+A dedicated recovery service was introduced to inspect failed records, apply recovery rules, and automatically replay corrected messages into Kafka.
 
-Checkpoint directories store processing progress, allowing Spark to resume after unexpected failures without reprocessing completed data.
-
-### Benefits
-
-- Fault recovery
-- Offset tracking
-- Stateful aggregation support
-
----
-
-## Watermarking
-
-Watermarks define how long Spark waits for delayed events before finalizing aggregations.
-
-### Benefits
-
-- Handles late-arriving records
-- Prevents unbounded state growth
-- Improves memory management
-
----
-
-# Version 5 – Dead Letter Queue
-
-During testing, malformed telemetry records caused failures within the streaming pipeline.
-Instead of discarding invalid messages or terminating processing, a dedicated Dead Letter Queue (DLQ) was introduced.
-
-### Processing Flow
-
-```
-Kafka
-
-      │
-
-      ▼
-
-Schema Validation
-
-      │
-
- ┌────┴────┐
-
- ▼         ▼
-
-Valid   Invalid
-
- │         │
-
- ▼         ▼
-
-Spark     DLQ
-```
-
-### Benefits
-
-- Pipeline continues processing valid data
-- Invalid records are isolated
-- Simplifies debugging and auditing
-
----
-
-# Version 6 – Automatic Recovery Pipeline
-
-Many invalid records contained minor formatting issues that could be corrected automatically.
-A recovery service was introduced to inspect DLQ messages, repair supported errors, and replay corrected records back into Kafka.
-
-### Recovery Workflow
-
-```
+```text
 DLQ
-
  │
  ▼
-
-Recovery Rules
-
+Recovery Service
  │
  ├──────────────┐
  ▼              ▼
-
-Recovered   Unrecoverable
-
- │              │
- ▼              ▼
-Retry Topic  Failure Topic
+Retry        Failure
+ │
+ ▼
+Spark
 ```
 
-### Supported Recoveries
+### Supported Recovery
 
-- Socket count datatype conversion
-- Timestamp normalization
+- Datatype normalization
+- Timestamp correction
 
-### Benefits
-
-- Reduces manual intervention
-- Improves data retention
-- Enables automatic replay
+This transformed the DLQ into a self-healing processing pipeline instead of a simple error repository.
 
 ---
 
-# Version 7 – Parallel Multi-Worker Processing
+# Phase 7 – Parallel Processing
 
-The initial streaming implementation relied on a single Spark consumer, which limited throughput under increasing workloads.
+The initial streaming implementation relied on a single Spark worker, which limited throughput as telemetry volume increased.
 
-The architecture was redesigned to use multiple Spark workers consuming Kafka partitions in parallel.
+The architecture was redesigned to launch multiple Spark workers consuming Kafka partitions independently.
 
-### Previous Architecture
-
-```
+```text
 Kafka
-
  │
-
- ▼
-
-Worker 1
-
- │
-
- ▼
-
-Parquet
-```
-
-### Current Architecture
-
-```
-Kafka
-
- │
-
- ├─────────────┐
-
- ▼             ▼
-
-Worker 1    Worker 2
-
- │             │
-
- └──────┬──────┘
-
+ ├───────────────┐
+ ▼               ▼
+Worker 1     Worker 2
+ │               │
+ └──────┬────────┘
         ▼
-
 Shared Output
 ```
 
-### Benefits
+### Improvements
 
-- Increased throughput
 - Better CPU utilization
-- Parallel Kafka partition consumption
-- Independent checkpoints per worker
+- Parallel Kafka consumption
+- Independent checkpoints
 - Improved scalability
 
 ---
 
-# Current Architecture
+# Final Architecture
 
-The final Spark Processing Engine combines all previous improvements into a unified processing pipeline.
+The current Spark Processing Engine combines all previous improvements into a unified processing platform capable of supporting both streaming and historical analytics.
 
-Major capabilities include:
+### Current Capabilities
 
 - Apache Kafka integration
 - Spark Structured Streaming
 - Historical batch processing
 - Schema validation
-- Watermark-based event processing
-- Checkpoint-based recovery
+- Event-time watermarking
+- Worker-level checkpointing
 - Dead Letter Queue
-- Automatic record recovery
-- Multi-worker parallel processing
+- Automatic recovery pipeline
+- Parallel Spark workers
 - Analytics-ready Parquet generation
-- Lakehouse integration through shared volumes
+- Shared-volume Lakehouse integration
 
 ---
 
-# Key Design Decisions
+# Key Architectural Decisions
 
-| Decision | Motivation |
-|----------|------------|
-| Apache Kafka | Reliable event streaming and decoupled ingestion |
-| Structured Streaming | Continuous telemetry processing |
-| Watermarking | Late event handling and state cleanup |
-| Checkpointing | Fault tolerance and recovery |
-| Dead Letter Queue | Isolation of invalid records |
-| Recovery Pipeline | Automatic correction of recoverable errors |
-| Multi-worker Architecture | Improved scalability and throughput |
-| Shared Volume Output | Seamless integration with the Delta Lakehouse |
+| Decision | Purpose |
+|----------|---------|
+| Apache Kafka | Decouple ingestion from processing |
+| Structured Streaming | Continuous event processing |
+| Watermarking | Handle delayed telemetry |
+| Checkpointing | Recover streaming state |
+| Dead Letter Queue | Isolate invalid records |
+| Recovery Pipeline | Automatically repair recoverable telemetry |
+| Multi-worker Processing | Improve throughput and scalability |
+| Shared Parquet Output | Simplify Lakehouse integration |
 
 ---
 
-# Conclusion
+# Evolution Summary
 
-The Spark Processing Engine evolved from a simple batch-processing application into a resilient, scalable, and fault-tolerant telemetry processing service. Each architectural revision addressed practical limitations observed during development and testing, resulting in a modular pipeline capable of supporting both real-time and historical analytics while integrating seamlessly with the ATLAS Lakehouse.
+The Spark Processing Engine evolved from a standalone batch processor into a distributed streaming platform capable of processing high-volume telemetry while maintaining reliability and scalability.
+
+The final architecture combines real-time streaming, historical batch processing, automatic error recovery, parallel execution, and seamless integration with the ATLAS Lakehouse, providing a robust foundation for the platform's analytics pipeline.

@@ -1,139 +1,148 @@
-# Validation & Testing
+# ATLAS Spark Processing Engine - Benchmark Report
 **Author:** Sanjula S
 
 ## Overview
 
-The Spark Processing Engine was validated through functional, integration, scalability, and fault-tolerance testing. The objective was to verify reliable data processing under both normal and failure scenarios while ensuring compatibility with the other ATLAS services.
+This document summarizes the benchmarking and performance evaluation of the ATLAS Spark Processing Engine. The objective was to validate the processor under different workloads while measuring scalability, stability, and throughput for both streaming and batch processing.
+
+All benchmarks were executed on a local Docker-based deployment using Apache Spark Structured Streaming and Apache Kafka.
 
 ---
 
-# Functional Testing
+# Benchmark Objectives
 
-The following core functionalities were verified throughout development.
+The benchmarking process focused on validating:
 
-| Component | Validation |
-|----------|------------|
-| Kafka Consumer | Successfully consumed telemetry from Kafka topics |
-| Structured Streaming | Continuous processing of incoming telemetry |
-| Batch Processing | Historical Parquet processing |
-| Schema Validation | Detection of malformed telemetry |
-| Watermarking | Correct handling of event-time processing |
-| DLQ | Invalid records redirected correctly |
-| Retry Pipeline | Recoverable records replayed successfully |
-| Output Generation | Valid Parquet files generated |
+- Streaming throughput
+- Batch processing performance
+- Multi-worker scalability
+- Fault tolerance
+- Long-running stability
 
 ---
 
-# Integration Testing
+# Test Environment
 
-The Spark Processor was tested together with the remaining ATLAS services.
-
-Validated integrations included:
-
-- Ingestion → Kafka
-- Kafka → Spark Processor
-- Spark → Shared Volume
-
-This ensured end-to-end compatibility across the distributed pipeline.
+| Component | Configuration |
+|-----------|---------------|
+| Processing Engine | Apache Spark 3.5 |
+| Streaming Engine | Spark Structured Streaming |
+| Messaging | Apache Kafka |
+| Deployment | Docker Compose |
+| Output Format | Snappy Compressed Parquet |
 
 ---
 
-# Streaming Validation
+# Benchmark Workloads
 
-Streaming tests verified:
+The processor was evaluated using multiple telemetry workloads of increasing size.
 
-- Continuous Kafka consumption
-- Event-time aggregation
-- Multi-worker execution
-- Checkpoint recovery
-- Watermark behaviour
-- Long-running stream stability
-
-The streaming pipeline was executed continuously for extended durations without interruption.
+| Workload | Purpose |
+|----------|---------|
+| 10 Devices | Functional validation |
+| 100 Devices | Streaming validation |
+| 1,000 Devices | Medium-scale performance testing |
+| 20,000 Devices | Large-scale processing validation |
+| 55,000 Devices | Stress testing and scalability evaluation |
 
 ---
 
-# Batch Validation
+# Streaming Performance
 
-Historical processing was validated using archived telemetry datasets.
+Streaming benchmarks focused on measuring the processor's ability to continuously consume Kafka messages while maintaining stable execution.
 
-The batch pipeline successfully:
+### Observations
 
-- Read historical Parquet files
+- Continuous Kafka consumption remained stable across all benchmark runs.
+- Parallel Spark workers significantly improved processing throughput compared to the initial single-worker implementation.
+- Worker-specific checkpoints enabled uninterrupted recovery during restart testing.
+- Watermarking maintained bounded streaming state during extended execution.
+
+---
+
+# Batch Processing Performance
+
+Historical datasets were processed using the Spark batch pipeline.
+
+The batch processor successfully:
+
+- Read archived telemetry
 - Applied schema validation
-- Generated aggregated datasets
-- Produced analytics-ready output
+- Performed aggregations
+- Generated analytics-ready Parquet datasets
+
+Batch execution remained consistent across different dataset sizes.
 
 ---
 
-# Dead Letter Queue Testing
+# Scalability Evaluation
 
-Various malformed telemetry records were injected into Kafka to validate error handling.
-Scenarios tested included:
+The processor was gradually evaluated with increasing telemetry volumes.
 
-- Invalid JSON
-- Missing mandatory fields
-- Datatype mismatches
-- Missing telemetry payloads
+| Scale | Result |
+|--------|--------|
+| 10 Devices | Successful |
+| 100 Devices | Successful |
+| 1,000 Devices | Successful |
+| ~20,000 Devices | Successfully processed on local hardware |
+| ~55,000 Devices | Stress-tested to evaluate infrastructure limits: Failed |
 
-Expected routing to DLQ, Retry, and Failure topics was successfully verified.
 
----
+Metric	                         Value
 
-# Fault Tolerance Testing
+Maximum devices processed	    20,160
+Largest generated dataset	    55,000 devices
+Kafka partitions	            12
+Output format	                Snappy Parquet
+Checkpoint recovery	            Successful
+DLQ recovery	                Successful
 
-Fault recovery mechanisms were validated by introducing service interruptions during execution.
 
-Validated scenarios included:
 
-- Kafka unavailable during startup
-- Spark container restart
-- Streaming recovery using checkpoints
-
----
-
-# Scalability Testing
-
-Multiple workload sizes were executed to evaluate processing behaviour under increasing telemetry volume.
-
-| Test Scale | Purpose |
-|------------|---------|
-| 10 Servers | Functional validation |
-| 100 Servers | Medium-scale throughput testing |
-| 1000 Servers | Large-scale performance evaluation |
-
-Streaming and batch pipelines were benchmarked independently for each workload. Performance remained stable while demonstrating improved throughput through parallel processing.
+The 20,000-device workload demonstrated the processor's ability to handle high-volume telemetry on a local development environment. Larger workloads were primarily used to identify hardware bottlenecks and validate architectural scalability.
 
 ---
 
-# Long-Running Stability Testing
+# Architecture Improvements
 
-The processor was executed continuously for extended periods to evaluate runtime stability.
+Benchmarking guided several architectural optimizations throughout development.
 
-Validation included:
-
-- Continuous stream execution
-- stability 
-- Checkpoint consistency
-
-These tests confirmed reliable long-duration operation without data loss.
-
----
-
-# Performance Verification
-
-Performance improvements introduced during development were validated through repeated benchmark executions.
-
-Verified optimizations included:
-
-- Multi-worker Spark processing
-- Parallel Kafka consumption
-- Worker-specific checkpoints
-- Snappy-compressed Parquet output
-- Reduced processing latency
+| Optimization | Impact |
+|--------------|--------|
+| Parallel Spark workers | Improved throughput |
+| Worker-specific checkpoints | Faster recovery |
+| Snappy Parquet output | Reduced storage usage |
+| Repartitioning before aggregation | Better workload distribution |
+| DLQ recovery pipeline | Continuous processing despite invalid telemetry |
 
 ---
 
-# Summary
+# Stability Testing
 
-Testing demonstrated that the Spark Processing Engine reliably supports both streaming and batch workloads while integrating successfully with the complete ATLAS platform. Functional correctness, service integration, fault tolerance, and scalability were validated before deployment.
+Long-running execution tests were performed to validate runtime stability.
+
+The processor successfully demonstrated:
+
+- Continuous Spark Structured Streaming
+- Stable Kafka consumption
+- Reliable checkpoint recovery
+- Consistent Parquet generation
+- Recovery after service interruptions
+
+No major processing failures were observed during extended execution.
+
+---
+
+# Known Limitations
+
+Benchmarking was performed on a local Docker deployment.
+
+Performance may vary depending on:
+
+- Available CPU cores
+- Memory allocation
+- Kafka partition count
+- Spark executor configuration
+- Storage performance
+
+The benchmark results should therefore be interpreted as validation of the processing architecture rather than absolute production throughput.
