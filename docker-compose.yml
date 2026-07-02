@@ -468,42 +468,46 @@ services:
 
     volumes:
       - ./processing/jobs:/app/jobs
+      - ./processing/dlq:/app/dlq
+      - ./processing/start.sh:/app/start.sh
       - ./schema:/app/schema:ro
       - spark-checkpoint:/app/checkpoint
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
       - delta-refined:/app/data/processed
       - batch-data:/app/data 
+      - ./processing/logs:/app/logs
 
     networks:
       - atlas-network
       
+    command: /app/start.sh
     
-    command: >
-          bash -c "
-          mkdir -p /app/data/raw &&
-          mkdir -p /app/data/processed/stream &&
-          mkdir -p /app/data/processed/batch &&
-          mkdir -p /app/checkpoint/stream &&
+    # command: >
+    #       bash -c "
+    #       mkdir -p /app/data/raw &&
+    #       mkdir -p /app/data/processed/stream &&
+    #       mkdir -p /app/data/processed/batch &&
+    #       mkdir -p /app/checkpoint/stream &&
     
-          echo '⏳ Waiting for Kafka to stabilize...' &&
-          sleep 40 &&
+    #       echo '⏳ Waiting for Kafka to stabilize...' &&
+    #       sleep 40 &&
     
-          tail -f /dev/null
-          "  
+    #       tail -f /dev/null
+    #       "  
 
-  dlq-reviewer:
+  # dlq-reviewer:
 
-    build: ./processing/dlq
+  #   build: ./processing/dlq
 
-    container_name: dlq-reviewer
+  #   container_name: dlq-reviewer
 
-    restart: always
-    networks:
-      - atlas-network
+  #   restart: always
+  #   networks:
+  #     - atlas-network
 
-    depends_on:
-      - broker1
+  #   depends_on:
+  #     - broker1
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
