@@ -19,22 +19,23 @@ The pipeline processes telemetry through a resilient, multi-tier architecture en
        ▼                   ▼
  Kafka (Stream)       Raw Directory (Batch)
        │                   │
-       ├───────┐           │
-       ▼       ▼           ▼
- ClickHouse  Spark Processing Engine
- (Live Ops)  (Explode, Validate, Aggregate)
-                 │
-                 ▼
-             Delta Lake
-        (ACID Deduplication MERGE)
-                 │
-                 ▼
-       Analytics & ML Pipeline Layer
-       (PostgreSQL + ClickHouse + Isolation Forest)
-                 │
-                 ▼
-         ATLAS Observability Dashboard
-         (Streamlit + Phi-4-mini SRE Copilot)
+       |                   | 
+        ─────────┐         │
+                 ▼         ▼
+                Spark Processing Engine
+                (Explode, Validate, Aggregate)
+                        │
+                        ▼
+                    Delta Lake
+               (ACID Deduplication MERGE)
+                        │
+                        ▼
+              Analytics & ML Pipeline Layer
+              (PostgreSQL + ClickHouse + Isolation Forest)
+                        │
+                        ▼
+                ATLAS Observability Dashboard
+                (Streamlit + Phi-4-mini SRE Copilot)
 
 ```
 
