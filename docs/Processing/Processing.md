@@ -418,9 +418,8 @@ Additional engineering documentation is available for the Spark Processing Engin
 | Document | Description |
 |----------|-------------|
 | **Architecture-Evolution.md** | Evolution of the processing engine architecture |
-| **Engineering-Journey.md** | Engineering challenges, design decisions, and optimizations |
-| **Integration.md** | Integration with the ingestion service, Lakehouse, and analytics layer |
-| **Validation.md** | Functional, integration, scalability, and benchmark testing |
+| **Integration-notes.md** | Integration with the ingestion service, Lakehouse, and Kafka |
+| **benchmark.md** | Functional, integration, scalability, and benchmark testing |
 
 ---
 
