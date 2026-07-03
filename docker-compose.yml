@@ -65,6 +65,7 @@ volumes:
   ingestion-tsdb-data:
   telemetry-cache-data:
   batch-data:
+  stream-raw-data:
 
 services:
   # ===========================================================================
@@ -192,7 +193,7 @@ services:
       # Node Identity
       - KAFKA_CFG_NODE_ID=1
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
-
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       # Cluster ID — must be identical across all 3 brokers
       - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster-3node
 
@@ -474,7 +475,7 @@ services:
       - spark-checkpoint:/app/checkpoint
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
-      - delta-refined:/app/data/processed
+      - stream-raw-data:/app/data/processed ### this is the one where the refined data will be output to..
       - batch-data:/app/data 
       - ./processing/logs:/app/logs
 
@@ -541,8 +542,8 @@ services:
       - 8.8.4.4
     volumes:
       # Shared volumes for inter-container data flow
-      - delta-refined:/refined
-      - delta-refined:/stream_raw  # Mounted to read output from processor container in livewire mode
+      - delta-refined:/refined             # Output (The Source of Truth) 
+      - stream-raw-data:/stream_raw  # Mounted to read output from processor container
       # Mount local data folder to see Delta Lake logs on host
       # Schema reference
       - ./delta_lake/generate_data.py:/app/generate_data.py
