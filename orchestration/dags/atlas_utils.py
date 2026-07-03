@@ -126,3 +126,77 @@ def docker_exec_or_raise(container: str, cmd: list, timeout_s: int = 3600):
             f"[docker_exec] Command {cmd!r} in {container} "
             f"exited with non-zero code {exit_code}"
         )
+
+
+def _docker_get(path: str) -> tuple[int, str]:
+    """GET request to Docker API. Returns (curl_rc, stdout)."""
+    result = subprocess.run(
+        _CURL_BASE + [f"http://localhost{path}"],
+        capture_output=True, text=True,
+    )
+    return result.returncode, result.stdout
+
+
+def container_is_running(container: str) -> bool:
+    """Return True if container exists and State.Running is true."""
+    rc, stdout = _docker_get(f"/containers/{container}/json")
+    if rc != 0 or not stdout.strip():
+        return False
+    try:
+        return bool(json.loads(stdout).get("State", {}).get("Running"))
+    except json.JSONDecodeError:
+        return False
+
+
+def container_top_contains(container: str, pattern: str) -> bool:
+    """Return True if any process line from docker top contains pattern."""
+    rc, stdout = _docker_get(f"/containers/{container}/top")
+    return rc == 0 and pattern in stdout
+
+
+def docker_exec_fire_and_forget(container: str, cmd: list) -> None:
+    """Start a detached exec; raise RuntimeError if create/start fails."""
+    if not container_is_running(container):
+        raise RuntimeError(f"[docker_exec] Container {container!r} is not running")
+
+    payload = json.dumps({"Cmd": cmd, "AttachStdout": False, "AttachStderr": False})
+    create = subprocess.run(
+        _CURL_BASE + ["-X", "POST"] + _CT_JSON + [
+            "-d", payload,
+            f"http://localhost/containers/{container}/exec",
+        ],
+        capture_output=True, text=True,
+    )
+    if create.returncode != 0 or not create.stdout.strip():
+        raise RuntimeError(f"[docker_exec] Create failed for {container}:{cmd!r}")
+
+    exec_id = json.loads(create.stdout)["Id"]
+    start = subprocess.run(
+        _CURL_BASE + ["-X", "POST"] + _CT_JSON + [
+            "-d", '{"Detach":true}',
+            f"http://localhost/exec/{exec_id}/start",
+        ],
+        capture_output=True, text=True,
+    )
+    if start.returncode != 0:
+        raise RuntimeError(f"[docker_exec] Start failed for exec {exec_id[:12]}")
+    log.info("[docker_exec] Fire-and-forget started %s in %s", exec_id[:12], container)
+
+
+def wait_for_container_process(
+    container: str,
+    pattern: str,
+    present: bool,
+    timeout_s: int = 3600,
+    poll_interval_s: int = 15,
+) -> None:
+    """Poll until pattern appears (present=True) or disappears (present=False)."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if container_top_contains(container, pattern) == present:
+            return
+        time.sleep(poll_interval_s)
+    state = "running" if present else "stopped"
+    raise RuntimeError(
+        f"Timed out waiting for {pattern!r} to be {state} in {container}"
+    )

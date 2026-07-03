@@ -895,7 +895,7 @@ async def _process_and_send(did, readings, DEVICES, kafka_prod):
     meta = DEVICES.get(did, {})
     loop = asyncio.get_event_loop()
     
-    #  Parallel Serialization (Offloaded to separate CPU core)
+    # Parallel Serialization (Offloaded to separate CPU core)
     pool = get_cpu_pool()
     payload_bytes = await loop.run_in_executor(pool, _serialize_record, did, readings, meta)
     
@@ -1419,6 +1419,62 @@ async def trigger_manual_id_export(pcid: str, acid: str, device_string: str, bac
         }
     except Exception as e:
         log.error(f"Export failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/pcid/{pcid}/acid/{acid}/telemetry/historical/first/export")
+async def trigger_historical_first_export(pcid: str, acid: str, background_tasks: BackgroundTasks, count: int = 2016):
+    """Triggers export of the OLDEST telemetry for a customer hierarchy."""
+    try:
+        # 1. Hot-Load Device IDs from Cache
+        target_ids = [
+            did for did, meta in CACHED_REGISTRY.items()
+            if meta.get('platform_customer_id') == pcid and meta.get('application_customer_id') == acid
+        ]
+        
+        if not target_ids:
+            return {"status": "error", "message": "No devices found for hierarchy"}
+            
+        # --- Hierarchical Lock Check ---
+        h_key = f"{pcid}:{acid}"
+        async with HIERARCHY_LOCK:
+            if h_key in ACTIVE_HIERARCHIES:
+                return {"status": "error", "message": f"Historical Sync already active for {h_key}"}
+            ACTIVE_HIERARCHIES.add(h_key)
+
+        background_tasks.add_task(_handle_throttled_export, _export_first_task, h_key, target_ids, count)
+        return {"status": "accepted", "job": "historical_first_sync", "device_count": len(target_ids), "hierarchy": h_key}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/fleet/telemetry/export")
+async def trigger_fleet_telemetry_export(days: int = 7):
+    """Triggers Kafka Ingestion for EVERY device registered in the fleet."""
+    try:
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=days)
+        
+        # Load ALL devices from registry
+        with open(REGISTRY_PATH, "rb") as f:
+            registry = orjson.loads(f.read())
+        
+        device_ids = list(registry.keys())
+        
+        if not device_ids:
+            return {"status": "Empty Fleet", "message": "No devices found in registry."}
+            
+        log.info(f"📢 [API] Global Fleet Export Triggered: {len(device_ids)} devices. (Synchronous Mode)")
+        
+        # We now AWAIT this task so the API doesn't return until the data is in Kafka
+        await _export_stream_task(start_time=start_time, end_time=end_time, device_ids=device_ids)
+        
+        return {
+            "status": "Fleet-wide Export Completed", 
+            "targeted_devices": len(device_ids),
+            "window_days": days
+        }
+
+    except Exception as e:
+        log.error(f"❌ Fleet Export failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/register/device")
