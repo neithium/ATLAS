@@ -1,6 +1,6 @@
 # ATLAS Spark Processing Engine
 
-Apache Spark-based batch and streaming processing engine for the ATLAS platform.
+Apache Spark-based batch and streaming processing engine for the ATLAS distributed telemetry platform.
 
 **Author:** Sanjula S
 
@@ -8,526 +8,323 @@ Apache Spark-based batch and streaming processing engine for the ATLAS platform.
 
 # Overview
 
-The ATLAS Spark Processing Engine is responsible for consuming high-volume telemetry data from Apache Kafka, validating incoming records, classifying invalid messages, automatically recovering recoverable failures, processing streaming telemetry, executing historical batch jobs, and generating analytics-ready Parquet datasets for downstream analytics.
+The ATLAS Spark Processing Engine is responsible for transforming raw telemetry into analytics-ready datasets. It consumes telemetry from Apache Kafka, validates incoming records, processes both real-time and historical data, and generates compressed Parquet files for downstream consumption by the ATLAS Lakehouse.
 
-The processing engine provides:
+The processor was designed with a strong focus on scalability, fault tolerance, and modularity, allowing it to operate independently while integrating seamlessly with the ingestion, Lakehouse, and analytics services.
 
-- Real-time telemetry ingestion
-- Spark Structured Streaming processing
-- Automatic schema validation
-- Dead Letter Queue (DLQ) support
+## Key Responsibilities
+
+- Real-time telemetry processing using Spark Structured Streaming
+- Historical batch processing of archived telemetry
+- Schema validation and error classification
+- Dead Letter Queue (DLQ) management
 - Automatic recovery of recoverable records
-- Retry pipeline
-- Permanent failure pipeline
-- Historical batch processing
-- Analytics-ready Parquet generation
+- Event-time processing with watermarking
 - Fault-tolerant checkpointing
 - Parallel Spark worker execution
+- Analytics-ready Parquet generation
+- Integration with the ATLAS Lakehouse
 
 ---
 
-# Architecture
+# Design Philosophy
 
-```text
-                    Kafka Producer
-                          │
-                          ▼
-                raw-server-metrics
-                          │
-                          ▼
-             Spark Structured Streaming
-      ┌────────────────────────────────────┐
-      │ JSON Parsing                       │
-      │ Schema Validation                  │
-      │ Error Classification               │
-      │ Watermark Processing               │
-      │ Streaming Aggregation              │
-      └────────────────────────────────────┘
-             │                      │
-             │                      │
-             ▼                      ▼
-      Valid Records         Invalid Records
-             │                      │
-             ▼                      ▼
-     Stream Parquet Output  raw-server-metrics-dlq
-   (/worker_1, /worker_2)            │
-                                     ▼
-                              DLQ Reviewer
-                          ┌──────────┴──────────┐
-                          │                     │
-                          ▼                     ▼
-                   Recoverable          Non-Recoverable
-                          │                     │
-                          ▼                     ▼
-             raw-server-metrics-retry   raw-server-metrics-failure
-                          │
-                          ▼
-             Spark Structured Streaming
-                          │
-                          ▼
-                 Stream Parquet Output
-```
+The Spark Processing Engine was developed around four core principles:
+
+- **Scalability** through distributed Spark processing and Kafka partitioning.
+- **Reliability** using checkpointing, watermarking, and automated recovery.
+- **Modularity** by separating ingestion, processing, storage, and analytics into independent services.
+- **Fault Tolerance** through schema validation, DLQ processing, and retry pipelines.
+
+---
+
+# System Architecture
+
+The Spark Processor acts as the processing layer of the ATLAS platform. It consumes telemetry published by the ingestion service, performs validation and aggregation, and generates standardized Parquet datasets for the Lakehouse. The Lakehouse then performs deduplication, Delta MERGE operations, and partition management before exposing refined datasets to the analytics layer.
+
+---
+
+# Core Features
+
+- Apache Kafka integration
+- Spark Structured Streaming
+- Historical batch processing
+- Schema validation
+- Event-time watermarking
+- Dead Letter Queue (DLQ)
+- Automatic record recovery
+- Retry and failure pipelines
+- Worker-level checkpointing
+- Parallel Spark workers
+- Snappy-compressed Parquet output
+- Shared-volume integration with ingestion and Lakehouse
 
 ---
 
 # Processing Pipeline
 
-The Spark Processing Engine consists of four major components:
+The Spark Processing Engine consists of four primary processing components:
 
 1. Kafka Streaming Consumer
-2. DLQ Processing Engine
-3. Streaming Analytics Pipeline
+2. Streaming Analytics Pipeline
+3. Dead Letter Queue & Recovery Service
 4. Historical Batch Processing
 
-Each component performs a dedicated task while sharing the same telemetry schema and processing rules.
+Each component operates independently while sharing a common telemetry schema and output format.
 
 ---
 
 # Kafka Topics
 
 | Topic | Purpose |
-|--------|----------|
-| `raw-server-metrics` | Incoming telemetry |
+|--------|---------|
+| `raw-server-metrics` | Primary telemetry stream |
 | `raw-server-metrics-dlq` | Invalid records awaiting review |
-| `raw-server-metrics-retry` | Successfully repaired records |
+| `raw-server-metrics-retry` | Successfully recovered records |
 | `raw-server-metrics-failure` | Permanently failed records |
 
 ---
 
-# Spark Structured Streaming
+# Streaming Processing
 
-The Spark streaming application continuously consumes telemetry from two Kafka topics:
+Spark Structured Streaming continuously consumes telemetry from the primary Kafka topic together with the retry topic generated by the DLQ recovery service.
 
-- `raw-server-metrics`
-- `raw-server-metrics-retry`
-
-Each incoming record passes through the following stages:
-
-1. Kafka message ingestion
-2. JSON parsing
-3. Schema validation
-4. Error classification
-5. Watermark assignment
-6. Streaming aggregation
-7. Parquet generation
-
-Valid records continue through the analytics pipeline.
-
-Invalid records are automatically redirected to the Dead Letter Queue for further review.
-
----
-
-# Streaming Workflow
+Each incoming message passes through the following stages:
 
 ```text
-                    Kafka
-                      │
-                      ▼
-                 ReadStream
-                      │
-                      ▼
-                 JSON Parsing
-                      │
-                      ▼
-             Error Classification
-                ┌───────────────┐
-                │               │
-                ▼               ▼
-             VALID          INVALID
-                │               │
-                ▼               ▼
-        Streaming        DLQ Topic
-        Aggregation          │
-                │            ▼
-                ▼      DLQ Reviewer
-          Parquet Output      │
-                              │
-                      ┌───────┴────────┐
-                      ▼                ▼
-                 Retry Topic     Failure Topic
-                      │
-                      ▼
-                 ReadStream
-                      │
-                      ▼
-                 JSON Parsing
-                      │
-                      ▼
-             Streaming Aggregation
-                      │
-                      ▼
-                Parquet Output
+Kafka
+   │
+   ▼
+JSON Parsing
+   │
+   ▼
+Schema Validation
+   │
+   ▼
+Error Classification
+   │
+   ▼
+Watermark Assignment
+   │
+   ▼
+Streaming Aggregation
+   │
+   ▼
+Parquet Output
 ```
+
+Only validated telemetry enters the analytics pipeline. Invalid records are redirected to the Dead Letter Queue, allowing the processor to continue operating without interrupting the stream.
 
 ---
 
 # Schema Validation
 
-Every Kafka message is validated against the Spark telemetry schema before processing begins.
+Every incoming telemetry record is validated before processing.
 
 Validation includes:
 
-- Required field validation
+- Required field verification
 - Datatype validation
-- Nested `PowerDetail` validation
-- Inventory validation
+- Nested telemetry validation
+- Inventory data validation
 - Timestamp validation
 
-Messages failing validation never enter the analytics pipeline.
+Messages that fail validation are isolated from the processing pipeline and forwarded to the Dead Letter Queue for further review.
 
 ---
 
-# Error Classification
+# Error Handling
 
-Each incoming message is classified into one of the following categories.
+Incoming telemetry is classified into one of two categories.
 
-## VALID
+## Valid Records
 
-The record satisfies all schema and business validation rules.
+Records satisfying all schema and business validation rules are processed immediately through the streaming analytics pipeline.
 
-The record immediately enters the Spark aggregation pipeline.
+## Invalid Records
 
----
+Malformed or incomplete telemetry is redirected to the Dead Letter Queue, where it is inspected by the recovery service.
 
-## INVALID_SCHEMA
-
-The incoming JSON cannot be parsed correctly using the telemetry schema.
-
-Examples include:
-
-- Missing nested structures
-- Incorrect JSON layout
-- Invalid datatypes
-
-These records are routed to the DLQ.
+Recoverable records are automatically repaired and republished to the retry topic, while unrecoverable records are archived in the failure topic for manual analysis.
 
 ---
 
-## INVALID_SOCKET_COUNT
+# Dead Letter Queue & Recovery
 
-The `socket_count` field cannot be parsed as an integer.
-
-Example
-
-```json
-{
-  "inventory_data": {
-    "socket_count": "4"
-  }
-}
-```
-
-This record is recoverable.
-
----
-
-## MISSING_DEVICE_ID
-
-Example
-
-```json
-{
-  "device_id": null
-}
-```
-
-Since the device identifier is mandatory, this record cannot be repaired automatically.
-
----
-
-## MISSING_POWERDETAIL
-
-Example
-
-```json
-{
-  "data": {
-    "PowerDetail": null
-  }
-}
-```
-
-Without telemetry measurements, Spark cannot perform analytics.
-
-The record is permanently rejected.
-
----
-
-# Dead Letter Queue (DLQ)
-
-All invalid records are automatically published to:
+Rather than discarding invalid telemetry, the processor implements a self-healing recovery pipeline.
 
 ```text
-raw-server-metrics-dlq
+Kafka
+   │
+Schema Validation
+   │
+ ┌───────────────┐
+ ▼               ▼
+Valid        Invalid
+ │               │
+ ▼               ▼
+Spark         DLQ
+                  │
+                  ▼
+          Recovery Service
+            │          │
+            ▼          ▼
+       Retry Topic  Failure Topic
 ```
 
-Each DLQ message contains:
+Supported automatic recoveries currently include:
 
-- Original JSON payload
-- Error type
-- Source Kafka topic
-- Partition
-- Offset
-- Kafka timestamp
-- Failure timestamp
-- Worker ID
-
-This metadata enables debugging, auditing, replay, and recovery.
-
----
-
-# DLQ Reviewer
-
-The DLQ Reviewer starts automatically when the Spark Processor container launches.
-
-It continuously consumes messages from:
-
-```text
-raw-server-metrics-dlq
-```
-
-For every failed record it performs:
-
-- Error inspection
-- Recovery rule selection
-- Automatic repair (when possible)
-- Republishing repaired records
-- Routing permanent failures
-
----
-
-# Recovery Rules
-
-The reviewer automatically repairs supported recoverable errors.
-
-Current recovery rules include:
-
-- `socket_count` datatype conversion
+- Socket count datatype conversion
 - Timestamp normalization
 
-Recovered records receive additional recovery metadata before being republished.
-
-Example:
-
-```json
-{
-  "recovery_metadata": {
-    "reviewed_by": "DLQ_REVIEWER_V1",
-    "recovery_type": "INVALID_SOCKET_COUNT",
-    "recovered_at": "2026-07-01T08:15:43"
-  }
-}
-```
+Recovered records are automatically replayed into the streaming pipeline without manual intervention.
 
 ---
 
-# Recoverable Records
+# Watermarking & Checkpointing
 
-Recoverable errors include:
+The streaming pipeline uses event-time watermarking to process delayed telemetry while preventing unbounded state growth during long-running operations.
 
-- `INVALID_SCHEMA`
-- `INVALID_SOCKET_COUNT`
-
-Recovered records are automatically published to:
-
-```text
-raw-server-metrics-retry
-```
-
-Spark continuously consumes this topic together with the primary telemetry topic.
-
-No manual replay is required.
+Each Spark worker maintains an independent checkpoint directory, allowing processing state and Kafka offsets to be recovered automatically after unexpected failures or container restarts.
 
 ---
 
-# Non-Recoverable Records
+# Parallel Processing
 
-Records that cannot be repaired automatically include:
+To improve throughput and resource utilization, the processor launches multiple Spark workers operating as independent Kafka consumers.
 
-- `MISSING_DEVICE_ID`
-- `MISSING_POWERDETAIL`
+Each worker maintains:
 
-These records are published to:
+- Independent checkpoint directories
+- Dedicated output directories
+- Separate worker logs
 
-```text
-raw-server-metrics-failure
-```
-
-They are never replayed into the streaming pipeline.
-
----
-
-# Streaming Processing Pipeline
-
-After validation, Spark processes only valid telemetry.
-
-Processing stages include:
-
-- Exploding nested `PowerDetail` arrays
-- Event-time conversion
-- Watermark assignment
-- Device-level aggregation
-- Metric computation
-- Analytics transformation
-- Writing Snappy-compressed Parquet datasets
-
-Each Spark worker processes records independently while sharing Kafka partitions.
-
----
-
-# Watermark Processing
-
-Spark applies a one-hour watermark on telemetry timestamps.
-
-Benefits include:
-
-- Late event handling
-- Stateful aggregation cleanup
-- Reduced memory consumption
-
-Events arriving later than the configured watermark threshold are discarded automatically.
-
----
-
-# Parallel Workers
-
-The processing engine launches two Spark workers automatically.
-
-### Worker 1
-
-- Independent Kafka consumer
-- Dedicated checkpoint directory
-- Dedicated output directory
-
-### Worker 2
-
-- Independent Kafka consumer
-- Dedicated checkpoint directory
-- Dedicated output directory
-
-Both workers consume telemetry simultaneously, enabling higher throughput and improved fault tolerance.
+This architecture enables parallel Kafka partition consumption while improving scalability and fault tolerance.
 
 ---
 
 # Streaming Output
 
-The streaming pipeline produces analytics-ready Parquet datasets for downstream consumers.
+Processed telemetry is written as Snappy-compressed Parquet files to worker-specific output directories within a shared Docker volume.
 
-Features include:
-
-- Append-mode writes
-- Snappy compression
-- Worker-specific output directories
-
-Example output directory:
-
-```text
-/app/data/processed/stream/
-├── worker_1/
-└── worker_2/
-```
+These datasets are consumed directly by the ATLAS Lakehouse for refinement and long-term storage.
 
 ---
 
 # Batch Processing
 
-The ATLAS Processing Engine also supports historical batch processing.
+In addition to real-time streaming, the Spark Processing Engine supports historical batch processing for archived telemetry datasets.
 
-Unlike the streaming pipeline, batch mode processes archived telemetry already stored in Parquet format.
+The batch pipeline reads previously stored Parquet files, applies the same transformation logic used in streaming, and generates analytics-ready output compatible with the Lakehouse.
 
-The batch pipeline performs:
-
-- Reading archived telemetry
-- Schema enforcement
-- Exploding nested `PowerDetail` arrays
-- Device-level aggregations
-- Analytics transformation
-- Writing analytics-ready Parquet output
-
-Batch processing is useful for:
-
-- Historical analytics
-- Backfilling datasets
-- Reprocessing archived telemetry
-- Data migration
-
----
-
-# Batch Processing Workflow
+## Batch Workflow
 
 ```text
 Archived Parquet
         │
         ▼
-  Spark Batch Job
+ Spark Batch Job
+        │
+        ▼
+ Schema Validation
         │
         ▼
  Explode PowerDetail
         │
         ▼
-   Device Aggregation
+ Device Aggregation
         │
         ▼
  Processed Parquet
 ```
+
+### Batch Processing Use Cases
+
+- Historical analytics
+- Dataset backfilling
+- Reprocessing archived telemetry
+- Validation of historical exports
+
+---
+
+# Output Structure
+
+The processor generates analytics-ready Parquet datasets for both streaming and batch workloads.
+
+```text
+/app/data/
+│
+├── processed/
+│   ├── stream/
+│   │   ├── worker_1/
+│   │   └── worker_2/
+│   │
+│   └── batch/
+│
+├── checkpoints/
+│
+└── logs/
+```
+
+Output datasets are:
+
+- Snappy-compressed
+- Analytics-ready
+- Compatible with the Delta Lakehouse
+- Written through a shared Docker volume
+
 ---
 
 # Execution Guide
 
-## 1. Start Required Services
+## Prerequisites
 
-Start the required ATLAS services using Docker Compose.
+Ensure the following ATLAS services are running:
+
+- Ingestion Service
+- Kafka Broker
+- Spark Processor
+- Delta Lakehouse
+
+Start all services using Docker Compose:
 
 ```bash
 docker compose up -d
 ```
 
-Ensure the following services are running:
-
-- Kafka Broker
-- Spark Processor
-- Ingestion Service
-
 ---
 
-## 2. Spark Processor Startup
+## Spark Processor Startup
 
-The Spark Processor starts automatically.
+The processor starts automatically when the container is launched.
 
-During startup it performs the following operations:
+During startup it:
 
 - Creates required directories
-- Creates checkpoint directories
-- Creates worker log files
-- Creates the DLQ log
+- Initializes checkpoint locations
 - Waits for Kafka availability
-- Starts the DLQ Reviewer
-- Starts Spark Worker 1
-- Starts Spark Worker 2
+- Starts the DLQ Recovery Service
+- Launches parallel Spark workers
 
 No manual Spark startup is required.
 
 ---
 
-## 3. Generate Telemetry
+## Generate Telemetry
 
-Invoke the ingestion API.
+Telemetry can be generated through the ingestion service.
 
 ```http
-POST http://localhost:8001/pcid/PLATCUSTxxxx/acid/APPCUSTxxxx/telemetry/latest/export
+POST /pcid/{pcid}/acid/{acid}/telemetry/latest/export
 ```
 
-Telemetry is automatically published to:
-
-```text
-raw-server-metrics
-```
+Generated telemetry is automatically published to Kafka and processed by the Spark engine.
 
 ---
 
-## 4. Monitor Processing
+# Monitoring
 
-Enter the Spark Processor container.
+Enter the processor container:
 
 ```bash
 docker exec -it atlas-processor bash
@@ -545,7 +342,7 @@ Monitor Worker 2
 tail -f /app/logs/worker2.log
 ```
 
-Monitor the DLQ Reviewer
+Monitor the Recovery Service
 
 ```bash
 tail -f /app/logs/dlq.log
@@ -553,251 +350,60 @@ tail -f /app/logs/dlq.log
 
 ---
 
-# Testing the DLQ Pipeline
-
-For validation testing, publish messages manually to Kafka.
-
-Enter the Kafka container.
-
-```bash
-docker exec -it broker1 bash
-```
-
-Start the Kafka producer.
-
-```bash
-/opt/bitnami/kafka/bin/kafka-console-producer.sh \
---bootstrap-server broker1:9092 \
---topic raw-server-metrics
-```
-
----
-
-## Test Case 1 – Valid Record
-
-```json
-{
-  "device_id": "DEV-VALID",
-  "report_id": "REP-000",
-  "created_at": "2026-05-26T10:20:00",
-  "inventory_data": {
-    "socket_count": 4
-  },
-  "data": {
-    "PowerDetail": [
-      {
-        "Average": 95.0,
-        "Minimum": 80.0,
-        "Peak": 120.0,
-        "Time": "2026-05-26T10:20:00"
-      }
-    ]
-  }
-}
-```
-
-### Expected Result
-
-- Successfully processed by Spark
-- Aggregated successfully
-- Written to Parquet output
-- No DLQ message generated
-
----
-
-## Test Case 2 – Recoverable Record
-
-```json
-{
-  "device_id": "DEV-001",
-  "report_id": "REP-001",
-  "created_at": "2026-05-26T10:20:00",
-  "inventory_data": {
-    "socket_count": "4"
-  },
-  "data": {
-    "PowerDetail": [
-      {
-        "Average": 91.2,
-        "Minimum": 80.1,
-        "Peak": 120.0,
-        "Time": "2026-05-26T10:20:00"
-      }
-    ]
-  }
-}
-```
-
-### Expected Result
-
-- Routed to `raw-server-metrics-dlq`
-- DLQ Reviewer repairs the record
-- `socket_count` converted to Integer
-- Recovery metadata added
-- Published to `raw-server-metrics-retry`
-- Spark automatically consumes the repaired record
-- Successfully written to Parquet
-
----
-
-## Test Case 3 – Non-Recoverable Record
-
-```json
-{
-  "device_id": null,
-  "report_id": "REP-003",
-  "created_at": "2026-05-26T10:20:00",
-  "inventory_data": {
-    "socket_count": 4
-  },
-  "data": {
-    "PowerDetail": [
-      {
-        "Average": 90.0,
-        "Minimum": 75.0,
-        "Peak": 110.0,
-        "Time": "2026-05-26T10:20:00"
-      }
-    ]
-  }
-}
-```
-
-### Expected Result
-
-- Routed to `raw-server-metrics-dlq`
-- Classified as non-recoverable
-- Published to `raw-server-metrics-failure`
-- Never replayed into the streaming pipeline
-
----
-
-# Troubleshooting
-
-If Spark reports
+# Project Structure
 
 ```text
-UnknownTopicOrPartitionException
-```
-
-verify that the required Kafka topics exist.
-
-List available topics:
-
-```bash
-docker exec -it broker1 bash
-
-kafka-topics.sh \
---bootstrap-server localhost:9092 \
---list
-```
-
-If either of the following topics is missing:
-
-- `raw-server-metrics-retry`
-- `raw-server-metrics-failure`
-
-create them before restarting the Spark Processor.
-
-Create the retry topic:
-
-```bash
-kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --create \
-  --topic raw-server-metrics-retry \
-  --partitions 12 \
-  --replication-factor 1
-```
-
-Create the failure topic:
-
-```bash
-kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --create \
-  --topic raw-server-metrics-failure \
-  --partitions 12 \
-  --replication-factor 1
-```
-
-Restart the processor:
-
-```bash
-docker compose restart atlas-processor
-```
-
----
-
-# Batch Processing
-
-To process archived telemetry:
-
-```bash
-spark-submit /app/jobs/batch_job.py
-```
-
-The batch job:
-
-- Reads archived Parquet files
-- Applies the telemetry schema
-- Explodes nested `PowerDetail` arrays
-- Computes device-level aggregations
-- Generates analytics-ready datasets
-- Writes compressed Parquet output
-
----
-
-# Automatic Startup
-
-When the Spark Processor container starts, it automatically:
-
-- Creates required directories
-- Creates checkpoint directories
-- Creates worker log files
-- Creates the DLQ log
-- Waits for Kafka availability
-- Starts the DLQ Reviewer
-- Starts Spark Worker 1
-- Starts Spark Worker 2
-- Streams worker logs to the container console
-
----
-
-# Output Directories
-
-```text
-/app/data/
+atlas-processor/
 │
-├── raw/
+├── jobs/
+│   ├── kafka_streaming.py
+│   └── batch_job.py
 │
-├── processed/
-│   ├── stream/
-│   │   ├── worker_1/
-│   │   └── worker_2/
-│   │
-│   └── batch/
+├── dlq/
+│   ├── reviewer.py
+│   └── recovery_rules.py
 │
+├── schemas/
+├── utils/
+├── logs/
 ├── checkpoints/
-│   ├── stream_1/
-│   ├── stream_2/
-│   ├── dlq_1/
-│   └── dlq_2/
-│
-└── logs/
-    ├── worker1.log
-    ├── worker2.log
-    └── dlq.log
+├── data/
+└── docker/
 ```
 
 ---
 
-# Technologies Used
+# Performance Summary
+
+The Spark Processing Engine was validated across multiple workloads to evaluate throughput, scalability, and stability.
+
+| Test | Result |
+|------|--------|
+| Functional Testing | Successful |
+| Streaming Validation | Successful |
+| Batch Processing | Successful |
+| DLQ Recovery | Successful |
+| Checkpoint Recovery | Successful |
+| Integration Testing | Successful |
+| Long-running Stability | Successful |
+
+### Benchmark Highlights
+
+- Successfully validated on **10**, **100**, **1000** and **10000** server workloads.
+- Stable streaming execution during extended runtime testing.
+- Parallel Spark workers demonstrated improved throughput over the initial single-worker implementation.
+- Successfully processed telemetry for approximately **20,000 devices** on local development hardware.
+- Large-scale datasets of up to **55,000 devices** were generated to evaluate scalability limits and identify infrastructure bottlenecks.
+
+The benchmark results confirmed that the processing engine scales effectively within the available hardware while maintaining reliable streaming and batch execution.
+
+---
+
+# Technologies
 
 - Apache Spark 3.5
 - Spark Structured Streaming
 - Apache Kafka
-- Python
 - PySpark
 - Docker
 - Apache Parquet
@@ -805,34 +411,20 @@ When the Spark Processor container starts, it automatically:
 
 ---
 
-# Features
+# Related Documentation
 
-- Real-time Kafka Streaming
-- Automatic Schema Validation
-- Dead Letter Queue (DLQ)
-- Automatic Error Recovery
-- Retry Pipeline
-- Permanent Failure Pipeline
-- Historical Batch Processing
-- Parallel Spark Workers
-- Watermark-based Streaming
-- Fault Tolerance
-- Checkpoint Recovery
-- Worker-level Logging
-- Analytics-ready Parquet Output
+Additional engineering documentation is available for the Spark Processing Engine.
+
+| Document | Description |
+|----------|-------------|
+| **Architecture-Evolution.md** | Evolution of the processing engine architecture |
+| **Integration-notes.md** | Integration with the ingestion service, Lakehouse, and Kafka |
+| **benchmark.md** | Functional, integration, scalability, and benchmark testing |
 
 ---
 
-# Output
+# Conclusion
 
-The Spark Processing Engine generates:
+The ATLAS Spark Processing Engine provides a scalable and fault-tolerant processing layer for distributed telemetry analytics. By combining Spark Structured Streaming, historical batch processing, automated error recovery, checkpoint-based fault tolerance, and seamless Lakehouse integration, the processor enables reliable transformation of high-volume telemetry into analytics-ready datasets.
 
-- Real-time processed Parquet datasets
-- Historical batch Parquet datasets
-- Dead Letter Queue (DLQ) records
-- Retry topic records after automatic recovery
-- Permanent failure topic records
-- Worker-specific log files
-- Spark checkpoint metadata
-
-The architecture provides a scalable, fault-tolerant, and resilient telemetry processing platform capable of handling both high-volume streaming workloads and historical batch analytics for the ATLAS platform.
+The modular architecture and engineering improvements introduced throughout development ensure that the processor can support both continuous real-time workloads and historical data processing while remaining extensible for future enhancements.
