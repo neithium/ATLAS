@@ -160,9 +160,9 @@ services:
       # Cluster ID — must be identical across all 3 brokers
       - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster-3node
 
-      # Quorum voters — defaults to single node, overridden by cluster.bat
-      # single.bat : KAFKA_QUORUM_VOTERS not set → defaults to 1@broker1:9093
-      # cluster.bat: KAFKA_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
+      # Quorum voters — defaults to single node, overridden by kafka/scripts/cluster.bat
+      # kafka/scripts/single.bat : KAFKA_QUORUM_VOTERS not set → defaults to 1@broker1:9093
+      # kafka/scripts/cluster.bat: KAFKA_QUORUM_VOTERS=1@broker1:9093,2@broker2:9093,3@broker3:9093
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=${KAFKA_QUORUM_VOTERS:-1@broker1:9093}
 
       # Listeners
@@ -172,9 +172,9 @@ services:
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
 
-      # Topic Defaults — defaults to single node, overridden by cluster.bat
-      # single.bat : RF=1, MIN_ISR=1
-      # cluster.bat: RF=3, MIN_ISR=2
+      # Topic Defaults — defaults to single node, overridden by kafka/scripts/cluster.bat
+      # kafka/scripts/single.bat : RF=1, MIN_ISR=1
+      # kafka/scripts/cluster.bat: RF=3, MIN_ISR=2
       - KAFKA_CFG_NUM_PARTITIONS=12
       - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}
       - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=${KAFKA_REPLICATION_FACTOR:-1}

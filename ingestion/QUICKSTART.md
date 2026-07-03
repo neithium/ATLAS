@@ -15,13 +15,13 @@ ATLAS requires a Kafka Broker. You can run Kafka in two different modes using th
 
 **Development Mode (Single Broker):**
 ```bash
-.\single.bat
+.\kafka\scripts\single.bat
 ```
 *(Spins up `broker1` and safely ignores the rest of the cluster.)*
 
 **Production Simulation Mode (3-Node Cluster):**
 ```bash
-.\cluster.bat
+.\kafka\scripts\cluster.bat
 ```
 *(Spins up a full 3-node KRaft quorum with Replication Factor 3.)*
 
