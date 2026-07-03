@@ -23,7 +23,8 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 
-from airflow.operators.python import PythonOperator, PythonSensor
+from airflow.operators.python import PythonOperator
+from airflow.sensors.python import PythonSensor
 from airflow.providers.http.operators.http import SimpleHttpOperator
 
 from atlas_utils import docker_exec_or_raise, _docker_exec
