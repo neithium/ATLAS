@@ -25,9 +25,7 @@ while True:
 
             bootstrap_servers="broker1:9092",
 
-            auto_offset_reset="latest",
-
-            group_id="dlq-reviewer-group",
+            auto_offset_reset="earliest",
 
             value_deserializer=lambda x:
                 json.loads(x.decode())

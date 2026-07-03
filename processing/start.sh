@@ -19,7 +19,7 @@ touch /app/logs/dlq.log
 echo ""
 echo "Waiting for Kafka..."
 
-until nc -z broker1 9092
+until python3 -c "import socket; s = socket.socket(); s.settimeout(2); s.connect(('broker1', 9092))" >/dev/null 2>&1
 do
     echo "Kafka not ready..."
     sleep 3
@@ -34,7 +34,7 @@ echo "======================================"
 echo "Starting DLQ Reviewer"
 echo "======================================"
 
-python3 /app/dlq/dlq_reviewer.py \
+python3 -u /app/dlq/dlq_reviewer.py \
 > /app/logs/dlq.log 2>&1 &
 
 sleep 10
