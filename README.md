@@ -12,32 +12,7 @@ ATLAS transforms chaotic, deeply nested telemetry into mathematically scored, an
 
 The pipeline processes telemetry through a resilient, multi-tier architecture ensuring zero data loss, exact-once processing, and sub-second analytics latency.
 
-```text
-       Telemetry Generator (Microservice)
-                 │
-       ┌─────────┴─────────┐
-       ▼                   ▼
- Kafka (Stream)       Raw Directory (Batch)
-       │                   │
-       |                   | 
-        ─────────┐         │
-                 ▼         ▼
-                Spark Processing Engine
-                (Explode, Validate, Aggregate)
-                        │
-                        ▼
-                    Delta Lake
-               (ACID Deduplication MERGE)
-                        │
-                        ▼
-              Analytics & ML Pipeline Layer
-              (PostgreSQL + ClickHouse + Isolation Forest)
-                        │
-                        ▼
-                ATLAS Observability Dashboard
-                (Streamlit + Phi-4-mini SRE Copilot)
-
-```
+<img width="1859" height="1021" alt="Project - 0" src="https://github.com/user-attachments/assets/35b46749-17dd-454a-ad72-8168ada948e8" />
 
 ---
 
