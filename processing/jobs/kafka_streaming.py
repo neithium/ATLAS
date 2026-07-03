@@ -149,6 +149,8 @@ input_schema = StructType([
 # READ FROM KAFKA
 # =========================================================
 
+KAFKA_STARTING_OFFSETS = os.getenv("KAFKA_STARTING_OFFSETS", "earliest")
+
 df = (
 
     spark.readStream
@@ -167,7 +169,7 @@ df = (
 
     .option(
         "startingOffsets",
-        "latest"
+        KAFKA_STARTING_OFFSETS
     )
 
     .option(

@@ -36,6 +36,7 @@ POLL_STARTUP_DELAY = 1.0  # seconds between batch starts
 
 # Storage Enablers
 ENABLE_TSDB_PUSH = os.getenv("ENABLE_TSDB_PUSH", "1") == "1"
+ENABLE_KAFKA_PUSH = os.getenv("ENABLE_KAFKA_PUSH", "0") == "1"
 ENABLE_MINIO_PUSH = False
 TS_CONN_STR = os.getenv("TS_CONN_STR", "postgresql://postgres:postgres@127.0.0.1:5432/postgres")
 
@@ -106,6 +107,22 @@ async def poll_all():
     if total_results:
         log.info(f"[hot-path] Ingesting {LAST_POLL['success_count']:,} records to TimescaleDB...")
         await _push_to_tsdb_hot(total_results)
+
+        if ENABLE_KAFKA_PUSH:
+            from core.kafka_producer import init_kafka, push_batch_to_kafka
+
+            kafka_batch = []
+            for result_list in total_results:
+                for result in result_list:
+                    if isinstance(result, dict) and result.get("status") == "success":
+                        kafka_batch.append((result["device_id"], result["data"]))
+
+            if kafka_batch:
+                log.info(f"[kafka] Publishing {len(kafka_batch):,} records to raw-server-metrics...")
+                await init_kafka()
+                await push_batch_to_kafka(kafka_batch)
+            else:
+                log.info("[kafka] No successful readings available for publish.")
 
     LAST_POLL["end_time"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     LAST_POLL["status"] = "idle"

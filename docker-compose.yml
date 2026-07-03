@@ -112,6 +112,7 @@ services:
       # Kafka needs only ONE reachable bootstrap to discover the full cluster.
       - KAFKA_BOOTSTRAP=${KAFKA_BOOTSTRAP:-broker1:9092,broker2:9092,broker3:9092}
       - KAFKA_TOPIC=raw-server-metrics
+      - ENABLE_KAFKA_PUSH=1
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
       - SCALE_SIZE=80000
@@ -193,7 +194,7 @@ services:
       # Node Identity
       - KAFKA_CFG_NODE_ID=1
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+     
       # Cluster ID — must be identical across all 3 brokers
       - KAFKA_KRAFT_CLUSTER_ID=atlas-telemetry-cluster-3node
 
@@ -476,7 +477,6 @@ services:
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
       - stream-raw-data:/app/data/processed ### this is the one where the refined data will be output to..
-      - batch-data:/app/data 
       - ./processing/logs:/app/logs
 
     networks:

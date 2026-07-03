@@ -1,3 +1,5 @@
+from pyspark.sql.types import StructType, StructField, StringType, BooleanType, DoubleType, IntegerType
+
 output_schema = StructType([
     StructField("report_id", StringType(), True),
     StructField("device_id", StringType(), True),

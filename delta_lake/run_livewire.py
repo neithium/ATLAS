@@ -18,6 +18,7 @@ from delta_core import (
     execute_merge_deduplication,
     optimize_delta_table
 )
+from schema.output_schema import output_schema as PROCESSOR_OUTPUT_SCHEMA
 
 # Define metrics schema at module level to avoid scoping issues
 METRICS_SCHEMA = StructType([
@@ -27,6 +28,17 @@ METRICS_SCHEMA = StructType([
     StructField("merge_time", DoubleType()),
     StructField("row_count", LongType())
 ])
+
+
+def _build_livewire_source_schema() -> StructType:
+    """Use the processor output schema so livewire can start before files exist."""
+    return StructType([
+        StructField(field.name, field.dataType, field.nullable, field.metadata)
+        for field in PROCESSOR_OUTPUT_SCHEMA.fields
+    ])
+
+
+LIVEWIRE_SOURCE_SCHEMA = _build_livewire_source_schema()
 
 # Debug log file
 DEBUG_LOG = "/tmp/livewire_debug.log"
@@ -49,20 +61,8 @@ def run_livewire_pipeline(
     # Initialize the target Delta table explicitly if not exists
     if not delta_table_exists(spark, target_path):
         print("         Initializing target Delta table...")
-        # create a dummy dataframe matching the expected schema to init the table
-        from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType, LongType
-        dummy_schema = StructType([
-            StructField("device_id", StringType()),
-            StructField("metric_time", TimestampType()),
-            StructField("application_customer_id", StringType()),
-            StructField("report_type", StringType()),
-            StructField("platform_customer_id", StringType()),
-            StructField("avg_cpu", DoubleType()),
-            StructField("avg_mem", DoubleType()),
-            StructField("num_records", LongType()),
-            StructField("partition_date", StringType())
-        ])
-        df_dummy = spark.createDataFrame([], dummy_schema)
+        df_dummy = spark.createDataFrame([], LIVEWIRE_SOURCE_SCHEMA)
+        df_dummy = prepare_partition_columns(df_dummy)
         initialize_delta_table(
             spark,
             df_dummy,
@@ -97,13 +97,14 @@ def run_livewire_pipeline(
 
     
     # Use readStream for continuous folder ingestion.
-    # The schema is inferred from the Parquet files, making it schema-agnostic.
+    # The schema is explicit so the stream can start even when the folder is empty.
     try:
-        # Enable Spark streaming schema inference
-        spark.conf.set("spark.sql.streaming.schemaInference", "true")
-        
-        # Recursive reading from /stream_raw allows parsing both /batch and /stream partitions
-        stream_df = spark.readStream.parquet(f"{source_path}/*/*.parquet")
+        stream_df = (
+            spark.readStream
+            .schema(LIVEWIRE_SOURCE_SCHEMA)
+            .option("recursiveFileLookup", "true")
+            .parquet(source_path)
+        )
     except Exception as e:
         print(f"         ⚠ Could not initialize stream from {source_path}: {e}")
         return {"status": "failed"}
@@ -137,8 +138,10 @@ def run_livewire_pipeline(
         batch_cols = batch_df.columns
         
         # 1. Dynamically resolve the timestamp column
-        if "window_start" in batch_cols:
-            timestamp_col = coalesce(col("window_start"), current_timestamp())
+        if "metric_time" in batch_cols:
+            timestamp_col = coalesce(to_timestamp(col("metric_time")), current_timestamp())
+        elif "window_start" in batch_cols:
+            timestamp_col = coalesce(to_timestamp(col("window_start")), current_timestamp())
         elif "event_date" in batch_cols:
             timestamp_col = coalesce(to_timestamp(col("event_date")), current_timestamp())
         elif "created_at" in batch_cols: # Future-proofing for other possible names
@@ -147,13 +150,15 @@ def run_livewire_pipeline(
             timestamp_col = current_timestamp()
 
         # 2. Build the transformation with the resolved column
-        aligned_df = (
-            batch_df
-            .withColumn("metric_time", timestamp_col)
-            .withColumn("application_customer_id", lit("livewire_unknown"))
-            .withColumn("platform_customer_id", lit("livewire_unknown"))
-            .withColumn("report_type", lit("livewire_raw"))
-        )
+        aligned_df = batch_df.withColumn("metric_time", timestamp_col)
+
+        for column_name, default_value in {
+            "application_customer_id": "livewire_unknown",
+            "platform_customer_id": "livewire_unknown",
+            "report_type": "livewire_raw"
+        }.items():
+            if column_name not in batch_cols:
+                aligned_df = aligned_df.withColumn(column_name, lit(default_value))
 
         # 3. Safely drop staging columns that exist in the batch
         cols_to_drop = ["window_start", "window_end", "event_date", "created_at"]
