@@ -36,6 +36,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
 
+from airflow import DAG
 from airflow.operators.python import PythonOperator, PythonSensor
 from airflow.providers.http.operators.http import SimpleHttpOperator
 

@@ -21,6 +21,8 @@ Use this for per-customer (PCID/ACID) scoped telemetry runs.
 import logging
 from datetime import datetime, timedelta
 
+from airflow import DAG
+
 from airflow.operators.python import PythonOperator, PythonSensor
 from airflow.providers.http.operators.http import SimpleHttpOperator
 

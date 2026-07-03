@@ -387,7 +387,9 @@ services:
         echo 'Creating Kafka topics...' &&
         kafka-topics.sh --bootstrap-server broker1:9092 --create --if-not-exists --topic raw-server-metrics --partitions 12 --replication-factor ${KAFKA_REPLICATION_FACTOR:-1} &&
         kafka-topics.sh --bootstrap-server broker1:9092 --create --if-not-exists --topic raw-server-metrics-dlq --partitions 3 --replication-factor ${KAFKA_REPLICATION_FACTOR:-1} &&
-        echo 'Topics created successfully!' &&
+        kafka-topics.sh --bootstrap-server broker1:9092 --create --if-not-exists --topic raw-server-metrics-retry --partitions 3 --replication-factor ${KAFKA_REPLICATION_FACTOR:-1} &&
+        kafka-topics.sh --bootstrap-server broker1:9092 --create --if-not-exists --topic raw-server-metrics-failure --partitions 3 --replication-factor ${KAFKA_REPLICATION_FACTOR:-1} &&
+        echo 'All 4 topics created successfully!' &&
         kafka-topics.sh --bootstrap-server broker1:9092 --list
       "
 
