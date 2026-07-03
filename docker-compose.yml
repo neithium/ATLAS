@@ -788,7 +788,42 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
 
+
 networks:
   atlas-network:
     driver: bridge
     name: atlas-network
+
+  # ===========================================================================
+  # ML INFERENCE PIPELINE (ml-inference)
+  # Reads live Parquet from atlas-ml, runs Isolation Forest, writes enriched
+  # Parquet to ML-Model/telemetry-data/predictions/ for ClickHouse loader.
+  # ===========================================================================
+  ml-inference:
+    build:
+      context: ./ml_inference
+      dockerfile: Dockerfile
+    container_name: ml-inference
+    hostname: ml-inference
+    environment:
+      - ML_INPUT_DIR=/data/live
+      - ML_OUTPUT_DIR=/data/ml_predictions
+      - ML_MODEL_PATH=/app/models/isolation_forest.pkl
+      - ML_PREPROCESSOR_PATH=/app/models/preprocessor.pkl
+      - ML_HEALTH_CONFIG_PATH=/app/models/health_score_config.pkl
+      - ML_WATCH_MODE=false
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Real trained model artifacts from ML-Model teammate
+      - ./ML-Model/models:/app/models:ro
+      # Live telemetry Parquet input (written by atlas-ml)
+      - ./ML-Model/telemetry-data/live:/data/live:ro
+      # Enriched output Parquet (picked up by ClickHouse ml_loader)
+      - ./ML-Model/telemetry-data/predictions:/data/ml_predictions
+    networks:
+      - atlas-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
