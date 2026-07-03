@@ -547,6 +547,7 @@ services:
       - atlas-network
     command: >
       bash -c "
+        pip install pytz &&
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
         echo '  ATLAS Lakehouse - Delta Lake Deduplication Engine' &&
         echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
