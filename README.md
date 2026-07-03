@@ -20,26 +20,26 @@ The pipeline processes telemetry through a resilient, multi-tier architecture en
 
 ### 1. Unified Ingestion & Generation Layer
 
-**Owner:** Jnana Prasad G R
 The critical "front door" designed to absorb massive traffic bursts and normalize chaotic incoming metrics.
 
 * **Hardware Registry:** Utilizes a static registry (`device_configs.json`) to assign realistic hardware profiles (Intel Xeon, AMD EPYC, DDR4/DDR5) to nodes, bypassing continuous API parsing.
 * **TimescaleDB Hot Path:** Rapidly ingests raw, 5-minute interval power and thermal metrics (`cpu_watts`, `amb_temp`, `cpu_util`) into TimescaleDB, acting as a shock absorber.
 * **Dynamic Hydration:** Fetches raw metrics from TimescaleDB, merges them with the in-memory hardware registry, and streams fully hydrated Golden Records into Kafka.
 * **Historical Physics Engine:** Synthetic generation of 30 days of causal server data with specific hardware failures (e.g., `gpu_overload`, `thermal_failure`) for ML training.
-
+- By Jnana
+  
 ### 2. Streaming & Message Broker Layer
-
-**Owner:** Nandini
+ 
 A highly durable data transportation layer ensuring no telemetry is dropped during network partitions or node failures.
 
 * **Kafka KRaft Cluster:** Operates a Zookeeper-less Kafka cluster with 3 brokers and a replication factor of 3 for strict fault tolerance.
 * **Optimized Partitioning:** The primary `raw-server-metrics` topic is distributed across 12 partitions to maximize parallel processing throughput.
 * **Dead Letter Queue (DLQ) Routing:** Invalid or malformed JSON payloads are immediately routed to a dedicated `raw-server-metrics-dlq` topic to prevent pipeline blocking.
-
+- By Nandini
+  
 ### 3. Data Processing & Validation Engine (Apache Spark)
 
-**Owner:** Sanjula S
+ 
 
 - The heavy computational muscle of the platform, utilizing **Spark Structured Streaming**. 
 - Processes both real-time **streaming** and **historical batch** telemetry data using Apache Spark.
@@ -49,20 +49,22 @@ A highly durable data transportation layer ensuring no telemetry is dropped duri
 - Routes invalid records to a **Dead Letter Queue** (DLQ) with automated retry and failure classification.
 - Generates Snappy-compressed **Parquet** datasets in a shared volume for seamless Delta Lake integration.
 - Supports scalable, low-latency processing through micro-batch execution.
-
+- By Sanjula
+- 
 ### 4. Refined Storage & Deduplication Layer (Delta Lake)
 
-**Owner:** Manthan R M
+
 Acts as the immutable Source of Truth and the gatekeeper for the analytical databases.
 
 * **Format:** Strictly utilizes Snappy-compressed **Parquet**, allowing analytics engines to leverage columnar data skipping.
 * **Deep Partitioning:** Implements an optimized 5-level directory structure: `/refined/metric_name/date/pcid/acid/device_id/` to manage 80,000+ devices seamlessly.
 * **ACID Deduplication:** Employs advanced `MERGE` (Upsert) operations mapped to a composite key (`device_id` + `metric_time` + `application_customer_id`). This mathematically strips massive 7-day rolling overlaps without data corruption.
 * **Optimization:** Periodically compacts small streaming files into 128MB Parquet blocks to neutralize the "small file problem."
-
+- By Manthan
+  
 ### 5. Analytics & Machine Learning (AIOps)
 
-**Owners:** Varna (Databases) & Sanjula (ML Training)
+
 Two analytical databases consume the refined data, feeding into the Isolation Forest anomaly detection engine.
 
 * **PostgreSQL:** Stores persistent relational metadata and maintains the backend state for the Copilot chat history.
@@ -72,16 +74,18 @@ Performs feature engineering and preprocessing to generate consistent model inpu
 Computes anomaly scores and normalized health scores (0–100) for every device.
 Serializes trained artifacts (preprocessor.pkl, isolation_forest.pkl, health_score_config.pkl) for production inference.
 Supplies health predictions to the analytics layer, enabling real-time monitoring and AI-assisted Root Cause Analysis (RCA).
+- By Varna(Storage Layer), Sanjula (Training) & Nandini(Inference)
+  
+### 6. ATLAS Dashboard & ATLAS Copilot
 
-### 6. ATLAS Dashboard & SRE Copilot
 
-**Owner:** Manthan R M
 The user-facing control center integrating observability and Generative AI.
 
 * **Streamlit Global Dashboard:** Features real-time ClickHouse explorers, live time-series visualizers, and Delta Lake streaming metrics.
 * **SLM Context Truncation:** Converts ClickHouse ML predictions into a lean JSON payload, stripping heavy categorical UUIDs (customer IDs) to optimize the LLM token context window.
 * **Phi-4-Mini RCA Engine:** Feeds the chronological telemetry history of failing devices to a localized Phi-4-Mini LLM (via Ollama). The SLM outputs a deterministic, JSON-formatted Root Cause Analysis containing incident summaries, affected subsystems, and actionable bash remediation commands.
 
+- By Manthan
 ---
 
 ##  Data Dictionaries & Schemas
