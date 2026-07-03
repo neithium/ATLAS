@@ -18,26 +18,6 @@
 # Usage:
 #   Start all:    docker-compose up -d
 #   View logs:    docker-compose logs -f [service_name]
-# =============================================================================
-# ATLAS - Advanced Telemetry Logging & Analytics System
-# 5-Container Architecture Docker Compose
-# =============================================================================
-#
-# Architecture:
-#   Container 1: atlas-ingestion   - The Generator (FastAPI Telemetry API)
-#   Container 2: atlas-broker      - The Broker (Kafka KRaft Mode)
-#   Container 3: atlas-processor   - The Processor (Spark Streaming)
-#   Container 4: atlas-lakehouse   - The Gatekeeper (Delta Lake MERGE) [ACTIVE]
-#   Container 5: atlas-analytics   - The Analytics Hub (ClickHouse + PostgreSQL)
-#
-# Data Flow:
-#   [Generator] → [Broker] → [Processor] → [Lakehouse] → [Analytics]
-#       ↓            ↓                                        ↑
-#   Raw Volume   Stream Buffer                          Dashboard
-#
-# Usage:
-#   Start all:    docker-compose up -d
-#   View logs:    docker-compose logs -f [service_name]
 #   Stop all:     docker-compose down
 #   Clean all:    docker-compose down -v
 #
@@ -63,6 +43,7 @@ volumes:
   redis-data:
   minio-data:
   ingestion-tsdb-data:
+  airflow-db-data:
   telemetry-cache-data:
   batch-data:
 
@@ -97,8 +78,8 @@ services:
     ports:
       - "80:80"        # Production Gateway (Nginx/API)
       - "8001:8001"    # Discovery & Stats Interface
-      - "9010:9001"    # MinIO Console
-      - "8081:8081"    # TSDB UI (PostWeb)
+      - "9002:9001"    # MinIO Console
+      - "8082:8081"    # TSDB UI (PostWeb) — 8081 reserved for Airflow
     environment:
       - TSDB_HOST=127.0.0.1
       - TSDB_NAME=postgres
@@ -113,7 +94,7 @@ services:
       - KAFKA_TOPIC=raw-server-metrics
       - MOCK_IPMI=true
       - ENABLE_POLLER=true
-      - SCALE_SIZE=80000
+      - SCALE_SIZE=${SCALE_SIZE:-80000}
     networks:
       - atlas-network
     shm_size: 1gb
@@ -127,9 +108,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G
+          memory: 2G
         reservations:
-          memory: 4G
+          memory: 1G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -138,24 +119,6 @@ services:
     command: ["/app/v2/entrypoint.sh"]
 
 
-  # ===========================================================================
-  # CONTAINER 2: THE BROKER (atlas-broker)
-  # ===========================================================================
-  # Technology: Apache Kafka (KRaft Mode - No Zookeeper)
-  # Role: Real-Time Streaming Buffer
-  #
-  #
-  # Responsibilities:
-  #   - Manages raw-server-metrics topic (12 partitions)
-  #   - Manages raw-server-metrics-dlq (Dead Letter Queue, 3 partitions)
-  #   - Acts as shock absorber for 4 Lakh+ device burst traffic
-  #   - Splits flow to Processor (batch) and Analytics (fast path)
-  # ===========================================================================
-
-  # TODO: Nandini - Implement Kafka broker configuration
-  # ============================================
-  # Kafka Broker 1 (Controller + Broker) - DEFAULT (no profile)
-  # ============================================
   # ===========================================================================
   # CONTAINER 2: THE BROKER (atlas-broker)
   # ===========================================================================
@@ -184,6 +147,7 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker1
     hostname: broker1
+    restart: always
     ports:
       - "9062:9092"
       - "9063:9093"
@@ -227,7 +191,7 @@ services:
       - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
+      - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -235,9 +199,8 @@ services:
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
 
-    mem_limit: 8g
-    mem_reservation: 2g
-    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
     volumes:
       - kafka-data-1:/bitnami/kafka
     networks:
@@ -250,10 +213,10 @@ services:
           "-c",
           "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
         ]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
+      interval: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 180s
 
   # ============================================
   # Kafka Broker 2 (Controller + Broker) - WITH PROFILE
@@ -262,6 +225,7 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker2
     hostname: broker2
+    restart: always
     profiles:
       - full-cluster
     ports:
@@ -303,7 +267,7 @@ services:
       - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
+      - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -311,9 +275,8 @@ services:
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
 
-    mem_limit: 2g
-    mem_reservation: 1g
-    restart: always
+    mem_limit: 1g
+    mem_reservation: 512m
     volumes:
       - kafka-data-2:/bitnami/kafka
     networks:
@@ -326,10 +289,10 @@ services:
           "-c",
           "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
         ]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
+      interval: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 180s
 
   # ============================================
   # Kafka Broker 3 (Controller + Broker) - WITH PROFILE
@@ -338,6 +301,7 @@ services:
     image: soldevelo/kafka:4.0
     container_name: broker3
     hostname: broker3
+    restart: always
     profiles:
       - full-cluster
     ports:
@@ -379,7 +343,7 @@ services:
       - KAFKA_CFG_QUEUED_MAX_REQUESTS=10000
 
       # JVM Memory
-      - KAFKA_HEAP_OPTS=-Xmx1024m -Xms1024m
+      - KAFKA_HEAP_OPTS=-Xmx512m -Xms512m
       - KAFKA_JVM_PERFORMANCE_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=20
 
       # KRaft stability timeouts
@@ -387,9 +351,8 @@ services:
       - KAFKA_CFG_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS=10000
       - KAFKA_CFG_CONTROLLER_QUORUM_EJECTION_TIMEOUT_MS=10000
 
-    mem_limit: 2g
-    mem_reservation: 1g
-    restart: always
+    mem_limit: 1g
+    mem_reservation: 512m
     volumes:
       - kafka-data-3:/bitnami/kafka
     networks:
@@ -402,10 +365,10 @@ services:
           "-c",
           "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
         ]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
+      interval: 60s
+      timeout: 20s
+      retries: 5
+      start_period: 180s
   # ============================================
   # Kafka Topic Initialization (runs once on startup)
   # ============================================
@@ -442,7 +405,7 @@ services:
   # ===========================================================================
 
   # TODO: Sanjula - Implement Spark Structured Streaming job
-  
+
   atlas-processor:
     depends_on:
       broker1:
@@ -466,6 +429,8 @@ services:
       - SPARK_DRIVER_MEMORY=2g
       - SPARK_EXECUTOR_MEMORY=2g
 
+    mem_limit: 2g
+
     volumes:
       - ./processing/jobs:/app/jobs
       - ./processing/dlq:/app/dlq
@@ -474,6 +439,7 @@ services:
       - spark-checkpoint:/app/checkpoint
       - ./ingestion/data/raw:/app/data/raw
       - ./ingestion/data/archive:/app/data/archive
+      - C:/Users/Public/atlas-data/refined:/app/data/processed/batch
       - delta-refined:/app/data/processed
       - batch-data:/app/data 
       - ./processing/logs:/app/logs
@@ -495,19 +461,14 @@ services:
     
     #       tail -f /dev/null
     #       "  
-
-  # dlq-reviewer:
-
-  #   build: ./processing/dlq
-
-  #   container_name: dlq-reviewer
-
-  #   restart: always
-  #   networks:
-  #     - atlas-network
-
-  #   depends_on:
-  #     - broker1
+  dlq-reviewer:
+    build: ./processing/dlq
+    container_name: dlq-reviewer
+    restart: always
+    networks:
+      - atlas-network
+    depends_on:
+      - broker1
 
   # ===========================================================================
   # CONTAINER 4: THE GATEKEEPER (atlas-lakehouse) [ACTIVE]
@@ -551,11 +512,12 @@ services:
       - ./delta_lake/run_livewire.py:/app/run_livewire.py
       # Schema reference
       - ./schema:/app/schema:ro
+    mem_limit: 2g
     environment:
       - PYTHONUNBUFFERED=1
       - SPARK_MODE=client
-      - SPARK_DRIVER_MEMORY=2g
-      - SPARK_EXECUTOR_MEMORY=4g
+      - SPARK_DRIVER_MEMORY=1g
+      - SPARK_EXECUTOR_MEMORY=1g
         # Control flags (set via: docker compose run -e RUN_GENERATOR=y atlas-lakehouse)
       - RUN_GENERATOR=${RUN_GENERATOR:-n}            # y = run generator, n = skip
       - GENERATOR_MODE=${GENERATOR_MODE:-livewire}  # benchmark | legacy | livewire
@@ -645,33 +607,6 @@ services:
   # ===========================================================================
   # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
   # ===========================================================================
-  # CONTAINER 5: THE ANALYTICS HUB (atlas-analytics)
-  # ===========================================================================
-  # Technology: ClickHouse + PostgreSQL + Python Loader (unified container)
-  # Role: Dashboard Engine + Metadata Store + Batch Ingestion
-  #
-  # Managed by supervisord inside a single container:
-  #   - ClickHouse: Fast analytical queries on deduplicated telemetry data
-  #   - PostgreSQL: Metadata store (watermarks, device/location registry)
-  #   - Delta Loader: Partition-aware batch ingestion from Refined Layer
-  #     (persistent scheduler — polls every SCHEDULE_INTERVAL_SECONDS)
-  #
-  # The Loader reads from refined-volume using the 5-level partition scheme:
-  #   report_type / partition_date / platform_customer_id /
-  #   application_customer_id / device_id
-  # and prunes by partition_date for incremental loads.
-  #
-  # Credentials: All DB credentials are sourced from .env.example via env_file.
-  # To change creds, edit .env.example — they flow into entrypoint.sh,
-  # loader-start.sh, and delta_loader.py automatically.
-  #
-  # SCHEDULE_INTERVAL_SECONDS (default 3600 in .env.example):
-  #   The Delta Loader polls the refined layer every 3600 s (1 hour).
-  #   3600 s matches the upstream 1-hour tumbling-window batch cadence
-  #   so each loader run picks up exactly the latest hourly batch.
-  #   Set to 0 for a single one-shot run.
-  # ===========================================================================
-
   atlas-analytics:
     build:
       context: ./storage
@@ -687,10 +622,6 @@ services:
       - "host.docker.internal:host-gateway"
     env_file: .env.example
     environment:
-      # Override hosts for internal (same-container) connections.
-      # .env.example sets CLICKHOUSE_HOST=analytics / POSTGRES_HOST=analytics
-      # which is the hostname for OTHER containers; inside this container we
-      # must use 127.0.0.1 since all three services share one network namespace.
       - CLICKHOUSE_HOST=127.0.0.1
       - POSTGRES_HOST=127.0.0.1
       # ML Loader configuration
@@ -700,18 +631,16 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - postgres-data:/var/lib/postgresql/data
-      # READ from the same refined-volume that Lakehouse writes to.
-      # Uses the 5-level Hive partition layout written by delta_merge_pipeline.
       - C:/Users/Public/atlas-data/refined:/data/refined:ro
       # Mount Delta Lake volume for streaming metrics (READ-WRITE for DeltaTable metadata)
       - delta-refined:/refined
       # Init scripts (run on first start by loader-start.sh)
       - ./storage/clickhouse/init.sql:/app/init-scripts/clickhouse-init.sql:ro
       - ./storage/postgres/init.sql:/app/init-scripts/postgres-init.sql:ro
-      # Application code
       - ./storage/clickhouse/delta_loader.py:/app/delta_loader.py:ro
       - ./storage/clickhouse/ml_loader.py:/app/ml_loader.py:ro
       - ./storage/clickhouse/validation_queries.sql:/app/validation_queries.sql:ro
+      - ./storage/supervisord.conf:/etc/supervisor/conf.d/atlas.conf:ro
       - ./storage/app.py:/app/app.py:ro
       - ./storage/ml_app.py:/app/ml_app.py:ro
       # ML predictions from inference layer (read-write so ml_loader can delete them)
@@ -723,7 +652,6 @@ services:
     networks:
       - atlas-network
     healthcheck:
-      # Use default user (no auth) for ClickHouse probe — matches loader-start.sh
       test:
         [
           "CMD-SHELL",
@@ -733,7 +661,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    restart: unless-stopped
+    restart: always
+    mem_limit: 1g
 
     deploy:
       resources:
@@ -742,171 +671,72 @@ services:
           memory: 4G          # Hard cap at 4GB RAM
          
   # ===========================================================================
-  # DEVELOPMENT & MONITORING TOOLS (Optional)
+  # ORCHESTRATION LAYER: APACHE AIRFLOW
   # ===========================================================================
-
-  # # Kafka UI - Message monitoring and topic management
-  # kafka-ui:
-  #   image: provectuslabs/kafka-ui:latest
-  #   container_name: atlas-kafka-ui
-  #   hostname: kafka-ui
-  #   ports:
-  #     - "8090:8080"
-  #   environment:
-  #     - KAFKA_CLUSTERS_0_NAME=atlas-cluster
-  #     - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=broker:9092
-  #   networks:
-  #     - atlas-network
-  #   depends_on:
-  #     atlas-broker:
-  #       condition: service_healthy
-  #   profiles:
-  #     - dev
-
-  # Jupyter Notebook - Interactive development (uses Lakehouse image)
-  # jupyter:
-  #   build:
-  #     context: ./delta_lake
-  #     dockerfile: Dockerfile
-  #   container_name: atlas-jupyter
-  #   hostname: jupyter
-  #   ports:
-  #     - "8888:8888"
-  #   volumes:
-  #     - C:/Users/Public/atlas-data/raw:/raw
-  #     - C:/Users/Public/atlas-data/refined:/refined
-  #     - ./delta_lake/data:/app/data
-  #     - ./delta_lake:/app/notebooks
-  #     - ./schema:/app/schema:ro
-  #   environment:
-  #     - SPARK_DRIVER_MEMORY=2g
-  #   working_dir: /app
-  #   networks:
-  #     - atlas-network
-  #   command: >
-  #     bash -c "
-  #       pip install jupyter &&
-  #       jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
-  #     "
-  #   profiles:
-  #     - jupyter
-
-  # ===========================================================================
-  # STREAMING SERVICES (atlas-streaming, atlas-data-producer)
-  # ===========================================================================
-  # Technology: Spark Structured Streaming + Delta Lake
-  # Role: Real-time telemetry deduplication via foreachBatch MERGE
-  #
-  # Responsibilities:
-  #   - Consumes streaming data from Kafka/Socket/Rate source
-  #   - Runs foreachBatch MERGE for real-time deduplication
-  #   - Writes to same Delta table as batch pipeline
-  #   - Maintains exactly-once semantics via checkpointing
-  # ===========================================================================
-
-  # Streaming Merge Pipeline
-  atlas-streaming:
-    build:
-      context: ./delta_lake
-      dockerfile: Dockerfile
-      network: host
-    container_name: atlas-streaming
-    hostname: streaming
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    volumes:
-      - C:/Users/Public/atlas-data/raw:/raw
-      - C:/Users/Public/atlas-data/refined:/refined
-      - ./delta_lake/data:/app/data
-      - ./delta_lake/streaming_merge_pipeline.py:/app/streaming_merge_pipeline.py
-      - ./delta_lake/delta_merge_pipeline.py:/app/delta_merge_pipeline.py
-      - ./schema:/app/schema:ro
+  airflow-db:
+    image: postgres:13-alpine
+    container_name: airflow-db
     environment:
-      - SPARK_MODE=client
-      - SPARK_DRIVER_MEMORY=4g
-      - SPARK_EXECUTOR_MEMORY=4g
-      # Streaming configuration
-      - STREAMING_SOURCE=${STREAMING_SOURCE:-rate}      # rate | kafka | socket
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-broker:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-raw-server-metrics}
-      - SOCKET_HOST=${SOCKET_HOST:-data-producer}
-      - SOCKET_PORT=${SOCKET_PORT:-9999}
-      - TRIGGER_INTERVAL=${TRIGGER_INTERVAL:-30 seconds}
-      - CHECKPOINT_DIR=${CHECKPOINT_DIR:-/refined/_streaming_checkpoints}
-      # Storage optimization
-      - COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}
-      - RUN_VACUUM=${RUN_VACUUM:-n}
-      - VACUUM_RETENTION_DAYS=${VACUUM_RETENTION_DAYS:-14}
-    working_dir: /app
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
     networks:
       - atlas-network
-    profiles:
-      - streaming
-    command: >
-      bash -c "
-        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
-        echo '  ATLAS Streaming - Real-time Delta Lake MERGE' &&
-        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
-        echo '' &&
-        echo 'Configuration:' &&
-        echo \"  STREAMING_SOURCE=$$STREAMING_SOURCE\" &&
-        echo \"  TRIGGER_INTERVAL=$$TRIGGER_INTERVAL\" &&
-        echo \"  COMPRESSION_CODEC=$$COMPRESSION_CODEC\" &&
-        echo '' &&
-        python3 streaming_merge_pipeline.py \
-          --source $$STREAMING_SOURCE \
-          --output /refined \
-          --trigger \"$$TRIGGER_INTERVAL\" \
-          --checkpoint $$CHECKPOINT_DIR
-      "
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Streaming Data Producer (for testing)
-  atlas-data-producer:
-    build:
-      context: ./delta_lake
-      dockerfile: Dockerfile
-      network: host
-    container_name: atlas-data-producer
-    hostname: data-producer
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+  airflow-webserver:
+    image: apache/airflow:2.7.1-python3.10
+    container_name: airflow-webserver
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+      - AIRFLOW__WEBSERVER__WORKERS=2
+      - GUNICORN_CMD_ARGS=--workers 2
     ports:
-      - "9999:9999"   # Socket port for streaming
+      - "8081:8080"
     volumes:
-      - C:/Users/Public/atlas-data/raw:/raw
-      - ./delta_lake/streaming_data_producer.py:/app/streaming_data_producer.py
-      - ./schema:/app/schema:ro
-    environment:
-      - PRODUCER_MODE=${PRODUCER_MODE:-socket}          # socket | kafka | file
-      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-broker:9092}
-      - KAFKA_TOPIC=${KAFKA_TOPIC:-raw-server-metrics}
-      - SOCKET_HOST=0.0.0.0
-      - SOCKET_PORT=9999
-      - RECORDS_PER_SECOND=${RECORDS_PER_SECOND:-100}
-      - DEVICE_COUNT=${DEVICE_COUNT:-100}
-    working_dir: /app
+      - ./orchestration/dags:/opt/airflow/dags
+      - ./orchestration/plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
+      - C:/Users/Public/atlas-data/refined:/opt/airflow/data/refined:ro
     networks:
       - atlas-network
-    profiles:
-      - producer
-    command: >
-      bash -c "
-        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
-        echo '  ATLAS Data Producer - Streaming Test Data' &&
-        echo '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━' &&
-        echo '' &&
-        echo 'Configuration:' &&
-        echo \"  PRODUCER_MODE=$$PRODUCER_MODE\" &&
-        echo \"  RECORDS_PER_SECOND=$$RECORDS_PER_SECOND\" &&
-        echo \"  DEVICE_COUNT=$$DEVICE_COUNT\" &&
-        echo '' &&
-        python3 streaming_data_producer.py \
-          --mode $$PRODUCER_MODE \
-          --devices $$DEVICE_COUNT \
-          --rate $$RECORDS_PER_SECOND
-      "
+    mem_limit: 768m
+    command: webserver
+
+  airflow-scheduler:
+    image: apache/airflow:2.7.1-python3.10
+    container_name: airflow-scheduler
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./orchestration/dags:/opt/airflow/dags
+      - ./orchestration/plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
+      - C:/Users/Public/atlas-data/refined:/opt/airflow/data/refined:ro
+    networks:
+      - atlas-network
+    mem_limit: 512m
+    command: scheduler
 
   atlas-ml:
     build:

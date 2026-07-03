@@ -8,8 +8,7 @@ docker volume rm atlas_kafka-data-1 atlas_kafka-data-2 atlas_kafka-data-3 >nul 2
 
 set KAFKA_BOOTSTRAP=broker1:9092
 
-echo Starting Single Kafka Broker...
-docker-compose up -d broker1 kafka-init
-docker-compose up -d --force-recreate atlas-ingestion
+echo Starting Atlas Stack (Single Broker + API + Airflow + Processing)...
+docker-compose up -d broker1 kafka-init atlas-ingestion airflow-db airflow-webserver airflow-scheduler atlas-processor atlas-lakehouse atlas-analytics
 
 echo Done! Run 'docker ps' to check status.
