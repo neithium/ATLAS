@@ -896,8 +896,10 @@ async def _process_and_send(did, readings, DEVICES, kafka_prod):
     loop = asyncio.get_event_loop()
     
     # Parallel Serialization (Offloaded to separate CPU core)
+    # Convert asyncpg.Record database rows to dictionaries to support pickling across process boundaries
+    readings_dict = [dict(r) if not isinstance(r, dict) else r for r in readings]
     pool = get_cpu_pool()
-    payload_bytes = await loop.run_in_executor(pool, _serialize_record, did, readings, meta)
+    payload_bytes = await loop.run_in_executor(pool, _serialize_record, did, readings_dict, meta)
     
     #  Kafka Delivery
     await kafka_prod.send(KAFKA_TOPIC, payload_bytes, key=did.encode())
@@ -988,7 +990,7 @@ async def _export_stream_task(start_time: datetime, end_time: datetime, pcid: st
                 current_did = None
                 device_readings = []
                 for r in rows:
-                    did = r[1]
+                    did = r["device_id"]
                     if current_did is None: current_did = did
                     if did != current_did:
                         await _process_and_send(current_did, device_readings, DEVICES, kafka_prod)
