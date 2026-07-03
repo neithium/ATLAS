@@ -788,12 +788,6 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
 
-
-networks:
-  atlas-network:
-    driver: bridge
-    name: atlas-network
-
   # ===========================================================================
   # ML INFERENCE PIPELINE (ml-inference)
   # Reads live Parquet from atlas-ml, runs Isolation Forest, writes enriched
@@ -827,3 +821,8 @@ networks:
         limits:
           cpus: '2.0'
           memory: 1G
+
+networks:
+  atlas-network:
+    driver: bridge
+    name: atlas-network
