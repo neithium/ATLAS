@@ -696,7 +696,9 @@ def main():
         epoch = pd.Timestamp("1970-01-01", tz="UTC")
         watermark_s = df['device_id'].map(watermarks)
         watermark_dt = pd.to_datetime(watermark_s, utc=True).fillna(epoch)
-        df = df[df["metric_time"] > watermark_dt]
+        # Use >= instead of > to allow reprocessing of same batches
+        # (e.g., on retry or manual rerun). ClickHouse handles deduplication.
+        df = df[df["metric_time"] >= watermark_dt]
         log.info("After per-device watermark filter: %d / %d rows", len(df), original_count)
 
     if df.empty:
