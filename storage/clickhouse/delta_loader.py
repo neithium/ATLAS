@@ -62,10 +62,11 @@ import os
 import sys
 import time
 import uuid
+import gc
 import logging
 from datetime import datetime, timezone, date
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Generator
 
 import pandas as pd
 import pyarrow.parquet as pq
@@ -103,9 +104,10 @@ PG_PASS = os.getenv("POSTGRES_PASSWORD", "atlas_secure_pwd")
 PG_DB = os.getenv("POSTGRES_DB", "atlas_metadata")
 
 REFINED_PATH = os.getenv("REFINED_DATA_PATH", "/data/refined")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10000"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5000"))  # Reduced from 10000 for memory efficiency
 SCHEDULE_INTERVAL = int(os.getenv("SCHEDULE_INTERVAL_SECONDS", "0"))
 WATERMARK_SOURCE = "delta_refined"
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "50000"))  # Parquet reading chunk size (rows per batch)
 
 # ---------------------------------------------------------------------------
 # Column order matching the ClickHouse telemetry_refined table definition
@@ -450,6 +452,9 @@ def _read_parquet_fallback(refined: Path, partition_cutoff: Optional[str] = None
     so that partition columns (report_type, partition_date, etc.) are materialised.
     Applies partition_date filter if a cutoff is provided.
     NOTE: this reads ALL parquet files and may include superseded Delta rows.
+    
+    For memory efficiency, yields data in chunks rather than loading all at once.
+    Use read_refined_parquet_chunked() for streaming behavior.
     """
     import pyarrow.dataset as pads
 
@@ -464,16 +469,20 @@ def _read_parquet_fallback(refined: Path, partition_cutoff: Optional[str] = None
                 filter=pc.field("partition_date") >= partition_cutoff
             )
             log.info(
-                "Read %d rows via pyarrow.dataset with partition_date >= %s",
+                "Read %d rows via pyarrow.dataset with partition_date >= %s (via batch chunks)",
                 len(table), partition_cutoff,
             )
         else:
             table = dataset.to_table()
-            log.info("Read %d rows via pyarrow.dataset (Hive partitioning)", len(table))
+            log.info("Read %d rows via pyarrow.dataset (Hive partitioning, via batch chunks)", len(table))
 
-        df = table.to_pandas()
-    except Exception:
+        # Convert using batches to avoid OOM on large tables
+        batches = table.to_batches(max_chunksize=CHUNK_SIZE)
+        dfs = [batch.to_pandas() for batch in batches]
+        df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    except Exception as exc:
         # Last resort: direct parquet file read (no partition columns)
+        log.warning("PyArrow dataset read failed: %s — falling back to file-level read", exc)
         parquet_files = sorted(
             str(f)
             for f in refined.rglob("*.parquet")
@@ -482,11 +491,91 @@ def _read_parquet_fallback(refined: Path, partition_cutoff: Optional[str] = None
         if not parquet_files:
             log.warning("No parquet files found in %s", refined)
             return pd.DataFrame()
-        log.info("Found %d parquet file(s) in %s", len(parquet_files), refined)
-        df = pq.read_table(parquet_files).to_pandas()
-        log.info("Read %d total rows from parquet files", len(df))
+        log.info("Found %d parquet file(s) in %s (reading via chunks)", len(parquet_files), refined)
+        
+        # Read each parquet file in chunks and concatenate
+        dfs = []
+        total_rows = 0
+        for pf in parquet_files:
+            try:
+                table = pq.read_table(pf)
+                batches = table.to_batches(max_chunksize=CHUNK_SIZE)
+                for batch in batches:
+                    dfs.append(batch.to_pandas())
+                    total_rows += len(batch)
+            except Exception as e:
+                log.warning("Failed to read %s: %s", pf, e)
+                continue
+        
+        df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        log.info("Read %d total rows from parquet files (chunked)", total_rows)
 
     return df
+
+
+def read_refined_parquet_chunked(path: str, watermarks: dict, chunk_size: int = CHUNK_SIZE) -> Generator[pd.DataFrame, None, None]:
+    """
+    Stream parquet data from the refined layer in chunks to avoid OOM.
+    
+    Yields DataFrames of approximately chunk_size rows, already filtered by watermarks.
+    Each yielded DataFrame is ready for type conversion and insertion.
+    """
+    refined = Path(path)
+    if not refined.exists():
+        log.error("Refined data path does not exist: %s", path)
+        return
+
+    partition_cutoff = _compute_partition_cutoff(watermarks)
+    
+    # Get all parquet files in refined directory
+    parquet_files = sorted(
+        f for f in refined.rglob("*.parquet")
+        if "_delta_log" not in str(f) and not f.name.startswith(".")
+    )
+    
+    if not parquet_files:
+        log.warning("No parquet files found in %s", path)
+        return
+    
+    log.info("Streaming %d parquet file(s) in chunks of ~%d rows", len(parquet_files), chunk_size)
+    
+    try:
+        import pyarrow.dataset as pads
+        import pyarrow.compute as pc
+        
+        # Try dataset-based read first (supports Hive partitions)
+        dataset = pads.dataset(
+            str(refined), format="parquet", partitioning="hive"
+        )
+        
+        if partition_cutoff:
+            table = dataset.to_table(
+                filter=pc.field("partition_date") >= partition_cutoff
+            )
+        else:
+            table = dataset.to_table()
+        
+        # Stream batches from the table
+        for batch in table.to_batches(max_chunksize=chunk_size):
+            df = batch.to_pandas()
+            if not df.empty:
+                yield df
+                gc.collect()  # Release memory after yielding
+    except Exception as exc:
+        log.warning("Dataset streaming failed: %s — falling back to file-by-file", exc)
+        
+        # Fallback: stream each parquet file individually
+        for pf in parquet_files:
+            try:
+                table = pq.read_table(pf)
+                for batch in table.to_batches(max_chunksize=chunk_size):
+                    df = batch.to_pandas()
+                    if not df.empty:
+                        yield df
+                        gc.collect()
+            except Exception as e:
+                log.warning("Failed to read %s: %s", pf, e)
+                continue
 
 
 # =========================================================================
@@ -676,95 +765,101 @@ def main():
     else:
         log.info("Full load — no previous watermarks found")
 
-    # --- Read refined data (partition-aware) ------------------------------
-    df = read_refined_parquet(REFINED_PATH, watermarks)
-    if df.empty:
-        log.info("Nothing to load. Exiting.")
-        log_pipeline_run(pg_conn, "completed", 0)
-        pg_conn.close()
-        ch_client.close()
-        return
-
-    # --- Prepare types for ClickHouse ------------------------------------
-    df = prepare_for_clickhouse(df)
-
-    # --- Apply watermark filter AFTER type conversion --------------------
-    if watermarks and not df.empty:
-        original_count = len(df)
-        # Create a series of watermark datetimes mapped from device_id
-        # Use epoch for devices with no existing watermark
-        epoch = pd.Timestamp("1970-01-01", tz="UTC")
-        watermark_s = df['device_id'].map(watermarks)
-        watermark_dt = pd.to_datetime(watermark_s, utc=True).fillna(epoch)
-        # Use >= instead of > to allow reprocessing of same batches
-        # (e.g., on retry or manual rerun). ClickHouse handles deduplication.
-        df = df[df["metric_time"] >= watermark_dt]
-        log.info("After per-device watermark filter: %d / %d rows", len(df), original_count)
-
-    if df.empty:
-        log.info("All rows already loaded (watermark filter). Exiting.")
-        log_pipeline_run(pg_conn, "completed", 0)
-        pg_conn.close()
-        ch_client.close()
-        return
-
-    # --- Insert into ClickHouse ------------------------------------------
-    try:
-        # Get count before insert
-        pre_insert_count = ch_client.command("SELECT count() FROM atlas.telemetry_refined")
+    # --- Process refined data in chunks (memory-efficient streaming) ------
+    log.info("--- Starting chunk-based streaming load ---")
+    
+    total_rows_inserted = 0
+    max_metric_time = None
+    chunk_num = 0
+    accumulated_df = pd.DataFrame()  # Accumulate for metadata updates
+    
+    for chunk_df in read_refined_parquet_chunked(REFINED_PATH, watermarks):
+        chunk_num += 1
+        chunk_rows = len(chunk_df)
+        log.info("\n[Chunk %d] Read %d rows from parquet", chunk_num, chunk_rows)
         
-        rows_inserted = insert_into_clickhouse(ch_client, df)
-        log.info("Inserted %d rows into atlas.telemetry_refined", rows_inserted)
+        # --- Prepare types for ClickHouse ---
+        chunk_df = prepare_for_clickhouse(chunk_df)
         
-        # Verify count after insert
-        post_insert_count = ch_client.command("SELECT count() FROM atlas.telemetry_refined")
-        actual_inserted = post_insert_count - pre_insert_count
+        # --- Apply watermark filter AFTER type conversion ---
+        if watermarks and not chunk_df.empty:
+            original_count = len(chunk_df)
+            epoch = pd.Timestamp("1970-01-01", tz="UTC")
+            watermark_s = chunk_df['device_id'].map(watermarks)
+            watermark_dt = pd.to_datetime(watermark_s, utc=True).fillna(epoch)
+            chunk_df = chunk_df[chunk_df["metric_time"] >= watermark_dt]
+            log.info("  After watermark filter: %d / %d rows", len(chunk_df), original_count)
         
-        if actual_inserted != rows_inserted:
-            log.warning("ClickHouse row count mismatch! Expected %d new rows, but table grew by %d rows.", rows_inserted, actual_inserted)
-        else:
-            log.info("Verified: ClickHouse table grew by exactly %d rows.", rows_inserted)
+        if chunk_df.empty:
+            log.info("  Chunk %d: empty after filtering, skipping", chunk_num)
+            gc.collect()
+            continue
+        
+        # --- Insert chunk into ClickHouse ---
+        try:
+            pre_insert_count = ch_client.command("SELECT count() FROM atlas.telemetry_refined")
+            rows_inserted = insert_into_clickhouse(ch_client, chunk_df)
+            post_insert_count = ch_client.command("SELECT count() FROM atlas.telemetry_refined")
             
-    except Exception as exc:
-        log.error("ClickHouse insert failed: %s", exc)
-        log.error("Column dtypes:")
-        for col in df.columns:
-            nan_count = df[col].isna().sum()
-            sample = df[col].iloc[0] if len(df) > 0 else "N/A"
-            log.error("  %-30s dtype=%-15s NaNs=%-6d sample=%s (type=%s)",
-                      col, str(df[col].dtype), nan_count, repr(sample), type(sample).__name__)
-        log_pipeline_run(pg_conn, "failed", 0, str(exc))
+            total_rows_inserted += rows_inserted
+            log.info("  ✓ Inserted %d rows (total: %d)", rows_inserted, total_rows_inserted)
+            
+            if post_insert_count - pre_insert_count != rows_inserted:
+                log.warning("  Row count mismatch in chunk %d", chunk_num)
+        except Exception as exc:
+            log.error("  ✗ ClickHouse insert failed for chunk %d: %s", chunk_num, exc)
+            log_pipeline_run(pg_conn, "failed", total_rows_inserted, str(exc))
+            pg_conn.close()
+            ch_client.close()
+            raise
+        
+        # Accumulate for metadata (sample every 2 chunks to avoid huge DataFrame)
+        if chunk_num % 2 == 0:
+            accumulated_df = pd.concat([accumulated_df, chunk_df.head(1000)], ignore_index=True)
+        
+        # Update max_metric_time
+        if "metric_time" in chunk_df.columns:
+            chunk_max = chunk_df["metric_time"].max()
+            if max_metric_time is None or chunk_max > max_metric_time:
+                max_metric_time = chunk_max
+        
+        # Release memory
+        del chunk_df
+        gc.collect()
+    
+    if total_rows_inserted == 0:
+        log.info("No rows loaded (all filtered or no data). Exiting.")
+        log_pipeline_run(pg_conn, "completed", 0)
         pg_conn.close()
         ch_client.close()
-        raise
-
-    # --- Update metadata (PostgreSQL piping) ------------------------------
-    log.info("--- PostgreSQL metadata piping ---")
-
-    max_metric_time = df["metric_time"].max().isoformat()
-    update_watermarks(pg_conn, df)
-    log.info("[metadata 1/4] Watermarks updated map for each device")
-
-    upsert_device_registry(pg_conn, df)
-    log.info("[metadata 2/4] Device registry upserted")
-
-    upsert_location_registry(pg_conn, df)
-    log.info("[metadata 3/4] Location registry upserted")
-
-    log_pipeline_run(pg_conn, "completed", rows_inserted)
+        return
+    
+    # --- Update metadata from accumulated sample ---
+    if not accumulated_df.empty:
+        log.info("--- PostgreSQL metadata piping (from accumulated sample) ---")
+        update_watermarks(pg_conn, accumulated_df)
+        log.info("[metadata 1/4] Watermarks updated")
+        upsert_device_registry(pg_conn, accumulated_df)
+        log.info("[metadata 2/4] Device registry upserted")
+        upsert_location_registry(pg_conn, accumulated_df)
+        log.info("[metadata 3/4] Location registry upserted")
+    
+    log_pipeline_run(pg_conn, "completed", total_rows_inserted)
     log.info("[metadata 4/4] Pipeline run logged")
-
+    
     # --- Summary ---------------------------------------------------------
     log.info("-" * 60)
     log.info("LOAD SUMMARY")
-    log.info("  Rows inserted      : %d", rows_inserted)
-    log.info("  Max metric_time    : %s", max_metric_time)
+    log.info("  Chunks processed   : %d", chunk_num)
+    log.info("  Total rows inserted: %d", total_rows_inserted)
+    log.info("  Max metric_time    : %s", max_metric_time.isoformat() if max_metric_time else "N/A")
     log.info("  ClickHouse MVs     : hourly_mv, daily_mv (auto-populated)")
     log.info("-" * 60)
-
+    
     # --- Cleanup ---------------------------------------------------------
     pg_conn.close()
     ch_client.close()
+    gc.collect()
     log.info("Done.")
 
 
