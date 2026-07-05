@@ -1,3 +1,35 @@
+# Requirements for Ingestion Microservice
+
+- The ingestion system manages telemetry data using a hierarchy of Platform Customer ID → Application Customer ID → Servers/Devices.
+- Each server/device generates telemetry datapoints every 5 minutes.
+- The system handles up to 7 days of historical datapoints for each server/device.
+- Supports both Stream Processing and Batch Processing workflows.
+- Ingestion is API-driven and occurs only when the client requests device data.
+- For every API call, the system retrieves and streams 7 days of telemetry data for the requested devices.
+- Separate Raw and Archive directories are maintained for batch processing and cold storage.
+- Raw data is pushed periodically, either once or twice per day.
+- The ingestion pipeline is designed to efficiently handle concurrent and parallel API requests at large scale.
+
+---
+
+# Initial Discovery: The Redis and MinIO Approach
+
+## Overview
+- Redis stores only the latest 1 hour of telemetry data as a temporary buffer.
+- MinIO pulls datapoints from Redis every 5 minutes and stores up to 6 days and 23 hours of historical data.
+- On every API request:
+  - 6 days 23 hours of data is fetched from MinIO.
+  - Latest 1 hour of data is fetched from Redis.
+  - Both datasets are merged to create a complete 7-day telemetry dataset and streamed to downstream systems.
+
+## Problem Faced
+- **High RAM Utilization**: Relying heavily on Redis (a purely in-memory data store) as a temporary buffer for up to an hour of telemetry across tens of thousands of devices caused massive, unsustainable spikes in RAM consumption.
+- Real-time ingestion needed to be lightning fast, but downstream systems like Apache Spark required data in bulk (batch processing).
+- The REST API struggled to serve historical requests because it had to query multiple disparate storage locations (MinIO and Redis) and computationally stitch the JSON together on the fly.
+- Merging gigabytes of historical data on every single API call caused massive CPU bottlenecks, leading to slow response times and timeouts under high concurrency.
+
+---
+
 # Architectural Evolution - Phase 1 (March 12 - 19)
 
 ## Overview
@@ -19,28 +51,29 @@ During this period, the architecture utilized Redis as a high-speed transient bu
 ---
 
 ## Rationale for the Architectural Shift
-The transition from the Redis/MinIO approach to the current TimescaleDB/Medallion architecture was driven by three primary production bottlenecks:
+The transition from the pure Redis/MinIO approach to a structured Medallion architecture was driven by three primary production bottlenecks:
 
-1. **High RAM Utilization**: Storing 24 hours of telemetry for 55,000+ devices in Redis caused unsustainable memory spikes and hit a vertical scaling wall. Moving to TimescaleDB allowed the shift to disk-backed hypertables, significantly reducing memory overhead per device.
-2. **Small File Problem**: The hourly Redis-to-MinIO archival created thousands of tiny Parquet files. This "Small File Problem" severely degraded Spark performance and increased S3 metadata overhead. TimescaleDB allowed for larger, more efficient data batching before final archival.
-3. **Data Durability & Persistence**: Utilizing an in-memory buffer as a primary store introduced risks during service restarts or cache evictions. TimescaleDB provided the ACID compliance and long-term persistence required for a production-grade pipeline.
+1. **High RAM Utilization**: Storing 24 hours of telemetry for 55,000+ devices in Redis caused unsustainable memory spikes and hit a vertical scaling wall, requiring a shift toward disk-backed strategies to reduce memory overhead.
+2. **Small File Problem**: The hourly Redis-to-MinIO archival created thousands of tiny Parquet files. This "Small File Problem" severely degraded Spark performance and increased S3 metadata overhead, demanding a larger, more efficient data batching process.
+3. **Data Durability & Persistence**: Utilizing an in-memory buffer as a primary store introduced risks during service restarts or cache evictions, exposing the need for true ACID compliance and long-term persistence.
+
+## Learnings
+- **In-Memory Limits**: Scaling a pure in-memory datastore horizontally for primary telemetry storage is cost-prohibitive and dangerous. Redis is excellent for transient queuing, but unfit for multi-day raw data durability at the scale of 50,000+ devices.
 
 ---
 
 # Phase 2: Transition to Medallion Storage (March 19 - 26)
 
 ## Overview
-This phase focused on evolving the storage architecture from a simple buffer to a structured Medallion-style data lake to handle long-term scalability and analytics.
+This phase focused on evolving the storage architecture from a simple buffer to a structured Medallion-style data lake in MinIO to handle long-term scalability and downstream analytics.
 
 ### 1. Medallion Bucket Architecture
-- Created dedicated `telemetry-raw` and `telemetry-archive` buckets in MinIO.
+- Created dedicated tiered storage buckets in MinIO to separate processing workflows:
+  - **`telemetry-raw` (The Staging/Processing Tier)**: Acts as the landing zone where API-driven batch data and micro-batches are pushed. Downstream systems like Apache Spark continuously scan this bucket to run daily summaries.
+  - **`telemetry-archive` (The Cold Storage Tier)**: Reserved for long-term retention and compliance. Once raw data is processed, it is compacted into dense, highly-compressed historical blocks and moved here. This tier is optimized strictly for infrequent, massive historical lookups.
 - Implemented a unified partitioning strategy (`YYYY/MM/DD/HH`) for all cold-path storage to optimize Spark discovery and query performance.
 
-### 2. TimescaleDB Integration
-- Initiated the migration from Redis-only storage to a hybrid TimescaleDB architecture.
-- Leveraged TimescaleDB Hypertables to provide disk-backed persistence while maintaining high ingestion throughput for the 55,000-device fleet.
-
-### 3. Storage Format Standardization
+### 2. Storage Format Standardization
 - Standardized on Snappy-compressed Parquet files for all archival tasks.
 - This shift addressed the "Small File Problem" by allowing for larger batch sizes (e.g., 2016 points per device) before flushing to MinIO.
 
@@ -49,21 +82,22 @@ This phase focused on evolving the storage architecture from a simple buffer to 
 # Phase 3: Production Hardening with TimescaleDB (March 26 - April 2)
 
 ## Overview
-During this phase, TimescaleDB officially replaced Redis as the primary telemetry store, providing the stability and query flexibility required for the 65,000-device fleet.
+- The generator creates telemetry datapoints for each registered server/device every 5 minutes and stores them in TimescaleDB.
+- TimescaleDB uses indexing to fetch required data faster without scanning the entire database.
+- When the client calls the API, a background job fetches 7 days of datapoints for the requested devices from TimescaleDB.
+- The data is serialized into JSON format and sent to Kafka for downstream processing.
 
-### 1. Full Deprecation of Redis for Telemetry
-- Completely migrated the ingestion "Hot Path" from Redis buffers to TimescaleDB Hypertables.
-- This eliminated the memory bottlenecks and vertical scaling limits of the original in-memory architecture.
+## Problem Faced
+- **Slow Exports (TimescaleDB Overload)**: While TimescaleDB perfectly solved the Redis RAM bottleneck, fetching 7 days of historical data for thousands of devices concurrently caused massive index-scan contention. This shifted the bottleneck from RAM to CPU, resulting in severe latency and timeouts during API exports.
 
-### 2. High-Performance Batch Ingestion
-- Implemented optimized multi-row INSERT logic to handle the 55,000-device ingestion volume.
-- This transition maintained sub-second ingestion latency and provided a more stable alternative to the memory-bound Redis path.
-
-### 3. API & Kafka Flow Updates
-- **Direct TimescaleDB Querying**: Re-engineered all telemetry export endpoints to query TimescaleDB hypertables directly, eliminating the Redis lookup bottleneck.
+## Solution Implemented
+- **Direct TimescaleDB Querying**: Re-engineered all telemetry export endpoints to query TimescaleDB hypertables directly.
 - **Optimized SQL Projections**: Switched to high-performance SQL features (e.g., `json_agg`) to fetch and format data into the 48-field Golden Record schema in a single pass.
-- **Kafka Schema Integrity**: Ensured every message on the `raw-server-metrics` topic is a complete record, including previously missing `inventory_data` and historical context.
-- **Storage Efficiency**: Enabled native TimescaleDB compression policies on older data chunks to optimize disk usage without sacrificing retrieval speed.
+- **Kafka Schema Integrity**: Ensured every message pushed to the `raw-server-metrics` Kafka topic is a complete, serialized JSON record (including historical context and `inventory_data`).
+- **Storage Efficiency**: Enabled native TimescaleDB compression policies to optimize disk usage.
+
+## Learnings
+- **The Value and Limits of Indexing**: Indexes are incredibly useful for accelerating targeted queries—they allow TimescaleDB to instantly locate specific device events or short time-windows without scanning the entire database (avoiding slow sequential scans). However, there is a strict trade-off: querying massive 7-day historical datasets for thousands of devices simultaneously puts an enormous strain on those same indexes. High concurrency inevitably triggers index-scan contention, shifting the system bottleneck from RAM directly to CPU. A purely database-driven architecture is excellent for targeted lookups but fundamentally unsuited for massive concurrent bulk fetches without a cache layer.
 
 ---
 

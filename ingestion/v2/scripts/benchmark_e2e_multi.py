@@ -97,8 +97,8 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     
     try:
         while received_count < total_expected:
-            # Check timeout (5 minutes max)
-            if time.monotonic() - start_wait > 300:
+            # Check timeout (20 minutes max for massive benchmarks)
+            if time.monotonic() - start_wait > 1200:
                 print("[BENCHMARK] Timeout reached waiting for Kafka messages.")
                 break
                 
