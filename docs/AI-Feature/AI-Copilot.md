@@ -71,7 +71,7 @@ CREATE TABLE chat_messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
  
-
+```
 ---
 
 ##   Usage
@@ -87,7 +87,7 @@ CREATE TABLE chat_messages (
 1. Navigate to the **ATLAS Copilot** sub-tab.
 2. Type a command (e.g., *"Write a bash script to clear zombie processes taking up port 80"*) in the input field.
 3. A new thread will automatically generate a title based on your prompt and save to the left-hand history panel.
-4. Click the **🗑️** icon next to any historical thread to permanently delete it.
+4. Click the ** ** icon next to any historical thread to permanently delete it.
 
 ---
 
@@ -104,6 +104,4 @@ CREATE TABLE chat_messages (
 * **Cause:** The PostgreSQL connector wasn't installed in the Streamlit container.
 * **Fix (Hot):** Run `docker exec -it atlas-analytics pip install psycopg2-binary --break-system-packages` and refresh the browser.
 
-```
-
-```
+ 

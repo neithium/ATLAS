@@ -21,7 +21,6 @@ Use this for per-customer (PCID/ACID) scoped telemetry runs.
 import logging
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.python import PythonOperator, PythonSensor
 from airflow.providers.http.operators.http import SimpleHttpOperator
 
@@ -31,7 +30,7 @@ log = logging.getLogger(__name__)
 
 # ─── Default Args ───────────────────────────────────────────────────────────
 default_args = {
-    "owner": "atlas-nandini",
+    "owner": "atlas",
     "depends_on_past": False,
     "start_date": datetime(2026, 4, 19),
     "email_on_failure": False,

@@ -1,5 +1,5 @@
 pyspark==3.5.0
 delta-spark==3.1.0
-kafka-python-ng
+kafka-python==2.0.2
 pandas
 pyarrow

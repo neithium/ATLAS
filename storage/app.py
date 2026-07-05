@@ -171,6 +171,26 @@ with st.sidebar:
     st.markdown("#  ATLAS DASHBOARD")
     st.markdown("##### Observability, Telemetry and AI, All Packed in One !!")
     st.markdown("---")
+    st.markdown("###  System Status")
+    
+    # Render connection status blocks
+    if ch_client: 
+        st.success(" ClickHouse Online")
+    else: 
+        st.error(" ClickHouse Offline")
+    
+    if pg_conn and not pg_conn.closed: 
+        st.success(" PostgreSQL Online")
+    else: 
+        st.error(" PostgreSQL Offline")
+    
+    if delta_client: 
+        st.success(" Delta Lake Online")
+    else: 
+        st.error(" Delta Lake Offline")
+
+     
+    st.markdown("---")
     st.markdown("###  Navigation")
     
     # The new, beautiful routing menu
