@@ -107,7 +107,7 @@ REFINED_PATH = os.getenv("REFINED_DATA_PATH", "/data/refined")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5000"))  # Reduced from 10000 for memory efficiency
 SCHEDULE_INTERVAL = int(os.getenv("SCHEDULE_INTERVAL_SECONDS", "0"))
 WATERMARK_SOURCE = "delta_refined"
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "50000"))  # Parquet reading chunk size (rows per batch)
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "10000"))  # Reduced for memory safety  # Parquet reading chunk size (rows per batch)
 
 # ---------------------------------------------------------------------------
 # Column order matching the ClickHouse telemetry_refined table definition
@@ -548,21 +548,46 @@ def read_refined_parquet_chunked(path: str, watermarks: dict, chunk_size: int = 
             str(refined), format="parquet", partitioning="hive"
         )
         
+        # LAZY LOADING: Use to_batches() directly on the dataset instead of to_table()
+        # This prevents loading all 140 files into RAM at once.
         if partition_cutoff:
-            table = dataset.to_table(
-                filter=pc.field("partition_date") >= partition_cutoff
+            batches = dataset.to_batches(
+                filter=pc.field("partition_date") >= partition_cutoff,
+                batch_size=chunk_size
             )
         else:
-            table = dataset.to_table()
-        
-        # Stream batches from the table
-        for batch in table.to_batches(max_chunksize=chunk_size):
+            batches = dataset.to_batches(batch_size=chunk_size)
+            
+        # Stream batches directly from disk
+        for batch in batches:
             df = batch.to_pandas()
             if not df.empty:
                 yield df
-                gc.collect()  # Release memory after yielding
+                
+            # Aggressively release memory after yielding each chunk
+            del df
+            del batch
+            gc.collect() 
+            
     except Exception as exc:
         log.warning("Dataset streaming failed: %s — falling back to file-by-file", exc)
+        
+        # Fallback: stream each parquet file individually
+        for pf in parquet_files:
+            try:
+                # Open the file lazily
+                parquet_file = pq.ParquetFile(pf)
+                for batch in parquet_file.iter_batches(batch_size=chunk_size):
+                    df = batch.to_pandas()
+                    if not df.empty:
+                        yield df
+                        
+                    del df
+                    del batch
+                    gc.collect()
+            except Exception as e:
+                log.warning("Failed to read %s: %s", pf, e)
+                continue
         
         # Fallback: stream each parquet file individually
         for pf in parquet_files:
