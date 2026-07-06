@@ -51,7 +51,7 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
             targets.append((h[0], h[1], hierarchy_counts[h]))
             
     total_expected = sum(t[2] for t in targets)
-    print(f"[BENCHMARK] Starting E2E Multi-Platform Benchmark | Platforms: {len(targets)} | Total Devices: {total_expected}")
+    print(f"[BENCHMARK] Starting E2E Multi-Platform Benchmark | App Customers: {len(targets)} | Total Devices: {total_expected}")
     for pcid, acid, count in targets:
         print(f"  - {pcid} ({acid}): {count} devices")
     print("-" * 60)
@@ -121,8 +121,8 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     
     # 5. Report Results
     print("\n" + "=" * 60)
-    print("E2E MULTI-PLATFORM BENCHMARK")
-    print(f"Platforms: {len(targets)} | Total Devices: {total_expected}")
+    print("E2E MULTI-APP-CUSTOMER BENCHMARK")
+    print(f"App Customers: {len(targets)} | Total Devices: {total_expected}")
     print(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("-" * 60)
     print(f"   Total Time:        {total_time:.3f}s")
@@ -135,8 +135,8 @@ async def run_e2e_multi_benchmark(platform_count: int, heavy_pcid: str = None):
     # Save results to file
     with open("/app/v2/scripts/benchmark_latest.txt", "a") as f:
         f.write(f"\n============================================================\n")
-        f.write(f"E2E MULTI-PLATFORM BENCHMARK\n")
-        f.write(f"Platforms: {len(targets)} | Total Devices: {total_expected}\n")
+        f.write(f"E2E MULTI-APP-CUSTOMER BENCHMARK\n")
+        f.write(f"App Customers: {len(targets)} | Total Devices: {total_expected}\n")
         f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"------------------------------------------------------------\n")
         f.write(f"   Total Time:        {total_time:.3f}s\n")

@@ -1,7 +1,7 @@
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1003
 Date: 2026-05-09 16:56:29
 ------------------------------------------------------------
    Total Time:        37.630s
@@ -10,8 +10,8 @@ Date: 2026-05-09 16:56:29
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1003
 Date: 2026-05-09 16:57:11
 ------------------------------------------------------------
    Total Time:        23.997s
@@ -20,8 +20,8 @@ Date: 2026-05-09 16:57:11
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2003
 Date: 2026-05-09 16:58:05
 ------------------------------------------------------------
    Total Time:        36.264s
@@ -30,8 +30,8 @@ Date: 2026-05-09 16:58:05
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 8 | Total Devices: 8003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 8 | Total Devices: 8003
 Date: 2026-05-09 17:00:38
 ------------------------------------------------------------
    Total Time:        115.438s
@@ -40,8 +40,8 @@ Date: 2026-05-09 17:00:38
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10003
 Date: 2026-05-09 17:04:09
 ------------------------------------------------------------
    Total Time:        139.624s
@@ -50,8 +50,8 @@ Date: 2026-05-09 17:04:09
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2003
 Date: 2026-05-12 14:54:50
 ------------------------------------------------------------
    Total Time:        22.992s
@@ -60,8 +60,8 @@ Date: 2026-05-12 14:54:50
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2003
 Date: 2026-05-12 14:57:05
 ------------------------------------------------------------
    Total Time:        20.173s
@@ -70,8 +70,8 @@ Date: 2026-05-12 14:57:05
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2003
 Date: 2026-05-12 15:46:59
 ------------------------------------------------------------
    Total Time:        32.679s
@@ -80,8 +80,8 @@ Date: 2026-05-12 15:46:59
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 6 | Total Devices: 6003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 6 | Total Devices: 6003
 Date: 2026-05-12 15:55:30
 ------------------------------------------------------------
    Total Time:        77.803s
@@ -90,8 +90,8 @@ Date: 2026-05-12 15:55:30
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 8 | Total Devices: 8003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 8 | Total Devices: 8003
 Date: 2026-05-12 15:57:45
 ------------------------------------------------------------
    Total Time:        96.154s
@@ -100,8 +100,8 @@ Date: 2026-05-12 15:57:45
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10003
 Date: 2026-05-12 16:04:11
 ------------------------------------------------------------
    Total Time:        150.706s
@@ -110,8 +110,8 @@ Date: 2026-05-12 16:04:11
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10003
 Date: 2026-05-12 16:11:14
 ------------------------------------------------------------
    Total Time:        132.939s
@@ -120,8 +120,8 @@ Date: 2026-05-12 16:11:14
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1003
 Date: 2026-05-12 16:13:06
 ------------------------------------------------------------
    Total Time:        18.076s
@@ -130,8 +130,8 @@ Date: 2026-05-12 16:13:06
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2003
 Date: 2026-05-12 16:14:32
 ------------------------------------------------------------
    Total Time:        26.794s
@@ -140,8 +140,8 @@ Date: 2026-05-12 16:14:32
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3003
 Date: 2026-05-12 16:15:40
 ------------------------------------------------------------
    Total Time:        45.200s
@@ -150,8 +150,8 @@ Date: 2026-05-12 16:15:40
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 4 | Total Devices: 4003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 4 | Total Devices: 4003
 Date: 2026-05-12 16:17:01
 ------------------------------------------------------------
    Total Time:        49.901s
@@ -160,8 +160,8 @@ Date: 2026-05-12 16:17:01
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5003
 Date: 2026-05-12 16:18:36
 ------------------------------------------------------------
    Total Time:        62.946s
@@ -170,8 +170,8 @@ Date: 2026-05-12 16:18:36
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 6 | Total Devices: 6003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 6 | Total Devices: 6003
 Date: 2026-05-12 16:20:15
 ------------------------------------------------------------
    Total Time:        78.649s
@@ -180,8 +180,8 @@ Date: 2026-05-12 16:20:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 7 | Total Devices: 7003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 7 | Total Devices: 7003
 Date: 2026-05-12 16:29:02
 ------------------------------------------------------------
    Total Time:        95.824s
@@ -190,8 +190,8 @@ Date: 2026-05-12 16:29:02
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 8 | Total Devices: 8003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 8 | Total Devices: 8003
 Date: 2026-05-12 16:31:08
 ------------------------------------------------------------
    Total Time:        106.278s
@@ -200,8 +200,8 @@ Date: 2026-05-12 16:31:08
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 9 | Total Devices: 9003
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 9 | Total Devices: 9003
 Date: 2026-05-12 16:34:24
 ------------------------------------------------------------
    Total Time:        110.382s
@@ -210,8 +210,8 @@ Date: 2026-05-12 16:34:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-23 17:11:47
 ------------------------------------------------------------
    Total Time:        5.028s
@@ -220,8 +220,8 @@ Date: 2026-05-23 17:11:47
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-23 17:12:20
 ------------------------------------------------------------
    Total Time:        2.103s
@@ -230,8 +230,8 @@ Date: 2026-05-23 17:12:20
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-23 17:26:59
 ------------------------------------------------------------
    Total Time:        50.361s
@@ -240,8 +240,8 @@ Date: 2026-05-23 17:26:59
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-23 17:35:15
 ------------------------------------------------------------
    Total Time:        33.441s
@@ -250,8 +250,8 @@ Date: 2026-05-23 17:35:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-23 17:36:33
 ------------------------------------------------------------
    Total Time:        69.215s
@@ -260,8 +260,8 @@ Date: 2026-05-23 17:36:33
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-23 17:40:23
 ------------------------------------------------------------
    Total Time:        116.962s
@@ -270,8 +270,8 @@ Date: 2026-05-23 17:40:23
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-23 18:10:27
 ------------------------------------------------------------
    Total Time:        72.341s
@@ -280,8 +280,8 @@ Date: 2026-05-23 18:10:27
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-26 08:05:53
 ------------------------------------------------------------
    Total Time:        18.165s
@@ -290,8 +290,8 @@ Date: 2026-05-26 08:05:53
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-26 08:06:20
 ------------------------------------------------------------
    Total Time:        11.878s
@@ -309,8 +309,8 @@ Date: 2026-05-26 08:06:20
 
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 12 | Total Devices: 132
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 12 | Total Devices: 132
 Date: 2026-05-27 09:41:52
 ------------------------------------------------------------
    Total Time:        10.339s
@@ -319,8 +319,8 @@ Date: 2026-05-27 09:41:52
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 24 | Total Devices: 264
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 24 | Total Devices: 264
 Date: 2026-05-27 09:43:16
 ------------------------------------------------------------
    Total Time:        15.876s
@@ -329,8 +329,8 @@ Date: 2026-05-27 09:43:16
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 50 | Total Devices: 550
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 50 | Total Devices: 550
 Date: 2026-05-27 09:44:15
 ------------------------------------------------------------
    Total Time:        35.620s
@@ -339,8 +339,8 @@ Date: 2026-05-27 09:44:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 100 | Total Devices: 1100
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 100 | Total Devices: 1100
 Date: 2026-05-27 09:54:43
 ------------------------------------------------------------
    Total Time:        71.673s
@@ -349,8 +349,8 @@ Date: 2026-05-27 09:54:43
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1000 | Total Devices: 11000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1000 | Total Devices: 11000
 Date: 2026-05-27 14:59:31
 ------------------------------------------------------------
    Total Time:        407.544s
@@ -359,8 +359,8 @@ Date: 2026-05-27 14:59:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1000 | Total Devices: 11000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1000 | Total Devices: 11000
 Date: 2026-05-27 15:44:05
 ------------------------------------------------------------
    Total Time:        833.216s
@@ -369,8 +369,8 @@ Date: 2026-05-27 15:44:05
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 55
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 55
 Date: 2026-05-27 15:52:28
 ------------------------------------------------------------
    Total Time:        6.321s
@@ -379,8 +379,8 @@ Date: 2026-05-27 15:52:28
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 11
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 11
 Date: 2026-05-27 16:02:32
 ------------------------------------------------------------
    Total Time:        3.523s
@@ -389,8 +389,8 @@ Date: 2026-05-27 16:02:32
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 11
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 11
 Date: 2026-05-27 16:02:45
 ------------------------------------------------------------
    Total Time:        3.676s
@@ -399,8 +399,8 @@ Date: 2026-05-27 16:02:45
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 11
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 11
 Date: 2026-05-27 16:03:04
 ------------------------------------------------------------
    Total Time:        4.875s
@@ -409,8 +409,8 @@ Date: 2026-05-27 16:03:04
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 11
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 11
 Date: 2026-05-27 16:03:59
 ------------------------------------------------------------
    Total Time:        8.933s
@@ -419,8 +419,8 @@ Date: 2026-05-27 16:03:59
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 110
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 110
 Date: 2026-05-27 16:03:55
 ------------------------------------------------------------
    Total Time:        22.738s
@@ -429,8 +429,8 @@ Date: 2026-05-27 16:03:55
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 100 | Total Devices: 1100
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 100 | Total Devices: 1100
 Date: 2026-05-27 16:05:52
 ------------------------------------------------------------
    Total Time:        98.672s
@@ -439,8 +439,8 @@ Date: 2026-05-27 16:05:52
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 100 | Total Devices: 1100
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 100 | Total Devices: 1100
 Date: 2026-05-27 16:09:34
 ------------------------------------------------------------
    Total Time:        92.250s
@@ -449,8 +449,8 @@ Date: 2026-05-27 16:09:34
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 100 | Total Devices: 1100
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 100 | Total Devices: 1100
 Date: 2026-05-27 16:12:15
 ------------------------------------------------------------
    Total Time:        38.438s
@@ -459,8 +459,8 @@ Date: 2026-05-27 16:12:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 200 | Total Devices: 2200
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 200 | Total Devices: 2200
 Date: 2026-05-27 16:15:41
 ------------------------------------------------------------
    Total Time:        98.500s
@@ -469,8 +469,8 @@ Date: 2026-05-27 16:15:41
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 200 | Total Devices: 2200
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 200 | Total Devices: 2200
 Date: 2026-05-27 16:17:19
 ------------------------------------------------------------
    Total Time:        77.284s
@@ -479,8 +479,8 @@ Date: 2026-05-27 16:17:19
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 100 | Total Devices: 1100
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 100 | Total Devices: 1100
 Date: 2026-05-27 16:18:33
 ------------------------------------------------------------
    Total Time:        32.343s
@@ -489,8 +489,8 @@ Date: 2026-05-27 16:18:33
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 100 | Total Devices: 1100
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 100 | Total Devices: 1100
 Date: 2026-05-27 16:28:39
 ------------------------------------------------------------
    Total Time:        41.751s
@@ -499,8 +499,8 @@ Date: 2026-05-27 16:28:39
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 500 | Total Devices: 5500
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 500 | Total Devices: 5500
 Date: 2026-05-27 16:33:03
 ------------------------------------------------------------
    Total Time:        240.877s
@@ -509,8 +509,8 @@ Date: 2026-05-27 16:33:03
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 500 | Total Devices: 5500
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 500 | Total Devices: 5500
 Date: 2026-05-27 16:54:03
 ------------------------------------------------------------
    Total Time:        191.995s
@@ -519,8 +519,8 @@ Date: 2026-05-27 16:54:03
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 07:17:43
 ------------------------------------------------------------
    Total Time:        127.760s
@@ -529,8 +529,8 @@ Date: 2026-05-28 07:17:43
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 07:41:58
 ------------------------------------------------------------
    Total Time:        73.382s
@@ -539,8 +539,8 @@ Date: 2026-05-28 07:41:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 07:44:24
 ------------------------------------------------------------
    Total Time:        47.013s
@@ -549,8 +549,8 @@ Date: 2026-05-28 07:44:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3000
 Date: 2026-05-28 07:47:17
 ------------------------------------------------------------
    Total Time:        147.781s
@@ -559,8 +559,8 @@ Date: 2026-05-28 07:47:17
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 07:55:17
 ------------------------------------------------------------
    Total Time:        61.141s
@@ -569,8 +569,8 @@ Date: 2026-05-28 07:55:17
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:10:55
 ------------------------------------------------------------
    Total Time:        34.554s
@@ -579,8 +579,8 @@ Date: 2026-05-28 08:10:55
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:12:51
 ------------------------------------------------------------
    Total Time:        54.490s
@@ -589,8 +589,8 @@ Date: 2026-05-28 08:12:51
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:15:31
 ------------------------------------------------------------
    Total Time:        33.020s
@@ -599,8 +599,8 @@ Date: 2026-05-28 08:15:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 08:17:12
 ------------------------------------------------------------
    Total Time:        42.500s
@@ -609,8 +609,8 @@ Date: 2026-05-28 08:17:12
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:21:37
 ------------------------------------------------------------
    Total Time:        21.298s
@@ -619,8 +619,8 @@ Date: 2026-05-28 08:21:37
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 08:22:24
 ------------------------------------------------------------
    Total Time:        33.918s
@@ -629,8 +629,8 @@ Date: 2026-05-28 08:22:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3000
 Date: 2026-05-28 08:27:19
 ------------------------------------------------------------
    Total Time:        68.047s
@@ -639,8 +639,8 @@ Date: 2026-05-28 08:27:19
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:28:05
 ------------------------------------------------------------
    Total Time:        21.420s
@@ -649,8 +649,8 @@ Date: 2026-05-28 08:28:05
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:31:18
 ------------------------------------------------------------
    Total Time:        35.864s
@@ -659,8 +659,8 @@ Date: 2026-05-28 08:31:18
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:32:44
 ------------------------------------------------------------
    Total Time:        24.300s
@@ -669,8 +669,8 @@ Date: 2026-05-28 08:32:44
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:36:03
 ------------------------------------------------------------
    Total Time:        27.566s
@@ -679,8 +679,8 @@ Date: 2026-05-28 08:36:03
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 08:37:24
 ------------------------------------------------------------
    Total Time:        37.573s
@@ -689,8 +689,8 @@ Date: 2026-05-28 08:37:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 08:38:15
 ------------------------------------------------------------
    Total Time:        20.278s
@@ -699,8 +699,8 @@ Date: 2026-05-28 08:38:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 09:05:10
 ------------------------------------------------------------
    Total Time:        49.732s
@@ -709,8 +709,8 @@ Date: 2026-05-28 09:05:10
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 09:15:30
 ------------------------------------------------------------
    Total Time:        67.484s
@@ -719,8 +719,8 @@ Date: 2026-05-28 09:15:30
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 09:16:16
 ------------------------------------------------------------
    Total Time:        32.052s
@@ -729,8 +729,8 @@ Date: 2026-05-28 09:16:16
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 09:25:31
 ------------------------------------------------------------
    Total Time:        116.516s
@@ -739,8 +739,8 @@ Date: 2026-05-28 09:25:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 09:34:58
 ------------------------------------------------------------
    Total Time:        300.654s
@@ -749,8 +749,8 @@ Date: 2026-05-28 09:34:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 09:43:03
 ------------------------------------------------------------
    Total Time:        90.653s
@@ -759,8 +759,8 @@ Date: 2026-05-28 09:43:03
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 09:48:32
 ------------------------------------------------------------
    Total Time:        79.756s
@@ -769,8 +769,8 @@ Date: 2026-05-28 09:48:32
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 09:56:24
 ------------------------------------------------------------
    Total Time:        70.544s
@@ -779,8 +779,8 @@ Date: 2026-05-28 09:56:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:02:17
 ------------------------------------------------------------
    Total Time:        56.402s
@@ -789,8 +789,8 @@ Date: 2026-05-28 10:02:17
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:04:47
 ------------------------------------------------------------
    Total Time:        52.496s
@@ -799,8 +799,8 @@ Date: 2026-05-28 10:04:47
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:09:57
 ------------------------------------------------------------
    Total Time:        48.685s
@@ -809,8 +809,8 @@ Date: 2026-05-28 10:09:57
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:13:02
 ------------------------------------------------------------
    Total Time:        57.297s
@@ -819,8 +819,8 @@ Date: 2026-05-28 10:13:02
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:22:07
 ------------------------------------------------------------
    Total Time:        46.972s
@@ -829,8 +829,8 @@ Date: 2026-05-28 10:22:07
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:31:35
 ------------------------------------------------------------
    Total Time:        302.394s
@@ -839,8 +839,8 @@ Date: 2026-05-28 10:31:35
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:45:34
 ------------------------------------------------------------
    Total Time:        300.655s
@@ -849,8 +849,8 @@ Date: 2026-05-28 10:45:34
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 10:48:51
 ------------------------------------------------------------
    Total Time:        106.366s
@@ -859,8 +859,8 @@ Date: 2026-05-28 10:48:51
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 11:50:56
 ------------------------------------------------------------
    Total Time:        39.620s
@@ -869,8 +869,8 @@ Date: 2026-05-28 11:50:56
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 11:51:33
 ------------------------------------------------------------
    Total Time:        25.299s
@@ -879,8 +879,8 @@ Date: 2026-05-28 11:51:33
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 11:58:16
 ------------------------------------------------------------
    Total Time:        30.361s
@@ -889,8 +889,8 @@ Date: 2026-05-28 11:58:16
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 11:59:58
 ------------------------------------------------------------
    Total Time:        68.480s
@@ -899,8 +899,8 @@ Date: 2026-05-28 11:59:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 12:06:08
 ------------------------------------------------------------
    Total Time:        124.847s
@@ -909,8 +909,8 @@ Date: 2026-05-28 12:06:08
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 12:10:24
 ------------------------------------------------------------
    Total Time:        58.272s
@@ -919,8 +919,8 @@ Date: 2026-05-28 12:10:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:11:38
 ------------------------------------------------------------
    Total Time:        28.358s
@@ -929,8 +929,8 @@ Date: 2026-05-28 12:11:38
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 12:16:46
 ------------------------------------------------------------
    Total Time:        71.404s
@@ -939,8 +939,8 @@ Date: 2026-05-28 12:16:46
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-28 12:21:34
 ------------------------------------------------------------
    Total Time:        174.874s
@@ -949,8 +949,8 @@ Date: 2026-05-28 12:21:34
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:31:15
 ------------------------------------------------------------
    Total Time:        42.034s
@@ -959,8 +959,8 @@ Date: 2026-05-28 12:31:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:41:17
 ------------------------------------------------------------
    Total Time:        63.449s
@@ -969,8 +969,8 @@ Date: 2026-05-28 12:41:17
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:42:18
 ------------------------------------------------------------
    Total Time:        53.172s
@@ -979,8 +979,8 @@ Date: 2026-05-28 12:42:18
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:44:00
 ------------------------------------------------------------
    Total Time:        36.809s
@@ -989,8 +989,8 @@ Date: 2026-05-28 12:44:00
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:44:42
 ------------------------------------------------------------
    Total Time:        34.574s
@@ -999,8 +999,8 @@ Date: 2026-05-28 12:44:42
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 12:46:01
 ------------------------------------------------------------
    Total Time:        65.125s
@@ -1009,8 +1009,8 @@ Date: 2026-05-28 12:46:01
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 12:56:21
 ------------------------------------------------------------
    Total Time:        142.565s
@@ -1019,8 +1019,8 @@ Date: 2026-05-28 12:56:21
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 12:57:14
 ------------------------------------------------------------
    Total Time:        36.222s
@@ -1029,8 +1029,8 @@ Date: 2026-05-28 12:57:14
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 13:09:16
 ------------------------------------------------------------
    Total Time:        102.830s
@@ -1039,8 +1039,8 @@ Date: 2026-05-28 13:09:16
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 13:35:10
 ------------------------------------------------------------
    Total Time:        73.812s
@@ -1049,8 +1049,8 @@ Date: 2026-05-28 13:35:10
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 13:37:53
 ------------------------------------------------------------
    Total Time:        35.490s
@@ -1059,8 +1059,8 @@ Date: 2026-05-28 13:37:53
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 13:40:43
 ------------------------------------------------------------
    Total Time:        40.522s
@@ -1069,8 +1069,8 @@ Date: 2026-05-28 13:40:43
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 13:41:36
 ------------------------------------------------------------
    Total Time:        34.201s
@@ -1079,8 +1079,8 @@ Date: 2026-05-28 13:41:36
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 13:42:45
 ------------------------------------------------------------
    Total Time:        38.339s
@@ -1089,8 +1089,8 @@ Date: 2026-05-28 13:42:45
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 13:44:08
 ------------------------------------------------------------
    Total Time:        72.533s
@@ -1099,8 +1099,8 @@ Date: 2026-05-28 13:44:08
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 13:49:56
 ------------------------------------------------------------
    Total Time:        68.742s
@@ -1109,8 +1109,8 @@ Date: 2026-05-28 13:49:56
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-28 13:54:11
 ------------------------------------------------------------
    Total Time:        216.980s
@@ -1119,8 +1119,8 @@ Date: 2026-05-28 13:54:11
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:08:48
 ------------------------------------------------------------
    Total Time:        53.855s
@@ -1129,8 +1129,8 @@ Date: 2026-05-28 14:08:48
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:22:18
 ------------------------------------------------------------
    Total Time:        44.934s
@@ -1139,8 +1139,8 @@ Date: 2026-05-28 14:22:18
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:23:22
 ------------------------------------------------------------
    Total Time:        26.263s
@@ -1149,8 +1149,8 @@ Date: 2026-05-28 14:23:22
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 14:34:21
 ------------------------------------------------------------
    Total Time:        66.108s
@@ -1159,8 +1159,8 @@ Date: 2026-05-28 14:34:21
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:40:02
 ------------------------------------------------------------
    Total Time:        53.005s
@@ -1169,8 +1169,8 @@ Date: 2026-05-28 14:40:02
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:40:52
 ------------------------------------------------------------
    Total Time:        27.133s
@@ -1179,8 +1179,8 @@ Date: 2026-05-28 14:40:52
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:52:47
 ------------------------------------------------------------
    Total Time:        62.688s
@@ -1189,8 +1189,8 @@ Date: 2026-05-28 14:52:47
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 14:59:46
 ------------------------------------------------------------
    Total Time:        38.563s
@@ -1199,8 +1199,8 @@ Date: 2026-05-28 14:59:46
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 15:00:22
 ------------------------------------------------------------
    Total Time:        22.826s
@@ -1209,8 +1209,8 @@ Date: 2026-05-28 15:00:22
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 4 | Total Devices: 4000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 4 | Total Devices: 4000
 Date: 2026-05-28 15:02:13
 ------------------------------------------------------------
    Total Time:        101.419s
@@ -1219,8 +1219,8 @@ Date: 2026-05-28 15:02:13
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 15:09:10
 ------------------------------------------------------------
    Total Time:        48.103s
@@ -1229,8 +1229,8 @@ Date: 2026-05-28 15:09:10
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 15:09:45
 ------------------------------------------------------------
    Total Time:        19.719s
@@ -1239,8 +1239,8 @@ Date: 2026-05-28 15:09:45
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 15:37:08
 ------------------------------------------------------------
    Total Time:        89.475s
@@ -1249,8 +1249,8 @@ Date: 2026-05-28 15:37:08
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 15:49:50
 ------------------------------------------------------------
    Total Time:        47.115s
@@ -1259,8 +1259,8 @@ Date: 2026-05-28 15:49:50
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 15:50:25
 ------------------------------------------------------------
    Total Time:        20.323s
@@ -1269,8 +1269,8 @@ Date: 2026-05-28 15:50:25
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 16:02:08
 ------------------------------------------------------------
    Total Time:        62.944s
@@ -1279,8 +1279,8 @@ Date: 2026-05-28 16:02:08
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3000
 Date: 2026-05-28 16:14:04
 ------------------------------------------------------------
    Total Time:        101.128s
@@ -1289,8 +1289,8 @@ Date: 2026-05-28 16:14:04
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 16:14:51
 ------------------------------------------------------------
    Total Time:        33.545s
@@ -1299,8 +1299,8 @@ Date: 2026-05-28 16:14:51
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 16:15:27
 ------------------------------------------------------------
    Total Time:        22.831s
@@ -1309,8 +1309,8 @@ Date: 2026-05-28 16:15:27
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 16:17:12
 ------------------------------------------------------------
    Total Time:        23.910s
@@ -1319,8 +1319,8 @@ Date: 2026-05-28 16:17:12
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 16:33:53
 ------------------------------------------------------------
    Total Time:        27.781s
@@ -1329,8 +1329,8 @@ Date: 2026-05-28 16:33:53
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 16:34:27
 ------------------------------------------------------------
    Total Time:        16.960s
@@ -1339,8 +1339,8 @@ Date: 2026-05-28 16:34:27
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-28 16:35:03
 ------------------------------------------------------------
    Total Time:        27.006s
@@ -1349,8 +1349,8 @@ Date: 2026-05-28 16:35:03
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3000
 Date: 2026-05-28 16:38:48
 ------------------------------------------------------------
    Total Time:        46.784s
@@ -1359,8 +1359,8 @@ Date: 2026-05-28 16:38:48
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-28 16:40:09
 ------------------------------------------------------------
    Total Time:        68.583s
@@ -1369,8 +1369,8 @@ Date: 2026-05-28 16:40:09
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-28 16:48:18
 ------------------------------------------------------------
    Total Time:        138.258s
@@ -1379,8 +1379,8 @@ Date: 2026-05-28 16:48:18
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-28 16:51:57
 ------------------------------------------------------------
    Total Time:        15.197s
@@ -1389,8 +1389,8 @@ Date: 2026-05-28 16:51:57
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 04:01:37
 ------------------------------------------------------------
    Total Time:        24.473s
@@ -1399,8 +1399,8 @@ Date: 2026-05-29 04:01:37
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 04:21:28
 ------------------------------------------------------------
    Total Time:        22.251s
@@ -1409,8 +1409,8 @@ Date: 2026-05-29 04:21:28
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 04:26:21
 ------------------------------------------------------------
    Total Time:        18.257s
@@ -1419,8 +1419,8 @@ Date: 2026-05-29 04:26:21
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 04:27:40
 ------------------------------------------------------------
    Total Time:        21.447s
@@ -1429,8 +1429,8 @@ Date: 2026-05-29 04:27:40
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-29 04:29:02
 ------------------------------------------------------------
    Total Time:        34.268s
@@ -1439,8 +1439,8 @@ Date: 2026-05-29 04:29:02
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3000
 Date: 2026-05-29 04:30:16
 ------------------------------------------------------------
    Total Time:        51.197s
@@ -1449,8 +1449,8 @@ Date: 2026-05-29 04:30:16
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 3 | Total Devices: 3000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 3 | Total Devices: 3000
 Date: 2026-05-29 04:32:53
 ------------------------------------------------------------
    Total Time:        55.831s
@@ -1459,8 +1459,8 @@ Date: 2026-05-29 04:32:53
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-29 04:36:17
 ------------------------------------------------------------
    Total Time:        70.109s
@@ -1469,8 +1469,8 @@ Date: 2026-05-29 04:36:17
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-29 05:01:55
 ------------------------------------------------------------
    Total Time:        35.281s
@@ -1479,8 +1479,8 @@ Date: 2026-05-29 05:01:55
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:02:31
 ------------------------------------------------------------
    Total Time:        16.006s
@@ -1489,8 +1489,8 @@ Date: 2026-05-29 05:02:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:08:30
 ------------------------------------------------------------
    Total Time:        28.369s
@@ -1499,8 +1499,8 @@ Date: 2026-05-29 05:08:30
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-29 05:09:42
 ------------------------------------------------------------
    Total Time:        51.055s
@@ -1509,8 +1509,8 @@ Date: 2026-05-29 05:09:42
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-29 05:11:59
 ------------------------------------------------------------
    Total Time:        126.873s
@@ -1519,8 +1519,8 @@ Date: 2026-05-29 05:11:59
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:23:57
 ------------------------------------------------------------
    Total Time:        27.832s
@@ -1529,8 +1529,8 @@ Date: 2026-05-29 05:23:57
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:28:58
 ------------------------------------------------------------
    Total Time:        27.163s
@@ -1539,8 +1539,8 @@ Date: 2026-05-29 05:28:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-29 05:29:54
 ------------------------------------------------------------
    Total Time:        48.098s
@@ -1549,8 +1549,8 @@ Date: 2026-05-29 05:29:54
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:41:31
 ------------------------------------------------------------
    Total Time:        22.354s
@@ -1559,8 +1559,8 @@ Date: 2026-05-29 05:41:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:44:02
 ------------------------------------------------------------
    Total Time:        20.969s
@@ -1569,8 +1569,8 @@ Date: 2026-05-29 05:44:02
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 05:46:11
 ------------------------------------------------------------
    Total Time:        15.579s
@@ -1579,8 +1579,8 @@ Date: 2026-05-29 05:46:11
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2000
 Date: 2026-05-29 05:47:23
 ------------------------------------------------------------
    Total Time:        28.743s
@@ -1589,8 +1589,8 @@ Date: 2026-05-29 05:47:23
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 4 | Total Devices: 4000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 4 | Total Devices: 4000
 Date: 2026-05-29 05:48:35
 ------------------------------------------------------------
    Total Time:        58.348s
@@ -1599,8 +1599,8 @@ Date: 2026-05-29 05:48:35
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 4 | Total Devices: 4000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 4 | Total Devices: 4000
 Date: 2026-05-29 05:54:01
 ------------------------------------------------------------
    Total Time:        64.956s
@@ -1609,8 +1609,8 @@ Date: 2026-05-29 05:54:01
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:01:30
 ------------------------------------------------------------
    Total Time:        152.279s
@@ -1619,8 +1619,8 @@ Date: 2026-05-29 06:01:30
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:10:53
 ------------------------------------------------------------
    Total Time:        182.934s
@@ -1629,8 +1629,8 @@ Date: 2026-05-29 06:10:53
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:19:51
 ------------------------------------------------------------
    Total Time:        162.005s
@@ -1639,8 +1639,8 @@ Date: 2026-05-29 06:19:51
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:27:57
 ------------------------------------------------------------
    Total Time:        194.477s
@@ -1649,8 +1649,8 @@ Date: 2026-05-29 06:27:57
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:33:40
 ------------------------------------------------------------
    Total Time:        162.351s
@@ -1659,8 +1659,8 @@ Date: 2026-05-29 06:33:40
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:38:58
 ------------------------------------------------------------
    Total Time:        144.318s
@@ -1669,8 +1669,8 @@ Date: 2026-05-29 06:38:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:48:10
 ------------------------------------------------------------
    Total Time:        151.352s
@@ -1679,8 +1679,8 @@ Date: 2026-05-29 06:48:10
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:54:17
 ------------------------------------------------------------
    Total Time:        150.318s
@@ -1689,8 +1689,8 @@ Date: 2026-05-29 06:54:17
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 06:59:54
 ------------------------------------------------------------
    Total Time:        158.126s
@@ -1699,8 +1699,8 @@ Date: 2026-05-29 06:59:54
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 07:08:50
 ------------------------------------------------------------
    Total Time:        156.768s
@@ -1709,8 +1709,8 @@ Date: 2026-05-29 07:08:50
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 07:53:52
 ------------------------------------------------------------
    Total Time:        159.541s
@@ -1719,8 +1719,8 @@ Date: 2026-05-29 07:53:52
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1000
 Date: 2026-05-29 07:55:05
 ------------------------------------------------------------
    Total Time:        15.849s
@@ -1729,8 +1729,8 @@ Date: 2026-05-29 07:55:05
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 5 | Total Devices: 5000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 5 | Total Devices: 5000
 Date: 2026-05-29 08:15:15
 ------------------------------------------------------------
    Total Time:        82.686s
@@ -1739,8 +1739,8 @@ Date: 2026-05-29 08:15:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10000
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10000
 Date: 2026-05-29 08:19:46
 ------------------------------------------------------------
    Total Time:        160.100s
@@ -1749,8 +1749,8 @@ Date: 2026-05-29 08:19:46
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-29 09:43:25
 ------------------------------------------------------------
    Total Time:        216.055s
@@ -1759,8 +1759,8 @@ Date: 2026-05-29 09:43:25
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-29 09:46:37
 ------------------------------------------------------------
    Total Time:        172.683s
@@ -1769,8 +1769,8 @@ Date: 2026-05-29 09:46:37
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 09:47:29
 ------------------------------------------------------------
    Total Time:        22.015s
@@ -1779,8 +1779,8 @@ Date: 2026-05-29 09:47:29
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 09:47:54
 ------------------------------------------------------------
    Total Time:        17.809s
@@ -1789,8 +1789,8 @@ Date: 2026-05-29 09:47:54
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 10:04:50
 ------------------------------------------------------------
    Total Time:        30.405s
@@ -1799,8 +1799,8 @@ Date: 2026-05-29 10:04:50
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 10:05:21
 ------------------------------------------------------------
    Total Time:        22.017s
@@ -1809,8 +1809,8 @@ Date: 2026-05-29 10:05:21
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 10:19:30
 ------------------------------------------------------------
    Total Time:        18.366s
@@ -1819,8 +1819,8 @@ Date: 2026-05-29 10:19:30
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 10:31:11
 ------------------------------------------------------------
    Total Time:        16.373s
@@ -1829,8 +1829,8 @@ Date: 2026-05-29 10:31:11
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 16:28:43
 ------------------------------------------------------------
    Total Time:        23.688s
@@ -1839,8 +1839,8 @@ Date: 2026-05-29 16:28:43
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-29 16:32:20
 ------------------------------------------------------------
    Total Time:        164.053s
@@ -1849,8 +1849,8 @@ Date: 2026-05-29 16:32:20
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 16:47:20
 ------------------------------------------------------------
    Total Time:        26.019s
@@ -1859,8 +1859,8 @@ Date: 2026-05-29 16:47:20
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-29 16:47:51
 ------------------------------------------------------------
    Total Time:        22.952s
@@ -1869,8 +1869,8 @@ Date: 2026-05-29 16:47:51
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2001
 Date: 2026-05-29 16:48:40
 ------------------------------------------------------------
    Total Time:        36.572s
@@ -1879,8 +1879,8 @@ Date: 2026-05-29 16:48:40
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2001
 Date: 2026-05-29 16:51:22
 ------------------------------------------------------------
    Total Time:        44.630s
@@ -1889,8 +1889,8 @@ Date: 2026-05-29 16:51:22
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2001
 Date: 2026-05-30 03:04:55
 ------------------------------------------------------------
    Total Time:        44.982s
@@ -1899,8 +1899,8 @@ Date: 2026-05-30 03:04:55
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-30 03:08:19
 ------------------------------------------------------------
    Total Time:        177.120s
@@ -1909,8 +1909,8 @@ Date: 2026-05-30 03:08:19
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-30 03:13:15
 ------------------------------------------------------------
    Total Time:        218.308s
@@ -1919,8 +1919,8 @@ Date: 2026-05-30 03:13:15
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:14:16
 ------------------------------------------------------------
    Total Time:        27.864s
@@ -1929,8 +1929,8 @@ Date: 2026-05-30 03:14:16
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:15:58
 ------------------------------------------------------------
    Total Time:        24.940s
@@ -1939,8 +1939,8 @@ Date: 2026-05-30 03:15:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:16:31
 ------------------------------------------------------------
    Total Time:        22.227s
@@ -1949,8 +1949,8 @@ Date: 2026-05-30 03:16:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-30 03:23:42
 ------------------------------------------------------------
    Total Time:        185.529s
@@ -1959,8 +1959,8 @@ Date: 2026-05-30 03:23:42
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:25:57
 ------------------------------------------------------------
    Total Time:        21.483s
@@ -1969,8 +1969,8 @@ Date: 2026-05-30 03:25:57
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:26:34
 ------------------------------------------------------------
    Total Time:        19.048s
@@ -1979,8 +1979,8 @@ Date: 2026-05-30 03:26:34
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:34:49
 ------------------------------------------------------------
    Total Time:        24.688s
@@ -1989,8 +1989,8 @@ Date: 2026-05-30 03:34:49
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-30 03:38:00
 ------------------------------------------------------------
    Total Time:        172.518s
@@ -1999,8 +1999,8 @@ Date: 2026-05-30 03:38:00
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 10 | Total Devices: 10001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 10001
 Date: 2026-05-30 03:41:58
 ------------------------------------------------------------
    Total Time:        162.363s
@@ -2009,8 +2009,8 @@ Date: 2026-05-30 03:41:58
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 03:47:31
 ------------------------------------------------------------
    Total Time:        26.268s
@@ -2019,8 +2019,8 @@ Date: 2026-05-30 03:47:31
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 04:10:24
 ------------------------------------------------------------
    Total Time:        27.391s
@@ -2029,8 +2029,8 @@ Date: 2026-05-30 04:10:24
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 1 | Total Devices: 1001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 1 | Total Devices: 1001
 Date: 2026-05-30 04:30:27
 ------------------------------------------------------------
    Total Time:        21.781s
@@ -2039,8 +2039,8 @@ Date: 2026-05-30 04:30:27
 ============================================================
 
 ============================================================
-E2E MULTI-PLATFORM BENCHMARK
-Platforms: 2 | Total Devices: 2001
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 2001
 Date: 2026-05-30 04:36:42
 ------------------------------------------------------------
    Total Time:        37.221s

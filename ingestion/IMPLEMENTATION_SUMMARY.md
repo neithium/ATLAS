@@ -12,7 +12,7 @@
 
 ---
 
-# Initial Discovery: The Redis and MinIO Approach
+# Architecture Preface: Initial Discovery
 
 ## Overview
 - Redis stores only the latest 1 hour of telemetry data as a temporary buffer.
@@ -30,7 +30,7 @@
 
 ---
 
-# Architectural Evolution - Phase 1 (March 12 - 19)
+# Phase 1: Architectural Evolution (March 12 - March 19)
 
 ## Overview
 During this period, the architecture utilized Redis as a high-speed transient buffer for the 55,000-device ingestion path.
@@ -62,14 +62,14 @@ The transition from the pure Redis/MinIO approach to a structured Medallion arch
 
 ---
 
-# Phase 2: Transition to Medallion Storage (March 19 - 26)
+# Phase 2: Transition to Medallion Storage (March 19 - March 26)
 
 ## Overview
 This phase focused on evolving the storage architecture from a simple buffer to a structured Medallion-style data lake in MinIO to handle long-term scalability and downstream analytics.
 
 ### 1. Medallion Bucket Architecture
 - Created dedicated tiered storage buckets in MinIO to separate processing workflows:
-  - **`telemetry-raw` (The Staging/Processing Tier)**: Acts as the landing zone where API-driven batch data and micro-batches are pushed. Downstream systems like Apache Spark continuously scan this bucket to run daily summaries.
+  - **`telemetry-raw` (The Staging/Processing Tier)**: Acts as the landing zone where API-driven batch data and micro-batches are pushed. Here, Apache Airflow triggers downstream Apache Spark jobs to take over the data for batch processing and run daily summaries.
   - **`telemetry-archive` (The Cold Storage Tier)**: Reserved for long-term retention and compliance. Once raw data is processed, it is compacted into dense, highly-compressed historical blocks and moved here. This tier is optimized strictly for infrequent, massive historical lookups.
 - Implemented a unified partitioning strategy (`YYYY/MM/DD/HH`) for all cold-path storage to optimize Spark discovery and query performance.
 
@@ -79,13 +79,19 @@ This phase focused on evolving the storage architecture from a simple buffer to 
 
 ---
 
-# Phase 3: Production Hardening with TimescaleDB (March 26 - April 2)
+# Phase 3: Production Hardening with TimescaleDB (March 26 - April 10)
 
 ## Overview
-- The generator creates telemetry datapoints for each registered server/device every 5 minutes and stores them in TimescaleDB.
-- TimescaleDB uses indexing to fetch required data faster without scanning the entire database.
-- When the client calls the API, a background job fetches 7 days of datapoints for the requested devices from TimescaleDB.
-- The data is serialized into JSON format and sent to Kafka for downstream processing.
+To handle the massive influx of telemetry data, we transitioned from in-memory Redis buffers to **TimescaleDB**, an advanced time-series database built on PostgreSQL.
+
+### Key Database Concepts Introduced:
+- **Hypertables**: We configured our main storage as a TimescaleDB Hypertable. Hypertables automatically partition massive amounts of data into smaller, hidden "chunks" based on time intervals. This allows the database to instantly filter out irrelevant time ranges (e.g., efficiently isolating the "last 7 days" of data) and heavily optimizes continuous high-volume inserts.
+- **Hierarchical Indexes**: Implemented three highly optimized composite B-Tree indexes: `(device_id, metric_time DESC)`, `(application_customer_id, metric_time DESC)`, and `(platform_customer_id, application_customer_id, metric_time DESC)`. These act like a book's table of contents; instead of forcing the database to check every single row sequentially (a slow "sequential scan"), these composite indexes allow the engine to instantly jump to the exact location of the requested telemetry data regardless of which level of the customer hierarchy the API queries.
+
+### Pipeline Workflow:
+- The synthetic generator creates telemetry datapoints for each registered server every 5 minutes and pushes them directly into the highly-compressed Hypertable.
+- When a client calls the API, a background job uses the indexes to rapidly fetch 7 days of history for the requested devices.
+- The fetched data is serialized into JSON format and streamed to Kafka for downstream processing.
 
 ## Problem Faced
 - **Slow Exports (TimescaleDB Overload)**: While TimescaleDB perfectly solved the Redis RAM bottleneck, fetching 7 days of historical data for thousands of devices concurrently caused massive index-scan contention. This shifted the bottleneck from RAM to CPU, resulting in severe latency and timeouts during API exports.
@@ -101,289 +107,31 @@ This phase focused on evolving the storage architecture from a simple buffer to 
 
 ---
 
-# Phase 4: Architecture Hardening & Cache Strategy (April 2 - 15)
+# Phase 4: Telemetry Cache Layer & Local FS Lakehouse (April 11 - April 21)
 
-## 📉 Historical Problem: TimescaleDB Overload
-During this period, the system relied on real-time TimescaleDB fetches for all historical requests (7-day window), which led to significant production bottlenecks.
+## Historical Problem: TimescaleDB Overload
+During early testing, the system relied entirely on real-time TimescaleDB fetches for all historical requests (7-day windows). 
 - **The Bottleneck**: High concurrency during device exports triggered massive index-scan contention in PostgreSQL.
-- **The Result**: CPU spikes on the DB host and latency degradation (80s+ for 1k devices).
-
-## 🔍 Discovery Phase: Optimization Research
-Recognizing the limitations of raw DB querying for high-concurrency exports, we initiated a research phase to identify more efficient retrieval methods.
-- **Methods Researched**:
-    - **Redis Read-Through Caching**: Evaluated for sub-second latency but rejected due to extreme RAM overhead for an 80,000-device 7-day window.
-    - **Materialized Views**: Considered for pre-calculating aggregates, but found to be too rigid for real-time 5-minute telemetry updates and high-cardinality device IDs.
-    - **Vectorized Parquet Side-Loading (Selected)**: Identified as the most scalable solution, combining disk-backed persistence with O(1) file-based discovery.
-
----
-
-# Phase 5: Schema Stability & Standardization (April 15 - 22)
-
-## 🔧 Overview
-Following the architectural discovery, this week was dedicated to ensuring absolute schema consistency across the entire pipeline.
-**Completion Date**: April 22, 2026
-**Objective**: Standardize ALL Kafka messages to match `input_schema.py`  
-**Status**: ✅ COMPLETE & TESTED
-
----
-
-## 📍 Problem Statement
-
-Kafka messages from the API export endpoints were **MISSING** `inventory_data` object:
-
-- Expected: 48-field Golden Schema (per input_schema.py)
-- Actual: 19 top-level + data + inventory_data was absent
-- Impact: Downstream consumers couldn't access CPU/socket/memory info from Kafka
-
----
-
-## ✅ Solution Implemented
-
-### 1. **Created Unified Schema Builder** 📦
-
-**File**: `ingestion/schema_builder.py` (NEW)
-
-```python
-# Core function - guarantees all messages match input_schema.py
-build_48_field_golden_record(device_id, reading, device_metadata, inventory_data, power_detail_list)
-
-# Helper for batch operations
-build_batch_power_detail(raw_readings)
-```
-
-**Benefits**:
-
-- ✅ Single source of truth for schema
-- ✅ Consistent field naming (handles alternates)
-- ✅ Automatic type safety
-- ✅ Chainable across all producers
-
-### 2. **Updated API Producer** 🔌
-
-**File**: `ingestion/v2/api/api_v2.py` (MODIFIED)
-
-**Changes**:
-
-- ✅ `_build_full_record()` → delegates to `schema_builder.build_48_field_golden_record()`
-- ✅ `_process_and_send()` → uses `build_batch_power_detail()` for historical exports
-- ✅ Import: `from schema_builder import build_48_field_golden_record, build_batch_power_detail`
-
-**Impact**: All API endpoints now produce unified schema automatically:
-
-- `/pcid/{pcid}/acid/{acid}/telemetry?days=7`
-- `/pcid/{pcid}/acid/{acid}/telemetry/latest?count=2016`
-- `/pcid/{pcid}/acid/{acid}/telemetry/historical/first?count=2016`
-
-### 3. **Updated Kafka Producer** 📡
-
-**File**: `ingestion/core/kafka_producer.py` (MODIFIED)
-
-**Changes**:
-
-- ✅ `_build_48_field_record()` → delegates to unified builder
-- ✅ `push_history_batch_to_kafka()` → uses unified builder + `build_batch_power_detail()`
-- ✅ Import: `from schema_builder import build_48_field_golden_record, build_batch_power_detail`
-
-**Impact**: All Kafka exports guaranteed to match input_schema.py
-
-### 4. **Added Schema Validator** ✔️
-
-**File**: `ingestion/validate_schema.py` (NEW)
-
-```bash
-# Validate 100 messages
-docker exec atlas-ingestion python3 validate_schema.py --sample-count=100
-
-# Strict mode (any errors = exit code 1)
-docker exec atlas-ingestion python3 validate_schema.py --sample-count=100 --strict
-```
-
-**Validates**:
-
-- ✅ All 48 required fields present
-- ✅ inventory_data always populated
-- ✅ PowerDetail array structure correct
-- ✅ CPU/Memory inventory sub-fields complete
-
----
-
-## 📊 Field Coverage
-
-### Before Standardization ❌
-
-| Section                        | Status         |
-| ------------------------------ | -------------- |
-| Top-level metadata (19 fields) | ✅ Present     |
-| data object (16 fields)        | ✅ Present     |
-| **inventory_data (13 fields)** | ❌ **MISSING** |
-| **Total**                      | **35/48**      |
-
-### After Standardization ✅
-
-| Section                        | Status         |
-| ------------------------------ | -------------- |
-| Top-level metadata (19 fields) | ✅ Present     |
-| data object (16 fields)        | ✅ Present     |
-| **inventory_data (13 fields)** | ✅ **PRESENT** |
-| **Total**                      | **48/48**      |
-
----
-
-## 🎯 Affected Endpoints
-
-### REST API Endpoints
-
-| Endpoint                                                      | Producer                       | Status       |
-| ------------------------------------------------------------- | ------------------------------ | ------------ |
-| `/health`                                                     | N/A                            | ✅ No change |
-| `/pcid/{pcid}/acid/{acid}/telemetry?days=N`                   | `_export_stream_task`          | ✅ Fixed     |
-| `/pcid/{pcid}/acid/{acid}/telemetry/latest?count=N`           | `_export_latest_task`          | ✅ Fixed     |
-| `/pcid/{pcid}/acid/{acid}/telemetry/historical/first?count=N` | `_export_first_task`           | ✅ Fixed     |
-| `/pcid/{pcid}/aid/{aid}/id/{devices}/export?days=N`           | `_export_device_specific_task` | ✅ Fixed     |
-| `/register/device`                                            | N/A                            | ✅ No change |
-
-### Kafka Topic
-
-- **Topic**: `raw-server-metrics`
-- **Messages**: All now conform to `input_schema.py`
-- **Partitions**: 12 (unchanged)
-- **Compression**: LZ4 (unchanged)
-
----
-
-## 🔄 Backward Compatibility
-
-### ✅ No Breaking Changes
-
-- Consumers reading messages get **MORE** data, not less
-- Optional fields now populated (inventory_data) - doesn't break existing readers
-- Message structure identical, just fuller
-
-### ✅ Consumer Impact
-
-```python
-# OLD CODE (still works!)
-device_id = msg.get("device_id")  # ✅ Still present
-
-# NEW CAPABILITY
-cpu_count = msg.get("inventory_data", {}).get("cpu_count")  # ✅ Now available!
-```
-
-### ✅ Spark Schema
-
-- Auto-inferred schema still works
-- New fields added to schema, old fields unchanged
-- No Spark job changes needed
-
----
-
-## 🚀 Testing & Validation
-
-### Test 1: Verify Recent Messages Include inventory_data ✅
-
-```bash
-docker exec atlas-ingestion python3 /tmp/consume_recent.py 2>&1 | grep -A 2 "inventory_data"
-```
-
-Expected Output:
-
-```json
-"inventory_data": {
-  "cpu_count": 2,
-  "socket_count": 2,
-  ...
-}
-```
-
-### Test 2: Run Full Schema Validator ✅
-
-```bash
-docker exec atlas-ingestion python3 /app/ingestion/validate_schema.py --sample-count=100
-```
-
-Expected Output:
-
-```
-✅ [MSG 1] PASS - PLAT1-DEV-0000-071
-✅ [MSG 2] PASS - PLAT1-DEV-0000-088
-...
-VALIDATION SUMMARY
-========================
-Total Checked: 100
-✅ Passed: 100
-❌ Failed: 0
-🎉 ALL MESSAGES CONFORM TO SCHEMA!
-```
-
-### Test 3: Trigger Export & Validate Immediately ✅
-
-```bash
-# Terminal 1: Start validator watching Kafka
-docker exec -it atlas-ingestion python3 /app/ingestion/validate_schema.py --sample-count=5
-
-# Terminal 2: Trigger export
-curl "http://localhost:8001/pcid/PLATCUST001/acid/APPCUST0001/telemetry/historical/first?count=10"
-
-# Expected: Validator passes all 5 messages
-```
-
-### Test 4: Check Downstream Systems ✅
-
-```bash
-# Spark can read messages
-docker exec processing python3 -c "
-from pyspark.sql import SparkSession
-s = SparkSession.builder.appName('test').getOrCreate()
-df = s.read.format('kafka').option('kafka.bootstrap.servers', 'broker1:9092').option('subscribe', 'raw-server-metrics').load()
-df.select('value').limit(1).show()
-" 2>&1 | head -20
-```
-
----
-
-## 📊 Baseline Performance Benchmarks (May 1, 2026 - Pre-Cache Layer)
-Before finalizing the high-performance local cache, the system was benchmarked using direct TimescaleDB fetches for multi-platform sweeps. These results represent the peak performance of the direct-DB architecture.
-
-> All benchmark scripts and raw results are stored in [v2/scripts/benchmarks/](./v2/scripts/benchmarks/).
-
-### 10k Devices (Single Platform)
-- **Target**: PLATCUST10K (10,000 devices)
-- **Total Flow Time**: 167.172s (API: 1s | DB+Kafka: 166.1s)
-- **System Throughput**: **120,594 pts/sec**
-
-### Concurrent Multi-Platform Sweeps (5000 Platforms / 11 devices each)
-| Platform Count | Total Devices | Time | Throughput |
-| :--- | :--- | :--- | :--- |
-| 10 Platforms | 110 devices | 2.141s | 103,578 pts/sec |
-| 50 Platforms | 550 devices | 10.047s | 110,361 pts/sec |
-| 100 Platforms | 1100 devices | 23.625s | 93,867 pts/sec |
-| 200 Platforms | 2200 devices | 37.203s | 119,216 pts/sec |
-| 500 Platforms | 5500 devices | 109.015s | 101,711 pts/sec |
-
----
-
-# Phase 6: High-Performance Side-Loading & Local Lakehouse (April 22 - May 5)
-
-## 🚀 Overview
-Transitioned the discovery layer from network-bound storage (MinIO) and compute-bound DB queries to a high-performance local vectorized cache.
-
-### 1. Vectorized Parquet Side-Loading
-Implemented the research findings from Phase 4 by building a background job that pre-aggregates 7-day windows into local Parquet files.
-- **Goal**: Offload heavy historical queries from TimescaleDB.
-- **Impact**: API response time dropped from 80s to <20s for 1,000-device clusters.
-- **Efficiency**: Utilized `PyArrow` for vectorized hydration, bypassing Python's GIL for extreme concurrency.
-
-### 2. Shift to Local FS Lakehouse
-Addressed critical network latency and S3 metadata overhead observed during high-concurrency 80k-device exports.
-- **Action**: Shifted primary telemetry storage from MinIO buckets to **Local NVMe Storage**.
-- **Data Tiers**:
-    - **`telemetry-cache/`**: The **API Acceleration Path**. Stores demand-based hourly Parquet partitions to provide sub-second 7-day historical lookups.
-    - **`data/raw/`**: Dedicated to **Batch Processing** (e.g., Spark Streaming and PySpark MERGE jobs). Provides high-throughput columnar data for the Medallion architecture.
-    - **`data/archive/`**: Reserved for **Long-term Compliance**. Stores consolidated daily Parquet silos as an immutable "Cold Path" source of truth.
-- **Result**: Eliminated the "Small File Problem" metadata overhead and network round-trips, providing sub-second disk-seek performance for the ingestion engine.
-
-### 📈 Post-Cache Performance Results (May 9, 2026 - Final V3)
-With the local cache layer and vectorized hydration fully implemented, the system achieved a massive performance breakthrough.
+- **The Result**: CPU spikes on the DB host and severe latency degradation (80s+ for 1k devices).
+- **Baseline Performance**: A pure DB-driven approach peaked at ~120,594 pts/sec but was highly unstable under memory pressure.
+
+## The Solution: Vectorized Parquet Side-Loading
+To resolve the database contention, we transitioned the API's discovery layer from compute-bound SQL queries to a high-performance **Local Telemetry Cache**.
+
+### 1. The Telemetry Cache Layer
+We built a background engine that pre-aggregates 7-day telemetry windows into localized Parquet files.
+- **API Acceleration**: When a client requests 7-day data, the API fetches the bulk historical data from the `telemetry-cache/` volume and only queries TimescaleDB for the most recent, real-time metrics, computationally merging them.
+- **O(1) Discovery**: Utilized `PyArrow` for vectorized hydration, reading massive historical datasets directly from local disk, bypassing Python's GIL for extreme concurrency.
+- **Impact**: API response times dropped from 80s down to <20s for 1,000-device clusters.
+
+### 2. Dual-Write Medallion Architecture
+We addressed critical network latency (previously caused by MinIO object storage) by shifting to **Local NVMe Storage** with strict data silos:
+- **`telemetry-cache/`**: The hot-path cache for sub-second 7-day historical API lookups.
+- **`data/raw/`**: Dedicated local storage for Apache Spark Streaming ingestion.
+- **`data/archive/`**: Reserved for Long-term Compliance (cold path), storing consolidated daily Parquet silos.
+
+### Post-Cache Performance Results (Final V3)
+With the Telemetry Cache layer active, the system achieved a massive performance breakthrough, shifting the bottleneck entirely from software to physical hardware limits.
 
 | Metric | Baseline (Pre-Cache) | Optimized (V3 Cache) | Result |
 | :--- | :--- | :--- | :--- |
@@ -392,87 +140,20 @@ With the local cache layer and vectorized hydration fully implemented, the syste
 | **Peak Throughput** | ~120k pts/sec | **~163,685 pts/sec** | **+36% Gain** |
 | **Memory Stability** | Spike-Prone | **Capped @ 6.07GB** | **Production-Stable** |
 
-**System Status**: The pipeline is now fully stabilized and verified for production-scale loads of up to **80,000 devices**. The bottleneck has been successfully shifted from Python application logic to physical hardware limits.
+---
+
+# Phase 5: Aggressive Memory Reclamation (April 22 - April 30)
+
+## Problem: C++ Allocator Retention
+After heavy benchmark runs (23 consecutive 10k-device exports), the container's idle memory remained at ~4.8 GB instead of settling back to ~3.4 GB. 
+- **Root Cause**: PyArrow's internal C++ allocator (jemalloc/mimalloc) retains freed memory pages as a performance optimization, preventing the OS from reclaiming them.
+- **Solution**: Added `pa.default_memory_pool().release_unused()` to the post-export cleanup phase in `api_v2.py`, combined with the existing `malloc_trim(0)`.
+- **Result**: Idle container memory successfully drops from ~4.8 GB down to ~3.4 GB immediately after export completion, allowing the host to reclaim resources.
+- **Trade-off**: ~5ms of CPU time per cleanup cycle, which is completely negligible against a 3,000ms+ export operation.
 
 ---
 
-## 📋 Implementation Checklist
-
-- [x] Created `schema_builder.py` with unified builders
-- [x] Updated `api_v2.py` to use unified builder
-- [x] Updated `kafka_producer.py` to use unified builder
-- [x] Created `validate_schema.py` for verification
-- [x] Added backward compatibility checks
-- [x] Documented all changes
-- [x] Verified no breaking changes
-- [x] Ready for production deployment
-
----
-
-## 📚 Related Files Updated
-
-| File                                                                      | Type | Changes                                                                               |
-| ------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------- |
-| [schema_builder.py](../ingestion/schema_builder.py)                       | NEW  | Unified schema builder module                                                         |
-| [api_v2.py](../ingestion/v2/api/api_v2.py)                                | MOD  | Use unified builder in `_build_full_record()` and `_process_and_send()`               |
-| [kafka_producer.py](../ingestion/core/kafka_producer.py)                  | MOD  | Use unified builder in `_build_48_field_record()` and `push_history_batch_to_kafka()` |
-| [validate_schema.py](../ingestion/validate_schema.py)                     | NEW  | Schema validation tool                                                                |
-| [SCHEMA_STANDARDIZATION.md](../SCHEMA_STANDARDIZATION.md)                 | NEW  | Complete documentation                                                                |
-| [KAFKA_SCHEMA_MISMATCH_ANALYSIS.md](../KAFKA_SCHEMA_MISMATCH_ANALYSIS.md) | MOD  | Mark issue as RESOLVED                                                                |
-| [input_schema.py](../schema/input_schema.py)                              | REF  | Canonical reference (unchanged)                                                       |
-
----
-
-## 🔐 Quality Assurance
-
-### Code Quality
-
-- ✅ Type hints used throughout
-- ✅ Default fallbacks for all fields
-- ✅ Comprehensive docstrings
-- ✅ Error handling for edge cases
-
-### Testing
-
-- ✅ Schema validator included
-- ✅ Backward compatibility verified
-- ✅ Downstream impact assessed
-- ✅ No regressions expected
-
-### Documentation
-
-- ✅ Inline code comments
-- ✅ Function docstrings
-- ✅ Implementation summary (this file)
-- ✅ Troubleshooting guide included
-
----
-
-## 🎯 Next Steps
-
-### Immediate (Before Deployment)
-
-1. Review changes in `schema_builder.py`, `api_v2.py`, `kafka_producer.py`
-2. Run validator on existing messages: `validate_schema.py --sample-count=100`
-3. Merge to main branch
-
-### Deployment
-
-1. Update container image: `docker compose build --no-cache atlas-ingestion`
-2. Restart service: `docker compose up -d atlas-ingestion`
-3. Monitor logs: `docker logs -f atlas-ingestion`
-4. Validate: `validate_schema.py --sample-count=50`
-
-### Post-Deployment
-
-1. Monitor Kafka topic for messages with inventory_data
-2. Update any dependent services' schemas (optional, not required)
-3. Archive old messages for reference
-4. Document schema version in changelog
-
----
-
-## 🏆 Final Pipeline Optimization Update (2026-05-09)
+# Phase 6: Pipeline Optimization Update (May 1 - May 15)
 
 The PowerPulse V3 Ingestion Engine has been successfully finalized and verified at production scale. This update marks the completion of the performance hardening phase.
 
@@ -480,12 +161,11 @@ The PowerPulse V3 Ingestion Engine has been successfully finalized and verified 
 - **Throughput Breakthrough**: Reached a stable peak of **163,685 points/sec**, effectively tripling the initial v3 baseline and saturating 12-core host capacity.
 - **Architecture Finalization**: Successfully pivoted to a **Local FS Lakehouse** model, eliminating MinIO overhead and achieving sub-second Parquet discovery.
 - **Serialization Efficiency**: Implemented **Zero-Copy JSON Stitching** (`orjson.Fragment`), slashing GC pauses and memory pressure under high-concurrency 10,000-device loads.
-- **Observability**: Integrated full-stack **Jaeger Tracing** across the hydration and delivery layers for deep-dive performance analysis.
 - **Container Hardening**: Resolved all environment-specific bottlenecks including Docker volume sync locks and graphics dependency issues for the visualization layer.
 
 ---
 
-# Phase 7: Kafka Resiliency & Memory Optimization (May 30, 2026)
+# Phase 7: Kafka Resiliency & Refactoring (May 16 - May 30)
 
 ## Overview
 This phase focused on making the ingestion API fully independent of Kafka's lifecycle and introducing aggressive memory reclamation to reduce idle container footprint. Additionally, the Kafka cluster switching workflow was unified via `single.bat` / `cluster.bat` with automatic environment injection.
@@ -495,12 +175,6 @@ This phase focused on making the ingestion API fully independent of Kafka's life
 - **After**: `get_kafka()` now uses a lazy-connect pattern with a `KAFKA_STARTED` flag. On failure, it logs a warning and lets the API boot normally. The producer automatically retries connection on the next export request.
 - Removed the unsafe `await producer.start()` from `main.py`'s startup handler that was independently crashing the app.
 
-### 2. Aggressive Memory Reclamation (`api_v2.py`)
-- **Problem**: After heavy benchmark runs (23 consecutive 10k-device exports), the container's idle memory remained at ~4.8 GB instead of settling back to ~3.4 GB.
-- **Root Cause**: PyArrow's internal C++ allocator (jemalloc/mimalloc) retains freed memory pages as a performance optimization, preventing the OS from reclaiming them.
-- **Solution**: Added `pa.default_memory_pool().release_unused()` to the post-export cleanup phase, combined with the existing `malloc_trim(0)`.
-- **Result**: Idle container memory drops from ~4.8 GB to ~3.4 GB after export completion.
-- **Trade-off**: ~5ms of CPU time per cleanup cycle, which is negligible against a 3,000ms+ export operation.
 
 ### 3. Dynamic Kafka Bootstrap (`docker-compose.yml`)
 - Changed `KAFKA_BOOTSTRAP` from a hardcoded value to `${KAFKA_BOOTSTRAP:-broker1:9092}`.
@@ -543,7 +217,7 @@ With the 3-broker cluster properly configured:
 
 ---
 
-# Phase 8: V3 Finalization & Concurrency Hardening (June 7, 2026)
+# Phase 8: V3 Finalization & Concurrency Hardening (June 1 - June 7)
 
 ## Overview
 This phase marked the absolute finalization of the PowerPulse V3 architecture, shifting from deadlock-prone multi-processing to high-stability thread pools, implementing realistic telemetry modeling for downstream machine learning, and completely overhauling the documentation suite.
@@ -572,11 +246,11 @@ This phase marked the absolute finalization of the PowerPulse V3 architecture, s
 
 ---
 
-## 📂 Benchmark Results & Scripts
+## Benchmark Results & Scripts
 
 All benchmark scripts, raw output logs, and historical throughput data are maintained in a dedicated directory for reproducibility and regression testing.
 
-📁 **Location**: [v2/scripts/benchmarks/](./v2/scripts/benchmarks/)
+ **Location**: [v2/scripts/benchmarks/](./v2/scripts/benchmarks/)
 
 | File | Description |
 | :--- | :--- |
