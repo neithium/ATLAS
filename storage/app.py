@@ -150,14 +150,33 @@ def get_ch_data(table_name, limit=50):
     return pd.DataFrame()
 
 @st.cache_data(ttl=10) # 10-second TTL for "Real-Time" feel
-def get_ch_chart_data(table, x_col, y_col, color_col, limit=1000):
-    """Fetches specific columns for plotting, ordered by time."""
+def get_ch_chart_data(table, x_col, y_col, y_col_type, color_col, limit=1000):
+    """Fetches specific columns for plotting, safely resolving ClickHouse Aggregate states."""
     if ch_client:
         try:
-            select_cols = f"{x_col}, {y_col}"
-            if color_col != "None": select_cols += f", {color_col}"
+            # Check if this is a Materialized View / Rollup state column
+            is_agg = "AggregateFunction" in y_col_type
+            y_query_col = y_col
             
-            query = f"SELECT {select_cols} FROM atlas.{table} ORDER BY {x_col} DESC LIMIT {limit}"
+            # If it's an aggregate state, extract the function (avg, sum, max) and apply the Merge combinator
+            if is_agg:
+                agg_func = y_col_type.split("(")[1].split(",")[0].strip()
+                y_query_col = f"{agg_func}Merge({y_col}) AS {y_col}"
+            
+            select_cols = f"{x_col}, {y_query_col}"
+            group_by_clause = ""
+            
+            # Dynamically build the GROUP BY if we are resolving aggregate states
+            if color_col != "None": 
+                select_cols += f", {color_col}"
+                if is_agg:
+                    group_by_clause = f"GROUP BY {x_col}, {color_col}"
+            else:
+                if is_agg:
+                    group_by_clause = f"GROUP BY {x_col}"
+            
+            # Construct final query
+            query = f"SELECT {select_cols} FROM atlas.{table} {group_by_clause} ORDER BY {x_col} DESC LIMIT {limit}"
             return ch_client.query_df(query)
         except Exception as e:
             st.error(f"Chart Data Error: {e}")
@@ -318,7 +337,12 @@ elif selected_page == "Live Charts Builder":
 
                 # 4. Fetch and Plot
                 with st.spinner("Fetching data from ClickHouse..."):
-                    chart_df = get_ch_chart_data(chart_table, x_axis, y_axis, color_by, row_limit)
+                    
+                    # Extract the ClickHouse data type for the selected Y-axis
+                    y_col_type = schema_df.loc[schema_df['name'] == y_axis, 'type'].values[0]
+                    
+                    # Pass the type into our new smart function
+                    chart_df = get_ch_chart_data(chart_table, x_axis, y_axis, y_col_type, color_by, row_limit)
                     
                     if not chart_df.empty:
                         chart_df = chart_df.sort_values(by=x_axis)
@@ -330,7 +354,7 @@ elif selected_page == "Live Charts Builder":
                             template="plotly_dark",
                             title=f"{y_axis} over time (Last {row_limit} records)"
                         )
-                        fig.update_layout(height=600) # Made the chart taller!
+                        fig.update_layout(height=600)
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.warning("No data returned for the selected parameters.")
