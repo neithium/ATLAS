@@ -107,7 +107,7 @@ REFINED_PATH = os.getenv("REFINED_DATA_PATH", "/data/refined")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5000"))  # Reduced from 10000 for memory efficiency
 SCHEDULE_INTERVAL = int(os.getenv("SCHEDULE_INTERVAL_SECONDS", "0"))
 WATERMARK_SOURCE = "delta_refined"
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "10000"))  # Reduced for memory safety  # Parquet reading chunk size (rows per batch)
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "30000"))  # Reduced for memory safety  # Parquet reading chunk size (rows per batch)
 
 # ---------------------------------------------------------------------------
 # Column order matching the ClickHouse telemetry_refined table definition

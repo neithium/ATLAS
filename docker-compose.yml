@@ -570,7 +570,7 @@ services:
       - KEEP_ALIVE=${KEEP_ALIVE:-y}                  # y = keep container running after pipeline
       # Storage optimization settings
       - COMPRESSION_CODEC=${COMPRESSION_CODEC:-zstd}      # zstd | snappy | gzip
-      - RUN_VACUUM=${RUN_VACUUM:-n}                        # y = run vacuum after pipeline
+      - RUN_VACUUM=${RUN_VACUUM:-y}                        # y = run vacuum after pipeline
       - VACUUM_RETENTION_DAYS=${VACUUM_RETENTION_DAYS:-14} # Days to retain Delta log files
       # Horizontal scaling (dynamic allocation)
       - SPARK_DYNAMIC_ALLOCATION=${SPARK_DYNAMIC_ALLOCATION:-false}  # Enable dynamic allocation (true/false)
