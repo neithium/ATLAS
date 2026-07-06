@@ -1,5 +1,7 @@
 # PowerPulse V3 Unified Ingestion Engine (80,000+ Devices)
 
+![Ingestion Architecture](../../ingestion/assets/Ingestion%20(1).png)
+
 This service implements a production-grade **Unified Telemetry Ingestion Architecture** designed to handle **80,000 devices** at 5-minute intervals. It leverages a multi-tier persistence strategy to achieve extreme throughput while maintaining strict data durability.
 
 ## Core Purpose
