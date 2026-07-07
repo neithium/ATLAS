@@ -20,7 +20,7 @@ The pipeline processes telemetry through a resilient, multi-tier architecture en
 
 ### 1. Unified Ingestion & Generation Layer
 
-The critical "front door" of the PowerPulse architecture. This layer is designed to act as a massive shock absorber, capable of continuously normalizing and pushing over **245,000 telemetry points per second** into the downstream data pipeline.
+The critical "front door" of the PowerPulse architecture. This layer is designed to act as a massive shock absorber, capable of continuously normalizing and pushing over **147,000+ telemetry points per second** into the downstream data pipeline.
 
 **System Overview:**
 * **Synthetic Telemetry Generation:** A physics engine continuously simulates real-world, 5-minute interval power metrics (wattage, temperatures, CPU usage) across a massive fleet of 80,000+ devices, including the ability to inject targeted hardware failures for ML training.
