@@ -1,6 +1,6 @@
 # ATLAS Airflow Orchestration Layer
 
-> **Ownership**: Knsrikanta (Streaming & Orchestration sub-team)  
+> **Ownership**: S Nandini (Streaming & Orchestration sub-team)  
 
 Apache Airflow DAGs that coordinate the ATLAS batch ingestion path and operational supervisor systems.
 

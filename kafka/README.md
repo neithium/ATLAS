@@ -1,6 +1,6 @@
 # ATLAS Kafka Event Streaming Layer
 
-> **Ownership**: Knsrikanta (Streaming & Orchestration sub-team)
+> **Ownership**: S Nandini (Streaming & Orchestration sub-team)
 
 This module manages the distributed message queue and event streaming infrastructure for the ATLAS telemetry platform. It provides a multi-broker ZooKeeper-less Apache Kafka (KRaft) cluster designed for high availability, fault tolerance, and scalable event routing.
 

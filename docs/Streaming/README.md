@@ -1,6 +1,6 @@
 # ATLAS Event Streaming and Orchestration Platform
 
-> **Ownership**: Knsrikanta (Streaming & Orchestration sub-team)  
+> **Ownership**: S Nandini (Streaming & Orchestration sub-team)  
 
 This module forms the backbone of the ATLAS real-time event streaming and batch/stream orchestration pipeline. It ensures high availability, fault tolerance, data quality validation via a Dead Letter Queue (DLQ), and automated cluster monitoring.
 

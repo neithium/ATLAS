@@ -29,7 +29,7 @@ Final score:
 NOTE: This formula is still under team discussion.  Only this file needs
 to change if the formula is revised.
 
-Owner: Knsrikanta (ML Inference)
+Owner: S Nandini (ML Inference)
 """
 
 import logging

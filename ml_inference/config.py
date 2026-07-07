@@ -10,7 +10,7 @@ contain hard-coded values.
 Environment-variable overrides are supported for Docker
 deployments — see the comment next to each constant.
 
-Owner: Knsrikanta (ML Inference)
+Owner: S Nandini (ML Inference)
 """
 
 import os

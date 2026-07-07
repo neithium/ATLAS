@@ -29,7 +29,7 @@ Running
     # Override paths via environment:
     ML_INPUT_DIR=/data/live ML_OUTPUT_DIR=/data/ml_predictions python inference.py
 
-Owner: Knsrikanta (ML Inference)
+Owner: S Nandini (ML Inference)
 """
 
 import argparse
