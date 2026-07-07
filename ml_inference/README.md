@@ -1,5 +1,7 @@
 # ATLAS ML Inference Pipeline
 
+> **Ownership**: Knsrikanta (Streaming & Orchestration sub-team)
+
 This module implements the machine learning inference pipeline for the ATLAS telemetry platform. It consumes live telemetry data in real-time, performs unsupervised anomaly detection using an Isolation Forest model, computes a composite device health score, and exports enriched records for downstream ingestion into ClickHouse.
 
 ---
