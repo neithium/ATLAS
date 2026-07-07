@@ -1,135 +1,110 @@
 # ATLAS Airflow Orchestration Layer
 
-Apache Airflow DAGs that coordinate the ATLAS Lambda architecture — batch path, stream path, and operational supervisors.
+> **Ownership**: Knsrikanta (Streaming & Orchestration sub-team)  
 
-**Author:** Nandini
-
-**Related docs:** Kafka broker setup in [`kafka/README.md`](../kafka/README.md). Spark job internals in [`processing/readme.md`](../processing/readme.md).
+Apache Airflow DAGs that coordinate the ATLAS batch ingestion path and operational supervisor systems.
 
 ---
 
-# Overview
+## Overview
 
-Airflow is the **control plane** for ATLAS. It does not run heavy compute itself — it triggers and supervises work inside Docker containers via the mounted Docker Unix socket:
-
-- **Batch path:** Ingestion export → Spark batch → parquet sensor → ClickHouse load → verify
-- **Stream path:** Kafka export → ensure Spark streaming → ensure Delta livewire
+Airflow acts as the **control plane** for ATLAS. It does not run heavy compute locally; instead, it triggers and supervises tasks inside Docker containers via shell commands executed against the mounted Docker Unix socket.
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
 │              Apache Airflow (orchestration)               │
-│  atlas_batch_pipeline  │  atlas_stream_pipeline          │
-│  supervisors + DLQ monitor + kafka health                 │
+│  atlas_batch_pipeline   │   atlas_streaming_supervisor   │
+│  atlas_kafka_health                                      │
 └──────────────────────────────────────────────────────────┘
          │ docker exec via Unix socket
          ▼
-  atlas-ingestion │ atlas-processor │ atlas-lakehouse │ atlas-analytics
+   atlas-ingestion │ atlas-processor │ atlas-lakehouse │ atlas-analytics
 ```
 
 ---
 
-# Services (docker-compose)
+## Services (docker-compose)
 
-| Service | Host port | Role |
-|---------|-----------|------|
-| `airflow-db` | internal | PostgreSQL metadata store |
-| `airflow-webserver` | `8081 → 8080` | DAG UI |
-| `airflow-scheduler` | internal | Executes scheduled DAGs |
+| Service | Host Port | Role |
+| :--- | :--- | :--- |
+| `airflow-db` | Internal | PostgreSQL metadata store |
+| `airflow-webserver` | `8081 → 8080` | DAG web management console |
+| `airflow-scheduler` | Internal | Workflow trigger and task scheduling engine |
 
 Volumes mounted into Airflow containers:
-
-- `./orchestration/dags` → `/opt/airflow/dags`
-- `./orchestration/plugins` → `/opt/airflow/plugins`
-- `/var/run/docker.sock` → Docker API for container exec
+* `./orchestration/dags` → `/opt/airflow/dags`
+* `./orchestration/plugins` → `/opt/airflow/plugins`
+* `/var/run/docker.sock` → Docker API socket for container exec operations
 
 ---
 
-# Required Airflow Connection
+## Required Airflow Connection
 
 Create once in the UI (`Admin → Connections`):
 
 | Conn Id | Type | Host |
-|---------|------|------|
+| :--- | :--- | :--- |
 | `atlas_ingestion_api` | HTTP | `http://atlas-ingestion:8001` |
 
 ---
 
-# DAG Inventory
+## DAG Inventory
+
+The platform orchestrates 3 core DAGs:
 
 | DAG ID | Schedule | Purpose |
-|--------|----------|---------|
-| `atlas_batch_pipeline` | `@hourly` | Full batch: export → Spark → sensor → ClickHouse → verify |
-| `atlas_stream_pipeline` | `*/15 * * * *` | Stream: export → streaming supervisor → livewire supervisor |
-| `telemetry_master_pipeline` | `@hourly` | Customer-scoped batch (PCID/ACID export) |
-| `atlas_streaming_supervisor` | `*/10 * * * *` | Restarts `kafka_streaming.py` if stopped |
-| `atlas_dlq_monitor` | `@hourly` | Reports DLQ topic offsets |
-| `atlas_kafka_health` | Manual | Broker reachability check |
+| :--- | :--- | :--- |
+| `atlas_batch_pipeline` | `@hourly` | Coordinates the Lambda Batch path: export → Spark Batch → check refined parquet → ClickHouse Loader → Data Guard Verify. |
+| `atlas_streaming_supervisor` | `*/10 * * * *` | Restarts `kafka_streaming.py` in the processor container if it stops. |
+| `atlas_kafka_health` | Manual | Performs diagnostics and connectivity checks against all cluster Kafka brokers. |
 
 ---
 
-# Batch Pipeline Workflow
+## Batch Pipeline Workflow
 
-**DAG:** `atlas_batch_pipeline`  
-**File:** `dags/dag_master_pipeline.py`
+**DAG**: `atlas_batch_pipeline`  
+**File**: `dags/dag_master_pipeline.py`
 
 ```text
-trigger_ingestion_export
-        │  POST /fleet/telemetry/export
+wait_for_raw_parquet
+        │  PythonSensor — waits for *.parquet in raw storage volume
         ▼
-trigger_spark_batch_processing
-        │  spark-submit /app/jobs/batch_job.py
+settle_after_archive
+        │  3-minute sleep period to ensure file writes finish cleanly
         ▼
-check_refined_parquet_exists
-        │  PythonSensor — waits for *.parquet in /data/refined
+run_spark_batch
+        │  Spark processing: reads raw parquet, outputs process parquet
         ▼
-trigger_clickhouse_load
-        │  python3 /app/delta_loader.py
+trigger_lakehouse_deduplication
+        │  Runs Delta Lake MERGE and Z-Ordering in atlas-lakehouse
         ▼
-verify_data_load
-        │  ClickHouse HTTP sanity check
+check_refined_parquet
+        │  PythonSensor — waits for refined *.parquet under /refined
+        ▼
+run_clickhouse_load
+        │  Delta Loader parses refined data into ClickHouse
+        ▼
+verify_clickhouse_data
+        │  Data Guard: verifies record count and averages via local docker exec
         ▼
 log_pipeline_status
 ```
 
-### Design decisions
-
-- **`@hourly` schedule** — aligns with rolling archive windows
-- **PythonSensor before ClickHouse** — loader never runs on empty refined data
-- **Detached Docker exec** — long Spark jobs don't false-fail with "up for retry"
-- **ClickHouse verify via HTTP** — no shell `bc` dependency inside Airflow
-- **Loader path:** `/app/delta_loader.py`
-
-Extended batch steps (RAW sensor, lakehouse MERGE) live in `dags/atlas_pipeline_ops.py`.
+### Design Decisions
+* **Docker Exec Pattern**: Tasks shell directly into operational containers via Unix socket, preventing network timeout issues on long-running compute jobs.
+* **Refined Parquet Sensor**: The ClickHouse loader only fires if refined parquet data is actually present, preventing unnecessary empty writes.
+* **ClickHouse Local Exec**: The Data Guard runs queries using `clickhouse-client` inside the analytics container to bypass loopback binding restrictions on port `8123`.
 
 ---
 
-# Stream Pipeline Workflow
+## Docker Exec Helper
 
-**DAG:** `atlas_stream_pipeline`  
-**File:** `dags/dag_stream_pipeline.py`
-
-```text
-trigger_stream_kafka_export
-        ▼
-ensure_kafka_streaming_job
-        ▼
-ensure_lakehouse_livewire
-        ▼
-log_stream_health
-```
-
-ClickHouse loading is handled by the batch DAG, not the stream DAG.
-
----
-
-# Docker Exec Helper
-
-**File:** `dags/atlas_utils.py`
+**File**: `dags/atlas_utils.py`
 
 Airflow calls the Docker Unix socket via `curl` subprocess (avoids breaking the Airflow image with the `docker` Python SDK):
 
 | Function | Use |
-|----------|-----|
+| :--- | :--- |
 | `_docker_exec()` | Run command, poll until exit |
 | `docker_exec_or_raise()` | Same, raises on non-zero exit |
 | `docker_exec_fire_and_forget()` | Start long-running jobs |
@@ -137,43 +112,28 @@ Airflow calls the Docker Unix socket via `curl` subprocess (avoids breaking the 
 | `container_top_contains()` | Process pattern check |
 | `wait_for_container_process()` | Poll until process up/down |
 
-Shared task callables: `dags/atlas_pipeline_ops.py`.
-
 ---
 
-# Module Structure
+## Module Structure
 
 ```text
 orchestration/
 ├── README.md                    # This document
 ├── dags/
-│   ├── atlas_utils.py           # Docker socket exec helpers
-│   ├── atlas_pipeline_ops.py    # Shared batch/stream task callables
-│   ├── dag_master_pipeline.py   # atlas_batch_pipeline
-│   ├── dag_stream_pipeline.py   # atlas_stream_pipeline
-│   ├── telemetry_pipeline.py    # telemetry_master_pipeline
-│   ├── dag_streaming_supervisor.py
-│   ├── dag_dlq_monitor.py
-│   └── dag_kafka_health.py
-└── deprecated_dags/               # Superseded prototypes
+│   ├── atlas_utils.py           # Docker socket exec helper functions
+│   ├── atlas_pipeline_ops.py    # Shared task callables
+│   ├── dag_master_pipeline.py   # atlas_batch_pipeline DAG
+│   ├── dag_streaming_supervisor.py # atlas_streaming_supervisor DAG
+│   └── dag_kafka_health.py      # atlas_kafka_health DAG
+└── deprecated_dags/             # Legacy workflow designs
 ```
-
-Stack startup (includes Airflow services) uses `kafka/scripts/single.bat` or `cluster.bat` — see [`kafka/README.md`](../kafka/README.md).
 
 ---
 
-# Execution Guide
+## Execution and Setup Guide
 
-## 1. Start stack (includes Airflow)
-
-From repo root:
-
-```powershell
-.\single.bat
-```
-
-## 2. First-time Airflow setup
-
+### 1. First-time Airflow Setup
+To initialize the database schema and create a default admin user, run:
 ```powershell
 docker compose run --rm airflow-scheduler airflow db init
 
@@ -182,111 +142,19 @@ docker compose run --rm airflow-scheduler airflow users create `
   --role Admin --email admin@atlas.local
 ```
 
-Add the `atlas_ingestion_api` connection (see above).
-
-## 3. Open Airflow UI
-
-http://localhost:8081 — unpause `atlas_batch_pipeline` and `atlas_stream_pipeline`.
-
-## 4. Trigger runs manually
-
-```powershell
-docker exec airflow-scheduler airflow dags trigger atlas_stream_pipeline
-docker exec airflow-scheduler airflow dags trigger atlas_batch_pipeline
-docker exec airflow-scheduler airflow dags trigger atlas_kafka_health
-```
-
----
-
-# Testing
-
-## Import check
-
+### 2. Verify DAG Imports
+Ensure there are no parsing issues and all 3 DAGs load successfully:
 ```powershell
 docker exec airflow-scheduler airflow dags list-import-errors
 docker exec airflow-scheduler airflow dags list | findstr atlas_
 ```
+*Expected: Empty list-import-errors, and the 3 core DAGs listed.*
 
-**Expect:** No import errors; all six DAGs listed.
-
-## Stream path (fast, ~2 min)
-
+### 3. Trigger DAGs via CLI
+You can trigger workflows directly from the host terminal:
 ```powershell
-docker exec airflow-scheduler airflow dags trigger atlas_stream_pipeline
-```
-
-**Expect:** All four tasks green.
-
-## Batch path (slow, 30–90 min)
-
-```powershell
-# Seed data first
-docker exec atlas-ingestion python3 /app/v2/scripts/prefill_tsdb.py --days 1 --limit 200 --skip-archive
-docker exec atlas-ingestion python3 /app/v2/scripts/manual_archive.py
-
 docker exec airflow-scheduler airflow dags trigger atlas_batch_pipeline
+docker exec airflow-scheduler airflow dags trigger atlas_kafka_health
+docker exec airflow-scheduler airflow dags trigger atlas_streaming_supervisor
 ```
-
-**Expect:** Through `verify_data_load` with ClickHouse count > 0:
-
-```powershell
-curl "http://127.0.0.1:8124/?user=atlas&password=atlas_secure_pwd" -Method POST -Body "SELECT count() FROM atlas.telemetry_refined"
-```
-
----
-
-# Troubleshooting
-
-## Export task HTTP / connection errors
-
-Connection must be `http://atlas-ingestion:8001` (not port 80 or 8000).
-
-## Spark task "up for retry"
-
-Ensure latest `atlas_utils.py` uses detached exec + polling.
-
-## `ModuleNotFoundError: atlas_utils`
-
-```python
-import sys
-sys.path.append('/opt/airflow/dags')
-```
-
-## `verify_data_load` fails (avg = 0)
-
-Check Spark logs and refined parquet count inside `atlas-analytics`.
-
-## `telemetry_master_pipeline` step 1 fails (404)
-
-DAG endpoint may need updating to `/telemetry/latest/export` — check `dags/telemetry_pipeline.py`.
-
----
-
-# Technologies
-
-- Apache Airflow 2.7.1 (LocalExecutor)
-- Python 3.10
-- Docker Unix socket API (`curl`)
-- ClickHouse HTTP (verification)
-- SimpleHttpOperator → ingestion API
-
----
-
-# Integration
-
-| Module | Integration |
-|--------|-------------|
-| `kafka/` | Brokers buffer exported telemetry; health/DLQ DAGs monitor Kafka |
-| `ingestion/` | HTTP export endpoints triggered by DAGs |
-| `processing/` | Airflow runs `batch_job.py`, supervises `kafka_streaming.py` |
-| `delta_lake/` | Stream DAG ensures `run_livewire.py` |
-| `storage/` | Batch DAG triggers `delta_loader.py`, verifies ClickHouse |
-
----
-
-# Output
-
-- Scheduled, auditable pipeline runs
-- Verified ClickHouse loads after batch cycles
-- Continuous stream path supervision
-- DLQ and broker health visibility via supervisor DAGs
+Alternatively, manage the workflow states dynamically by logging into the Airflow UI at `http://localhost:8081` (credentials: `admin`/`admin`).

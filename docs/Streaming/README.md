@@ -1,15 +1,16 @@
-# ATLAS Event Streaming, Orchestration, and ML Inference Platform
+# ATLAS Event Streaming and Orchestration Platform
 
-This module forms the backbone of the ATLAS real-time event streaming, batch and stream orchestration, and machine learning inference pipeline. It ensures high availability, fault tolerance, data quality validation via a Dead Letter Queue (DLQ), and automated device health monitoring.
+> **Ownership**: Knsrikanta (Streaming & Orchestration sub-team)  
+
+This module forms the backbone of the ATLAS real-time event streaming and batch/stream orchestration pipeline. It ensures high availability, fault tolerance, data quality validation via a Dead Letter Queue (DLQ), and automated cluster monitoring.
 
 ---
 
 ## System Architecture Overview
 
-The platform is divided into three interconnected layers:
+The platform is divided into two main layers:
 1. **Event Streaming Layer (Kafka KRaft)**: Manages ingestion buffering, distributed parallel storage, and fault-tolerant message queues.
-2. **Orchestration Layer (Apache Airflow)**: Coordinates batch ingestion, spark streaming jobs, DLQ monitoring, and cluster health checks.
-3. **ML Inference Pipeline (Isolation Forest)**: Performs real-time anomaly detection, computes device health scores, and routes outputs to ClickHouse.
+2. **Orchestration Layer (Apache Airflow)**: Coordinates batch ingestion, spark streaming jobs, and cluster health checks.
 
 ---
 
@@ -22,7 +23,7 @@ The event streaming layer acts as a scalable, high-throughput buffer between the
 * **Distributed Parallel Storage**: The primary topic `raw-server-metrics` is configured with **12 partitions** to distribute write loads evenly and enable concurrent high-throughput processing.
 * **High Availability & Quorum Durability**: A 3-broker ZooKeeper-less KRaft cluster is deployed with a Replication Factor of 3 (**RF=3**) and Minimum In-Sync Replicas of 2 (**MIN_ISR=2**), guaranteeing message durability and cluster availability during broker failure scenarios.
 * **Automatic Quorum Recovery**: Handles broker failure detection, automatic leader election, and partition rebalancing to restore cluster stability without manual intervention.
-* **Isolating & Reprocessing DLQ Pipeline**: Invalid schema or corrupted records are routed to `raw-server-metrics-dlq` (3 partitions) for repair by the DLQ Reviewer. Recoverable records are republished to `raw-server-metrics-retry` (3 partitions) for reprocessing, while unrecoverable records are permanently isolated in `raw-server-metrics-failure` (3 partitions).
+* **Isolating & Reprocessing DLQ Pipeline**: Invalid schema or corrupted records are routed to `raw-server-metrics-dlq` (3 partitions) for repair by the DLQ Reviewer. Recoverable records are republished to `raw-server-metrics-retry` (3 partitions) for reprocessing, and unrecoverable records are permanently isolated in `raw-server-metrics-failure` (3 partitions).
 
 ### Kafka Architecture Diagram
 
@@ -91,73 +92,23 @@ graph LR
     subgraph DAGS [DAGS]
         direction TB
         dag1["atlas_kafka_health"]
-        dag2["atlas_stream_pipeline"]
+        dag2["atlas_batch_pipeline"]
         dag3["atlas_streaming_supervisor"]
-        dag4["atlas_dlq_monitor"]
     end
     
     Scheduler["AIRFLOW SCHEDULER"] --> dag1
     Scheduler --> dag2
     Scheduler --> dag3
-    Scheduler --> dag4
 
     classDef sched fill:#ffffff,stroke:#000000,stroke-width:2px;
     classDef health fill:#fef5e7,stroke:#f39c12,stroke-width:2px,rx:10px,ry:10px;
     classDef stream fill:#ebf5fb,stroke:#2980b9,stroke-width:2px,rx:10px,ry:10px;
     classDef supervisor fill:#fdedec,stroke:#e74c3c,stroke-width:2px,rx:10px,ry:10px;
-    classDef dlq fill:#eaf2f8,stroke:#27ae60,stroke-width:2px,rx:10px,ry:10px;
     
     class Scheduler sched;
     class dag1 health;
     class dag2 stream;
     class dag3 supervisor;
-    class dag4 dlq;
-```
-
----
-
-## 3. Machine Learning Inference Pipeline
-
-The ML Inference Pipeline runs anomaly detection models against telemetry data to determine real-time device health metrics.
-
-### Key Features
-* **Isolation Forest Model**: Loads the pre-trained `isolation_forest.pkl` model to predict whether incoming metrics indicate normal operation or an anomaly.
-* **Feature Engineering**: Auto-derives temporal features (`hour_of_day`, `day_of_week`) from `metric_time` to align with the training schema.
-* **Composite Health Scoring**: Computes a health score (0–100) based on weighted parameters, categorizing server status into Healthy, Warning, Degraded, or Critical.
-* **ClickHouse Integration**: Stores the enriched records containing predictions, scores, and status flags into ClickHouse.
-
-### ML Inference Pipeline Diagram
-
-```mermaid
-graph LR
-    ModelFile["Isolation_forest_model.pkl"]
-    DataFile["CSV/Parquet files"]
-    
-    Pandas((Pandas))
-    FeatEng{Feature engineering}
-    
-    FeatVector["Feature vector:<br>• MetricValue<br>• avg_metric_value<br>• max_metric_value<br>• min_metric_value<br>• hour_of_day (Derived)<br>• day_of_week (Derived)"]
-    
-    ModelPredict{Isolation_forest_model.pkl}
-    Outputs["Outputs:<br>• is_anomaly<br>• anomaly_score"]
-    
-    HealthCalc((Health score calculation))
-    
-    Appended["Appended columns:<br>• MetricValue<br>• avg_metric_value<br>• max_metric_value<br>• min_metric_value<br>• hour_of_day<br>• day_of_week<br>• is_anomaly (New)<br>• anomaly_score (New)<br>• health_score (New)"]
-    
-    Clickhouse["Clickhouse"]
-    
-    %% Flows
-    ModelFile -->|Load model into memory| Pandas
-    DataFile --> Pandas
-    Pandas --> FeatEng
-    FeatEng --> FeatVector
-    FeatVector -->|send data to the model| ModelPredict
-    ModelPredict --> Outputs
-    Outputs --> HealthCalc
-    FeatVector --> HealthCalc
-    HealthCalc --> Appended
-    Appended --> Clickhouse
 ```
 
 ---
@@ -265,45 +216,5 @@ To run the Kafka cluster and verify event streaming, keep **3 host terminals** o
 4. Access the web interface at `http://localhost:8081`.
 5. Trigger the DAGs in the following operational order:
    1. `atlas_kafka_health`
-   2. `atlas_stream_pipeline`
+   2. `atlas_batch_pipeline`
    3. `atlas_streaming_supervisor`
-   4. `atlas_dlq_monitor`
-
----
-
-### 3. ML Inference Pipeline Demo
-1. Ensure the ML inference environment is started:
-   ```powershell
-   docker start ml-inference
-   ```
-2. Generate fresh live telemetry data containing random anomalies:
-   ```powershell
-   docker exec atlas-ml python live_data_gen.py --anomalies --anomaly-rate 0.05
-   ```
-3. Run the inference pipeline (this triggers the one-shot container execution):
-   ```powershell
-   docker start ml-inference
-   ```
-4. Watch container logs in real-time:
-   ```powershell
-   docker logs -f ml-inference
-   ```
-5. Locate the newly generated prediction Parquet files on the host:
-   ```powershell
-   Get-ChildItem ML-Model\telemetry-data\predictions\ml_predictions_*.parquet | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-   ```
-6. Inspect the prediction outputs directly:
-   ```powershell
-   docker run --rm -v ".\ML-Model\telemetry-data\predictions:/data/ml_predictions" atlas-ml-inference python -c "
-   import pandas as pd, glob
-   f = sorted(glob.glob('/data/ml_predictions/ml_predictions_*.parquet'))[-1]
-   df = pd.read_parquet(f)
-   print('File:', f)
-   print('Rows:', len(df))
-   print(df[['device_id','avg_metric_value','prediction','anomaly_score','health_score','health_status']].head(8).to_string())
-   print('--- Status counts ---')
-   print(df['health_status'].value_counts().to_string())
-   print('--- Anomalies flagged ---')
-   print('prediction=-1:', (df['prediction']==-1).sum())
-   "
-   ```
