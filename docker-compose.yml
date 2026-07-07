@@ -630,7 +630,7 @@ services:
     hostname: analytics
     ports:
       - "127.0.0.1:8124:8123" # ClickHouse HTTP (localhost only)
-      - "127.0.0.1:9002:9000" # ClickHouse Native TCP (localhost only)
+      - "127.0.0.1:9009:9000" # ClickHouse Native TCP (localhost only)
       - "127.0.0.1:5433:5432"
       - "127.0.0.1:8501:8501" # Streamlit Dashboard # PostgreSQL (localhost only, mapped to 5433 to avoid host conflict)
     extra_hosts:
@@ -639,6 +639,8 @@ services:
     environment:
       - CLICKHOUSE_HOST=127.0.0.1
       - POSTGRES_HOST=127.0.0.1
+      # Delta loader reads the shared delta-refined volume (not host bind /data/refined)
+      - REFINED_DATA_PATH=/refined
       # ML Loader configuration
       - ML_PREDICTIONS_PATH=/data/ml_predictions
       - ML_SCHEDULE_INTERVAL_SECONDS=300

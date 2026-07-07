@@ -191,7 +191,7 @@ def run_batch():
 
     INPUT_PATH = "/app/data/raw/production"
 
-    OUTPUT_PATH = "/app/data/processed/batch"
+    OUTPUT_PATH = "/app/data/processed/batch_out"
 
     # =====================================================
     # READ PARQUET

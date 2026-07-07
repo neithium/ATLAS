@@ -55,7 +55,7 @@ Credentials:
     POSTGRES_USER            default: atlas
     POSTGRES_PASSWORD        default: atlas_secure_pwd
     POSTGRES_DB              default: atlas_metadata
-    REFINED_DATA_PATH        default: /data/refined
+    REFINED_DATA_PATH        default: /refined
     BATCH_SIZE               default: 10000
 """
 
@@ -102,7 +102,7 @@ PG_USER = os.getenv("POSTGRES_USER", "atlas")
 PG_PASS = os.getenv("POSTGRES_PASSWORD", "atlas_secure_pwd")
 PG_DB = os.getenv("POSTGRES_DB", "atlas_metadata")
 
-REFINED_PATH = os.getenv("REFINED_DATA_PATH", "/data/refined")
+REFINED_PATH = os.getenv("REFINED_DATA_PATH", "/refined")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10000"))
 WATERMARK_SOURCE = "delta_refined"
 

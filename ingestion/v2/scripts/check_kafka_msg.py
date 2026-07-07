@@ -10,7 +10,7 @@ async def check_msg():
     consumer = AIOKafkaConsumer(
         topic,
         bootstrap_servers=bootstrap,
-        auto_offset_reset='latest',
+        auto_offset_reset='earliest',
         value_deserializer=lambda v: orjson.loads(v)
     )
     
