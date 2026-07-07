@@ -14,12 +14,12 @@ async def run_bench():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger("bench-archive")
     
-    log.info("[DAILY JOB]Initializing Production Registry and DB Pool...")
+    log.info("[DAILY JOB] Initializing Production Registry and DB Pool...")
     load_registry()
     await get_db_pool()
     
     log.info("=" * 70)
-    log.info("⏱️  Starting Production DAILY_ARCHIVAL_JOB...")
+    log.info("[DAILY JOB] Starting Production DAILY_ARCHIVAL_JOB...")
     log.info("=" * 70)
     start_time = time.monotonic()
     

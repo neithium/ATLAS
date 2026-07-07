@@ -3,14 +3,14 @@ CONSOLIDATED BENCHMARK RESULTS (2026-05-01)
 ============================================================
 
 --- 10k Devices (Single App Customer) ---
-Target: APP_CUST_10K (10000 devices)
+Target: PLATCUST10K (10000 devices)
 Total Flow Time:     167.172s
 API Overhead:        1.000s
 Database + Kafka:    166.172s
 System Throughput:   120,594 data points / sec
 
 
-5000 App Customers
+5000 app_customers
 11 devices each
 
 --- Concurrent Multi-App-Customer Sweeps ---

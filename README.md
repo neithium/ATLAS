@@ -20,12 +20,15 @@ The pipeline processes telemetry through a resilient, multi-tier architecture en
 
 ### 1. Unified Ingestion & Generation Layer
 
-The critical "front door" designed to absorb massive traffic bursts and normalize chaotic incoming metrics.
+The critical "front door" of the PowerPulse architecture. This layer is designed to act as a massive shock absorber, capable of continuously normalizing and pushing over **245,000 telemetry points per second** into the downstream data pipeline.
 
-* **Hardware Registry:** Utilizes a static registry (`device_configs.json`) to assign realistic hardware profiles (Intel Xeon, AMD EPYC, DDR4/DDR5) to nodes, bypassing continuous API parsing.
-* **TimescaleDB Hot Path:** Rapidly ingests raw, 5-minute interval power and thermal metrics (`cpu_watts`, `amb_temp`, `cpu_util`) into TimescaleDB, acting as a shock absorber.
-* **Dynamic Hydration:** Fetches raw metrics from TimescaleDB, merges them with the in-memory hardware registry, and streams fully hydrated Golden Records into Kafka.
-* **Historical Physics Engine:** Synthetic generation of 30 days of causal server data with specific hardware failures (e.g., `gpu_overload`, `thermal_failure`) for ML training.
+**System Overview:**
+* **Synthetic Telemetry Generation:** A physics engine continuously simulates real-world, 5-minute interval power metrics (wattage, temperatures, CPU usage) across a massive fleet of 80,000+ devices, including the ability to inject targeted hardware failures for ML training.
+* **TimescaleDB Hot Path:** All incoming telemetry is immediately written to disk-backed TimescaleDB hypertables, providing highly compressed, robust short-term storage capable of handling massive write bursts.
+* **Dynamic Record Hydration:** When data is requested via the API, the system instantly merges the raw telemetry points with a static hardware registry (CPU cores, memory types) to build fully enriched "Golden Records" on the fly.
+* **High-Concurrency API & Streaming:** Powered by FastAPI, the ingestion layer effortlessly fields massive concurrent API requests. It retrieves up to 7 days of historical data, chunks it into safe micro-batches, and streams it directly to Kafka for real-time processing.
+* **Cold Storage Archival:** To keep the hot path fast, older telemetry is automatically aggregated and flushed into a Medallion Data Lake (`telemetry-archive`), partitioned into highly-compressed Parquet files for downstream Apache Spark batch analytics.
+* **Lambda Architecture Support:** The pipeline inherently drives a Lambda Architecture by simultaneously feeding real-time stream processors (via Kafka) and historical batch analytics (via the Parquet data lake) from a single, unified ingest layer.
 - By Jnana
   
 ### 2. Streaming & Message Broker Layer

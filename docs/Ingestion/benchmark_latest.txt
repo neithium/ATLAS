@@ -1,0 +1,156 @@
+100 devices, 100 points/device -> 10k points
+100 devices, 1000 points/device -> 100k points
+100 devices, 10000 points/device -> 1M points
+
+1000 devices, 100 points/device -> 100k points
+1000 devices, 1000 points/device -> 1M points
+1000 devices, 10000 points/device -> 10M points
+
+10000 devices, 100 points/device -> 1M points
+10000 devices, 1000 points/device -> 10M points
+10000 devices, 10000 points/device -> 100M points
+=====================================================================
+BENCHMARK RESULTS AFTER INTRODUCING THE CACHE LAYER
+=====================================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 20 | Total Devices: 16000
+Date: 2026-06-30 11:18:35
+------------------------------------------------------------
+   Total Time:        248.606s
+   Devices Received:  16000/16000
+   System Throughput: 129,747 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 40 | Total Devices: 32000
+Date: 2026-06-30 11:28:24
+------------------------------------------------------------
+   Total Time:        504.182s
+   Devices Received:  32000/32000
+   System Throughput: 127,954 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 20 | Total Devices: 16000
+Date: 2026-06-30 11:44:12
+------------------------------------------------------------
+   Total Time:        224.685s
+   Devices Received:  16000/16000
+   System Throughput: 143,561 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 1600
+Date: 2026-06-30 11:46:01
+------------------------------------------------------------
+   Total Time:        21.709s
+   Devices Received:  1600/1600
+   System Throughput: 148,582 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 20 | Total Devices: 16000
+Date: 2026-06-30 12:01:57
+------------------------------------------------------------
+   Total Time:        280.080s
+   Devices Received:  16000/16000
+   System Throughput: 115,167 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 2 | Total Devices: 1600
+Date: 2026-06-30 15:39:29
+------------------------------------------------------------
+   Total Time:        32.156s
+   Devices Received:  1600/1600
+   System Throughput: 100,312 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 4 | Total Devices: 3200
+Date: 2026-06-30 15:40:29
+------------------------------------------------------------
+   Total Time:        39.648s
+   Devices Received:  3200/3200
+   System Throughput: 162,713 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 6 | Total Devices: 4800
+Date: 2026-06-30 15:42:22
+------------------------------------------------------------
+   Total Time:        58.592s
+   Devices Received:  4800/4800
+   System Throughput: 165,155 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 8 | Total Devices: 6400
+Date: 2026-06-30 15:44:32
+------------------------------------------------------------
+   Total Time:        95.125s
+   Devices Received:  6400/6400
+   System Throughput: 135,636 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 10 | Total Devices: 8000
+Date: 2026-06-30 15:46:40
+------------------------------------------------------------
+   Total Time:        94.813s
+   Devices Received:  8000/8000
+   System Throughput: 170,104 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 12 | Total Devices: 9600
+Date: 2026-06-30 15:49:39
+------------------------------------------------------------
+   Total Time:        149.953s
+   Devices Received:  9600/9600
+   System Throughput: 129,065 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 14 | Total Devices: 11200
+Date: 2026-06-30 15:52:33
+------------------------------------------------------------
+   Total Time:        135.966s
+   Devices Received:  11200/11200
+   System Throughput: 166,065 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 20 | Total Devices: 16000
+Date: 2026-06-30 15:56:35
+------------------------------------------------------------
+   Total Time:        207.025s
+   Devices Received:  16000/16000
+   System Throughput: 155,808 points/sec
+============================================================
+
+============================================================
+E2E MULTI-APP-CUSTOMER BENCHMARK
+App Customers: 40 | Total Devices: 32000
+Date: 2026-06-30 16:40:55
+------------------------------------------------------------
+   Total Time:        479.535s
+   Devices Received:  32000/32000
+   System Throughput: 134,530 points/sec
+============================================================
+
+
